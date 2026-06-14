@@ -79,7 +79,7 @@ cat > "$OUT_DIR/index.html" <<EOF
 <meta charset="utf-8">
 <title>Glyndor apt repository</title>
 <h1>Glyndor apt repository</h1>
-<p>Set up on Debian/Ubuntu (amd64):</p>
+<p>Set up on Debian/Ubuntu (amd64, arm64):</p>
 <pre>curl -fsSLO https://apt.glyndor.net/glyndor-archive-keyring.deb
 sudo dpkg -i glyndor-archive-keyring.deb
 sudo apt update</pre>
