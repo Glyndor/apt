@@ -59,7 +59,7 @@ Origin: Glyndor
 Label: Glyndor
 Suite: stable
 Codename: stable
-Architectures: amd64
+Architectures: amd64 arm64
 Components: main
 Description: Glyndor apt repository
 SignWith: $FPR

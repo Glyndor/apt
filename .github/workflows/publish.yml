@@ -18,9 +18,12 @@ permissions:
   contents: read
 
 env:
-  # Space-separated list of Glyndor repos that publish an amd64 .deb release
-  # asset. Add a repo here once it ships a Debian package.
+  # Space-separated list of Glyndor repos that publish a .deb release asset
+  # named <name>_<version>_<arch>.deb. Add a repo here once it ships one.
   PRODUCTS: "podup"
+  # Architectures to collect and serve. Must match the reprepro distribution
+  # (build/build-repo.sh) and keyring/glyndor.sources.
+  ARCHITECTURES: "amd64 arm64"
 
 jobs:
   publish:
@@ -43,12 +46,15 @@ jobs:
           mkdir -p debs
           for p in $PRODUCTS; do
             echo "::group::$p"
-            if gh release download --repo "Glyndor/$p" \
-                 --pattern '*_amd64.deb' --dir debs --clobber; then
-              echo "downloaded latest .deb for $p"
-            else
-              echo "::warning::no amd64 .deb release asset found for Glyndor/$p — skipping"
-            fi
+            got=0
+            for arch in $ARCHITECTURES; do
+              if gh release download --repo "Glyndor/$p" \
+                   --pattern "*_${arch}.deb" --dir debs --clobber 2>/dev/null; then
+                echo "downloaded $arch .deb for $p"
+                got=1
+              fi
+            done
+            [ "$got" -eq 1 ] || echo "::warning::no .deb release asset found for Glyndor/$p — skipping"
             echo "::endgroup::"
           done
           count=$(find debs -name '*.deb' | wc -l)

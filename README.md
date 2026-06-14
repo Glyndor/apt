@@ -32,9 +32,18 @@ workflow can send for an immediate refresh.
 
 ## Adding a product
 
-1. Ensure the product's release attaches an amd64 `*_amd64.deb` asset.
-2. Add its repo name to `PRODUCTS` in `publish.yml`.
-3. Run the workflow.
+Works for any Glyndor repo — the product needs **no secrets and no access to
+this repo**. It only has to publish a Debian package as a public release asset.
+
+1. The product's release attaches a `<name>_<version>_<arch>.deb` asset for each
+   architecture in `ARCHITECTURES` (currently `amd64 arm64`).
+2. Add the product's repo name to `PRODUCTS` in `.github/workflows/publish.yml`.
+3. Run the workflow (`gh workflow run publish.yml -R Glyndor/apt`) or wait for
+   the daily schedule.
+
+The package then installs with `sudo apt install <name>`. To support a new
+architecture, add it to `ARCHITECTURES` here and to `keyring/glyndor.sources`,
+and make products publish that arch's `.deb`.
 
 ## Signing key
 
