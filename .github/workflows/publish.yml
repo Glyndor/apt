@@ -1,0 +1,89 @@
+name: Publish apt repository
+
+# Rebuilds the signed apt repository at https://apt.glyndor.net from the latest
+# release of each Glyndor product and publishes it to the gh-pages branch.
+#
+# Triggered manually, on a daily schedule, and by a repository_dispatch event
+# (type: product-released) that a product's release workflow can send so the
+# repository refreshes immediately after a new version ships.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
+  repository_dispatch:
+    types: [product-released]
+
+permissions:
+  contents: read
+
+env:
+  # Space-separated list of Glyndor repos that publish an amd64 .deb release
+  # asset. Add a repo here once it ships a Debian package.
+  PRODUCTS: "podup"
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install reprepro
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq reprepro
+
+      - name: Download the latest .deb of each product
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p debs
+          for p in $PRODUCTS; do
+            echo "::group::$p"
+            if gh release download --repo "Glyndor/$p" \
+                 --pattern '*_amd64.deb' --dir debs --clobber; then
+              echo "downloaded latest .deb for $p"
+            else
+              echo "::warning::no amd64 .deb release asset found for Glyndor/$p — skipping"
+            fi
+            echo "::endgroup::"
+          done
+          count=$(find debs -name '*.deb' | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "::error::no product .deb files were downloaded; refusing to publish an empty repo"
+            exit 1
+          fi
+          echo "collected $count product package(s)"
+
+      - name: Build keyring package
+        run: ./build/build-keyring.sh debs
+
+      - name: Build signed apt repository
+        env:
+          GLYNDOR_APT_GPG_PRIVATE_KEY: ${{ secrets.GLYNDOR_APT_GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$GLYNDOR_APT_GPG_PRIVATE_KEY" ]; then
+            echo "::error::GLYNDOR_APT_GPG_PRIVATE_KEY secret is not configured."
+            exit 1
+          fi
+          ./build/build-repo.sh public debs/*.deb
+          # The keyring package is also offered at the repo root for first-time
+          # bootstrap (curl + dpkg -i before apt knows the repo).
+          cp debs/glyndor-archive-keyring.deb public/glyndor-archive-keyring.deb
+
+      - name: Publish to gh-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd public
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Publish apt repository"
+          git branch -M gh-pages
+          git push -f \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages

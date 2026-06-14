@@ -1,0 +1,8 @@
+# Glyndor apt repository — installed at /etc/apt/sources.list.d/glyndor.sources
+# by the glyndor-archive-keyring package. deb822 format (apt >= 1.1).
+Types: deb
+URIs: https://apt.glyndor.net
+Suites: stable
+Components: main
+Architectures: amd64
+Signed-By: /usr/share/keyrings/glyndor.gpg
