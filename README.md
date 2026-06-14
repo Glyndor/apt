@@ -1,7 +1,7 @@
 # Glyndor apt repository
 
 Signed apt repository for Glyndor's Debian/Ubuntu packages, served at
-**https://apt.glyndor.net** (amd64).
+**https://apt.glyndor.net** (amd64, arm64).
 
 ## Install
 
@@ -21,10 +21,16 @@ apt owns it — key renewals arrive automatically through `apt upgrade`.
 
 `.github/workflows/publish.yml` rebuilds the repository from the latest release
 of each product listed in its `PRODUCTS` variable. It downloads each product's
-amd64 `.deb` release asset, builds the keyring package, assembles a signed
-`reprepro` repository, and publishes it to the `gh-pages` branch. The repo is
-rebuilt fresh each run, so it always carries exactly the current version of
-every package (no old-version support).
+`.deb` release asset (and its `.sig`) for every architecture in `ARCHITECTURES`,
+verifies each package against the shared Glyndor release key, builds the keyring
+package, assembles a signed `reprepro` repository, and publishes it to the
+`gh-pages` branch. The repo is rebuilt fresh each run, so it always carries
+exactly the current version of every package (no old-version support).
+
+Every product `.deb` is verified against its detached Ed25519 signature before
+it enters the archive (`build/verify-debs.sh`, public key in
+`keyring/glyndor-release-ed25519.b64`). A missing or invalid signature fails the
+publish closed — the archive never re-signs a binary it has not verified.
 
 Triggers: manual (`workflow_dispatch`), a daily schedule, and a
 `repository_dispatch` of type `product-released` that a product's release
@@ -37,8 +43,12 @@ this repo**. It only has to publish a Debian package as a public release asset.
 
 1. The product's release attaches a `<name>_<version>_<arch>.deb` asset for each
    architecture in `ARCHITECTURES` (currently `amd64 arm64`).
-2. Add the product's repo name to `PRODUCTS` in `.github/workflows/publish.yml`.
-3. Run the workflow (`gh workflow run publish.yml -R Glyndor/apt`) or wait for
+2. The release signs each `.deb` with the shared Glyndor release key (the same
+   Ed25519 key `install.sh` trusts) and attaches the detached `<deb>.sig`
+   alongside it. **This is mandatory** — a `.deb` without a valid signature is
+   refused at publish time.
+3. Add the product's repo name to `PRODUCTS` in `.github/workflows/publish.yml`.
+4. Run the workflow (`gh workflow run publish.yml -R Glyndor/apt`) or wait for
    the daily schedule.
 
 The package then installs with `sudo apt install <name>`. To support a new
@@ -53,3 +63,9 @@ Private half: org secret `GLYNDOR_APT_GPG_PRIVATE_KEY` (scoped to this repo).
 the signing secret. Rotating or renewing the key: bump `keyring/VERSION`,
 replace the secret and `glyndor-apt-key.asc`, and re-run the workflow — clients
 pick up the new keyring via `apt upgrade`.
+
+This archive (GPG) key is distinct from the **release signing key**
+(`keyring/glyndor-release-ed25519.b64`, Ed25519): the release key proves an
+upstream product `.deb` is authentic before it enters the archive, while the
+archive key proves the published repository metadata is authentic to apt
+clients. The release public key is shared across all Glyndor products.

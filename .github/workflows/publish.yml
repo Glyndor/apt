@@ -34,10 +34,10 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Install reprepro
+      - name: Install reprepro and the signature verifier
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq reprepro
+          sudo apt-get install -y -qq reprepro python3-cryptography
 
       - name: Download the latest .deb of each product
         env:
@@ -48,10 +48,15 @@ jobs:
             echo "::group::$p"
             got=0
             for arch in $ARCHITECTURES; do
+              # Pull the package and its detached release signature together; the
+              # signature is verified before the package enters the archive.
               if gh release download --repo "Glyndor/$p" \
-                   --pattern "*_${arch}.deb" --dir debs --clobber 2>/dev/null; then
+                   --pattern "*_${arch}.deb" --pattern "*_${arch}.deb.sig" \
+                   --dir debs --clobber 2>/dev/null; then
                 echo "downloaded $arch .deb for $p"
                 got=1
+              else
+                echo "::warning::no $arch .deb release asset for Glyndor/$p"
               fi
             done
             [ "$got" -eq 1 ] || echo "::warning::no .deb release asset found for Glyndor/$p — skipping"
@@ -63,6 +68,9 @@ jobs:
             exit 1
           fi
           echo "collected $count product package(s)"
+
+      - name: Verify product .deb release signatures
+        run: ./build/verify-debs.sh debs
 
       - name: Build keyring package
         run: ./build/build-keyring.sh debs
