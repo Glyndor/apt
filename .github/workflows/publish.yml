@@ -1,7 +1,8 @@
 name: Publish apt repository
 
 # Rebuilds the signed apt repository at https://apt.glyndor.net from the latest
-# release of each Glyndor product and publishes it to the gh-pages branch.
+# release of each Glyndor product and publishes it to Cloudflare R2 (primary)
+# and the gh-pages branch (migration fallback; removed once R2 is verified live).
 #
 # Triggered manually, on a daily schedule, and by a repository_dispatch event
 # (type: product-released) that a product's release workflow can send so the
@@ -87,6 +88,17 @@ jobs:
           # The keyring package is also offered at the repo root for first-time
           # bootstrap (curl + dpkg -i before apt knows the repo).
           cp debs/glyndor-archive-keyring.deb public/glyndor-archive-keyring.deb
+
+      - name: Publish to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.APT_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.APT_R2_SECRET_ACCESS_KEY }}
+          APT_R2_ENDPOINT: ${{ secrets.APT_R2_ENDPOINT }}
+        run: |
+          aws s3 sync public/ s3://glyndor-apt/ \
+            --endpoint-url "$APT_R2_ENDPOINT" \
+            --delete \
+            --no-progress
 
       - name: Publish to gh-pages
         env:
