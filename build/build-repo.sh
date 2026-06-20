@@ -62,6 +62,12 @@ Codename: stable
 Architectures: amd64 arm64
 Components: main
 Description: Glyndor apt repository
+# Stamp an expiry on the signed Release (Valid-Until). The daily schedule
+# re-signs and re-stamps it; apt rejects an expired index, so a stalled
+# publish or a frozen cache can't silently pin clients to a stale package
+# list. The window is wider than the daily cadence so a few missed builds
+# don't break clients.
+ValidFor: 14d
 SignWith: $FPR
 EOF
 
