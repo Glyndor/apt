@@ -1,8 +1,7 @@
 name: Publish apt repository
 
 # Rebuilds the signed apt repository at https://apt.glyndor.net from the latest
-# release of each Glyndor product and publishes it to Cloudflare R2 (primary)
-# and the gh-pages branch (migration fallback; removed once R2 is verified live).
+# release of each Glyndor product and publishes it to Cloudflare R2.
 #
 # Triggered manually, on a daily schedule, and by a repository_dispatch event
 # (type: product-released) that a product's release workflow can send so the
@@ -31,7 +30,7 @@ jobs:
     name: Build and publish
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -99,17 +98,3 @@ jobs:
             --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
             --delete \
             --no-progress
-
-      - name: Publish to gh-pages
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cd public
-          git init -q
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -qm "Publish apt repository"
-          git branch -M gh-pages
-          git push -f \
-            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
