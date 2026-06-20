@@ -93,7 +93,15 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.GLYNDOR_APT_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.GLYNDOR_APT_R2_SECRET_ACCESS_KEY }}
           GLYNDOR_APT_R2_ENDPOINT: ${{ secrets.GLYNDOR_APT_R2_ENDPOINT }}
+          # R2 ignores the region but the AWS CLI requires one to be set.
+          AWS_DEFAULT_REGION: auto
         run: |
+          # Fail closed if any R2 credential is missing rather than syncing to
+          # the wrong place (or nowhere) silently.
+          for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY GLYNDOR_APT_R2_ENDPOINT; do
+            eval "[ -n \"\${$v:-}\" ]" \
+              || { echo "::error::$v is not configured."; exit 1; }
+          done
           aws s3 sync public/ s3://glyndor-apt/ \
             --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
             --delete \
