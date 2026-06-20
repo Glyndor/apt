@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# Build the signed Glyndor apt repository into a directory ready to publish as a
-# static site (GitHub Pages). The repository is rebuilt fresh on every run from
-# the current release of each product, so it always carries exactly the latest
-# version of every package — Glyndor ships no old-version support.
+# Build the signed Glyndor apt repository into a directory ready to mirror to
+# the Cloudflare R2 bucket served at apt.glyndor.net. The repository is rebuilt
+# fresh on every run from the current release of each product, so it always
+# carries exactly the latest version of every package — Glyndor ships no
+# old-version support.
 #
 # Requires: reprepro, gpg.
 # Reads the armored private signing key from $GLYNDOR_APT_GPG_PRIVATE_KEY.
@@ -23,8 +24,6 @@ shift
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PUBKEY_ASC="$HERE/keyring/glyndor-apt-key.asc"
 [ -f "$PUBKEY_ASC" ] || { echo "missing public key: $PUBKEY_ASC" >&2; exit 1; }
-
-DOMAIN="apt.glyndor.net"
 
 DEBS=()
 for d in "$@"; do
@@ -62,6 +61,12 @@ Codename: stable
 Architectures: amd64 arm64
 Components: main
 Description: Glyndor apt repository
+# Stamp an expiry on the signed Release (Valid-Until). The daily schedule
+# re-signs and re-stamps it; apt rejects an expired index, so a stalled
+# publish or a frozen cache can't silently pin clients to a stale package
+# list. The window is wider than the daily cadence so a few missed builds
+# don't break clients.
+ValidFor: 14d
 SignWith: $FPR
 EOF
 
@@ -70,21 +75,8 @@ reprepro -b "$OUT_DIR" includedeb stable "${DEBS[@]}"
 # reprepro bookkeeping must not be served publicly.
 rm -rf "$OUT_DIR/conf" "$OUT_DIR/db"
 
-touch "$OUT_DIR/.nojekyll"
-printf '%s\n' "$DOMAIN" > "$OUT_DIR/CNAME"
+# Offer the archive public key at the repo root for manual inspection; the
+# keyring .deb is what actually installs it on clients.
 cp "$PUBKEY_ASC" "$OUT_DIR/glyndor-apt-key.asc"
-
-cat > "$OUT_DIR/index.html" <<EOF
-<!doctype html>
-<meta charset="utf-8">
-<title>Glyndor apt repository</title>
-<h1>Glyndor apt repository</h1>
-<p>Set up on Debian/Ubuntu (amd64, arm64):</p>
-<pre>curl -fsSLO https://apt.glyndor.net/glyndor-archive-keyring.deb
-sudo dpkg -i glyndor-archive-keyring.deb
-sudo apt update</pre>
-<p>Then install any package, e.g. <code>sudo apt install podup</code>.</p>
-<p>Source: <a href="https://github.com/Glyndor/apt">github.com/Glyndor/apt</a></p>
-EOF
 
 echo "apt repository built at $OUT_DIR (signed by $FPR)"

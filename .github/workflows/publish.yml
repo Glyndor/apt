@@ -1,7 +1,8 @@
 name: Publish apt repository
 
 # Rebuilds the signed apt repository at https://apt.glyndor.net from the latest
-# release of each Glyndor product and publishes it to the gh-pages branch.
+# release of each Glyndor product and mirrors it to the Cloudflare R2 bucket
+# glyndor-apt, served at apt.glyndor.net.
 #
 # Triggered manually, on a daily schedule, and by a repository_dispatch event
 # (type: product-released) that a product's release workflow can send so the
@@ -29,8 +30,6 @@ jobs:
   publish:
     name: Build and publish
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -88,16 +87,22 @@ jobs:
           # bootstrap (curl + dpkg -i before apt knows the repo).
           cp debs/glyndor-archive-keyring.deb public/glyndor-archive-keyring.deb
 
-      - name: Publish to gh-pages
+      - name: Publish to Cloudflare R2
         env:
-          GH_TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.GLYNDOR_APT_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.GLYNDOR_APT_R2_SECRET_ACCESS_KEY }}
+          GLYNDOR_APT_R2_ENDPOINT: ${{ secrets.GLYNDOR_APT_R2_ENDPOINT }}
+          # R2 ignores the region but the AWS CLI requires one to be set.
+          AWS_DEFAULT_REGION: auto
         run: |
-          cd public
-          git init -q
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -qm "Publish apt repository"
-          git branch -M gh-pages
-          git push -f \
-            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+          for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY GLYNDOR_APT_R2_ENDPOINT; do
+            eval "[ -n \"\${$v:-}\" ]" \
+              || { echo "::error::$v is not configured."; exit 1; }
+          done
+          # Mirror the freshly built repo to R2. --delete prunes objects left by
+          # old versions so the bucket carries exactly the latest repo — the
+          # host side of the latest-only rule. The endpoint is the account URL
+          # with no bucket suffix; the bucket is the s3:// target.
+          aws s3 sync public/ s3://glyndor-apt/ \
+            --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
+            --delete --no-progress

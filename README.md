@@ -23,9 +23,10 @@ apt owns it — key renewals arrive automatically through `apt upgrade`.
 of each product listed in its `PRODUCTS` variable. It downloads each product's
 `.deb` release asset (and its `.sig`) for every architecture in `ARCHITECTURES`,
 verifies each package against the shared Glyndor release key, builds the keyring
-package, assembles a signed `reprepro` repository, and publishes it to the
-`gh-pages` branch. The repo is rebuilt fresh each run, so it always carries
-exactly the current version of every package (no old-version support).
+package, assembles a signed `reprepro` repository, and mirrors it to the
+Cloudflare R2 bucket `glyndor-apt` served at apt.glyndor.net (`aws s3 sync …
+--delete`). The repo is rebuilt fresh each run, so it always carries exactly the
+current version of every package (no old-version support).
 
 Every product `.deb` is verified against its detached Ed25519 signature before
 it enters the archive (`build/verify-debs.sh`, public key in
