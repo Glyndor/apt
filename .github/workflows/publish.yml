@@ -91,12 +91,12 @@ jobs:
 
       - name: Publish to R2
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.APT_R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.APT_R2_SECRET_ACCESS_KEY }}
-          APT_R2_ENDPOINT: ${{ secrets.APT_R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.GLYNDOR_APT_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.GLYNDOR_APT_R2_SECRET_ACCESS_KEY }}
+          GLYNDOR_APT_R2_ENDPOINT: ${{ secrets.GLYNDOR_APT_R2_ENDPOINT }}
         run: |
           aws s3 sync public/ s3://glyndor-apt/ \
-            --endpoint-url "$APT_R2_ENDPOINT" \
+            --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
             --delete \
             --no-progress
 
