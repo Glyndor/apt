@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Build the signed Glyndor apt repository into a directory ready to publish as a
-# static site (GitHub Pages). The repository is rebuilt fresh on every run from
+# Build the signed Glyndor apt repository into a directory ready to publish to
+# Cloudflare R2 (apt.glyndor.net). The repository is rebuilt fresh on every run from
 # the current release of each product, so it always carries exactly the latest
 # version of every package — Glyndor ships no old-version support.
 #
@@ -23,8 +23,6 @@ shift
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PUBKEY_ASC="$HERE/keyring/glyndor-apt-key.asc"
 [ -f "$PUBKEY_ASC" ] || { echo "missing public key: $PUBKEY_ASC" >&2; exit 1; }
-
-DOMAIN="apt.glyndor.net"
 
 DEBS=()
 for d in "$@"; do
@@ -75,10 +73,6 @@ reprepro -b "$OUT_DIR" includedeb stable "${DEBS[@]}"
 
 # reprepro bookkeeping must not be served publicly.
 rm -rf "$OUT_DIR/conf" "$OUT_DIR/db"
-
-touch "$OUT_DIR/.nojekyll"
-printf '%s\n' "$DOMAIN" > "$OUT_DIR/CNAME"
-cp "$PUBKEY_ASC" "$OUT_DIR/glyndor-apt-key.asc"
 
 cat > "$OUT_DIR/index.html" <<EOF
 <!doctype html>
