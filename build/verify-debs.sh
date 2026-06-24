@@ -32,12 +32,11 @@ debs=("$DEBS_DIR"/*.deb)
 
 count=0
 for deb in "${debs[@]}"; do
-	# The keyring package is built locally in this repo (not a signed upstream
-	# release asset), so it has no .sig and is signed only by the archive key.
-	case "$(basename "$deb")" in
-	glyndor-archive-keyring*.deb) continue ;;
-	esac
-
+	# Every .deb here is an untrusted downloaded release asset and must be
+	# verified with no exceptions — keying a skip on the filename would let a
+	# product publish an asset under a trusted name to bypass the check. The
+	# locally-built keyring package is produced in a later step (build-keyring),
+	# after this runs, and is signed by the archive key, not the release key.
 	sig="$deb.sig"
 	if [ ! -f "$sig" ]; then
 		echo "::error::no signature ($sig) for $(basename "$deb") — refusing to publish an unverified package" >&2
@@ -52,12 +51,16 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 pubkey_b64, sig_path, data_path = sys.argv[1], sys.argv[2], sys.argv[3]
+key_bytes = base64.b64decode(pubkey_b64 + "==")
+if len(key_bytes) != 32:
+	sys.stderr.write("release public key is not a 32-byte Ed25519 key\n")
+	sys.exit(2)
 with open(sig_path, "rb") as f:
 	sig = f.read()
 with open(data_path, "rb") as f:
 	data = f.read()
 try:
-	Ed25519PublicKey.from_public_bytes(base64.b64decode(pubkey_b64 + "==")).verify(sig, data)
+	Ed25519PublicKey.from_public_bytes(key_bytes).verify(sig, data)
 except InvalidSignature:
 	sys.exit(1)
 PYEOF
