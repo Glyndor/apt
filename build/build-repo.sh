@@ -43,10 +43,13 @@ printf '%s' "$GLYNDOR_APT_GPG_PRIVATE_KEY" | gpg --batch --quiet --import 2>/dev
 FPR="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/{print $10; exit}')"
 [ -n "$FPR" ] || { echo "could not determine signing key fingerprint" >&2; exit 1; }
 
-# Fail closed if the committed public key does not match the signing secret.
-PUB_FPR="$(gpg --batch --with-colons --show-keys "$PUBKEY_ASC" | awk -F: '/^fpr:/{print $10; exit}')"
-if [ "$PUB_FPR" != "$FPR" ]; then
-	echo "::error::committed public key ($PUB_FPR) does not match signing key ($FPR)" >&2
+# Fail closed unless the signing secret's key is one of those shipped in the
+# committed public keyring. The .asc may carry more than one key during a
+# two-phase rotation (old + new in the overlap), so match the secret against
+# every key in it, not just the first.
+if ! gpg --batch --with-colons --show-keys "$PUBKEY_ASC" \
+	| awk -F: '/^fpr:/{print $10}' | grep -qxF "$FPR"; then
+	echo "::error::signing key ($FPR) is not present in $PUBKEY_ASC" >&2
 	exit 1
 fi
 
