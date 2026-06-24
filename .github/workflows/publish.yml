@@ -33,6 +33,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Full history so build-keyring.sh can derive the keyring package
+          # version from the date the signing key last changed.
+          fetch-depth: 0
 
       - name: Install reprepro and the signature verifier
         run: |
@@ -43,6 +47,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           mkdir -p debs
           for p in $PRODUCTS; do
             echo "::group::$p"
@@ -62,6 +67,10 @@ jobs:
             [ "$got" -eq 1 ] || echo "::warning::no .deb release asset found for Glyndor/$p — skipping"
             echo "::endgroup::"
           done
+          # A product must never ship a keyring-named asset — the real keyring is
+          # built locally below. Drop any so it can neither bypass verification
+          # under a trusted name nor abort the whole publish by failing it.
+          rm -f debs/glyndor-archive-keyring*.deb debs/glyndor-archive-keyring*.deb.sig
           count=$(find debs -name '*.deb' | wc -l)
           if [ "$count" -eq 0 ]; then
             echo "::error::no product .deb files were downloaded; refusing to publish an empty repo"
@@ -79,6 +88,7 @@ jobs:
         env:
           GLYNDOR_APT_GPG_PRIVATE_KEY: ${{ secrets.GLYNDOR_APT_GPG_PRIVATE_KEY }}
         run: |
+          set -euo pipefail
           if [ -z "$GLYNDOR_APT_GPG_PRIVATE_KEY" ]; then
             echo "::error::GLYNDOR_APT_GPG_PRIVATE_KEY secret is not configured."
             exit 1
