@@ -43,7 +43,7 @@ cat > "$ROOT/DEBIAN/control" <<EOF
 Package: glyndor-archive-keyring
 Version: $VERSION
 Architecture: all
-Maintainer: Glyndor <75870284+Jaro-c@users.noreply.github.com>
+Maintainer: Glyndor <packages@glyndor.net>
 Section: utils
 Priority: optional
 Homepage: https://github.com/Glyndor/apt
