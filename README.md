@@ -1,7 +1,5 @@
 # Glyndor apt repository
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-
 Signed apt repository for Glyndor's Debian/Ubuntu packages (amd64, arm64),
 served at **https://apt.glyndor.net**.
 
