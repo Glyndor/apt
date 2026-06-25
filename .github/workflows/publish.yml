@@ -3,16 +3,14 @@ name: Publish apt repository
 # Rebuilds the signed apt repository at https://apt.glyndor.net from the latest
 # release of each Glyndor product and publishes it to Cloudflare R2.
 #
-# Triggered manually, on a daily schedule, and by a repository_dispatch event
-# (type: product-released) that a product's release workflow can send so the
-# repository refreshes immediately after a new version ships.
+# Runs on a daily schedule and on demand. A new product release is picked up at
+# the next daily build (or a manual run), so no product needs a write credential
+# on this repository to trigger a refresh.
 
 on:
   workflow_dispatch:
   schedule:
     - cron: "0 6 * * *"
-  repository_dispatch:
-    types: [product-released]
 
 permissions:
   contents: read
