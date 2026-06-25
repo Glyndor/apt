@@ -1,0 +1,54 @@
+name: Health check
+
+# Verifies that the published archive at apt.glyndor.net is reachable and fresh,
+# and fails loudly if it is not. The publish workflow only notifies when a build
+# runs and fails; this catches the cases it can't — the edge or R2 serving a
+# stale or missing index while no publish has errored. Failing safe (serving the
+# last good state) is good, but it must never be silent.
+#
+# Runs every six hours (offset from the publish cron) and on demand. The archive
+# is treated as stale if the signed Release is older than 24h — four times the
+# six-hourly publish cadence, loud well before the 14-day Valid-Until would lock
+# clients out.
+
+on:
+  schedule:
+    - cron: "30 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BASE_URL: "https://apt.glyndor.net"
+  MAX_AGE_HOURS: "24"
+
+jobs:
+  check:
+    name: Check published archive
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reachable and fresh InRelease
+        run: |
+          set -euo pipefail
+          url="$BASE_URL/dists/stable/InRelease"
+          tmp="$(mktemp)"
+          if ! curl -fsS --max-time 30 "$url" -o "$tmp"; then
+            echo "::error::apt archive is unreachable at $url"
+            exit 1
+          fi
+          # The Date field is in the clear-signed InRelease body.
+          date_line="$(grep -m1 '^Date:' "$tmp" | sed 's/^Date:[[:space:]]*//')"
+          if [ -z "$date_line" ]; then
+            echo "::error::no Date field in InRelease — the served index is malformed"
+            exit 1
+          fi
+          rel_epoch="$(date -u -d "$date_line" +%s)"
+          now_epoch="$(date -u +%s)"
+          age_h=$(( (now_epoch - rel_epoch) / 3600 ))
+          echo "InRelease Date: $date_line (${age_h}h old)"
+          if [ "$age_h" -gt "$MAX_AGE_HOURS" ]; then
+            echo "::error::apt archive is stale — InRelease is ${age_h}h old (> ${MAX_AGE_HOURS}h); the publish may have stopped"
+            exit 1
+          fi
+          echo "archive reachable and fresh"
