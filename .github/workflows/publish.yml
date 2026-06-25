@@ -49,15 +49,28 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p debs
+          # The release assets are attacker-influenced (whoever can publish a
+          # product release controls them). The signature check bounds their
+          # authenticity but not their volume, so bound count and size here:
+          # exactly one .deb per product per arch, and a hard per-file size cap,
+          # so a compromised or buggy release can't exhaust runner disk or bloat
+          # the served archive.
+          MAX_DEB_BYTES=$((300 * 1024 * 1024))
           for p in $PRODUCTS; do
             echo "::group::$p"
             got=0
             for arch in $ARCHITECTURES; do
+              before=$(find debs -maxdepth 1 -name "*_${arch}.deb" | wc -l)
               # Pull the package and its detached release signature together; the
               # signature is verified before the package enters the archive.
               if gh release download --repo "Glyndor/$p" \
                    --pattern "*_${arch}.deb" --pattern "*_${arch}.deb.sig" \
                    --dir debs --clobber 2>/dev/null; then
+                after=$(find debs -maxdepth 1 -name "*_${arch}.deb" | wc -l)
+                if [ "$((after - before))" -gt 1 ]; then
+                  echo "::error::Glyndor/$p attached more than one ${arch} .deb to its latest release; expected exactly one"
+                  exit 1
+                fi
                 echo "downloaded $arch .deb for $p"
                 got=1
               else
@@ -71,7 +84,15 @@ jobs:
           # built locally below. Drop any so it can neither bypass verification
           # under a trusted name nor abort the whole publish by failing it.
           rm -f debs/glyndor-archive-keyring*.deb debs/glyndor-archive-keyring*.deb.sig
-          count=$(find debs -name '*.deb' | wc -l)
+          # Reject any oversized package before it is verified or served.
+          while IFS= read -r f; do
+            sz=$(stat -c%s "$f")
+            if [ "$sz" -gt "$MAX_DEB_BYTES" ]; then
+              echo "::error::$f is $sz bytes, over the ${MAX_DEB_BYTES}-byte per-package cap"
+              exit 1
+            fi
+          done < <(find debs -maxdepth 1 -name '*.deb')
+          count=$(find debs -maxdepth 1 -name '*.deb' | wc -l)
           if [ "$count" -eq 0 ]; then
             echo "::error::no product .deb files were downloaded; refusing to publish an empty repo"
             exit 1
