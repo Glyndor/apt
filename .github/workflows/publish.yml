@@ -32,6 +32,30 @@ jobs:
     permissions:
       contents: read
     steps:
+      # A product-released dispatch must prove it came from a Glyndor product, not
+      # just from anyone able to POST a repository_dispatch. The product sends a
+      # shared secret in client_payload.token; reject the rebuild if it is absent
+      # or does not match. Fails closed: a misconfigured secret blocks the
+      # dispatch rather than letting an unauthenticated one through. The values
+      # are compared via env, never interpolated into the script, so a crafted
+      # payload can't inject shell. The scheduled and manual triggers skip this.
+      - name: Authenticate the product dispatch
+        if: github.event_name == 'repository_dispatch'
+        env:
+          EXPECTED: ${{ secrets.GLYNDOR_APT_DISPATCH_TOKEN }}
+          PROVIDED: ${{ github.event.client_payload.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$EXPECTED" ]; then
+            echo "::error::GLYNDOR_APT_DISPATCH_TOKEN is not configured; refusing an unauthenticated dispatch."
+            exit 1
+          fi
+          if [ "$PROVIDED" != "$EXPECTED" ]; then
+            echo "::error::product dispatch token is missing or does not match; refusing the rebuild."
+            exit 1
+          fi
+          echo "dispatch authenticated"
+
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           # Full history so build-keyring.sh can derive the keyring package
