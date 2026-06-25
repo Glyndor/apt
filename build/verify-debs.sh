@@ -11,7 +11,12 @@
 # the upstream binary is authentic; the archive key proves the repository
 # metadata is authentic.
 #
-# Requires: python3 with the `cryptography` module.
+# The key file carries one base64-encoded Ed25519 public key per line. More than
+# one key may be present so a two-phase release-key rotation can trust the old
+# and the new key at once during the overlap: a .deb is admitted if any listed
+# key verifies it. Blank lines and lines starting with '#' are ignored.
+#
+# Requires: python3 with the `cryptography` module, and dpkg-deb.
 #
 # Usage:
 #   verify-debs.sh <debs-dir> [<pubkey-b64-file>]
@@ -23,8 +28,16 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KEY_FILE="${2:-$HERE/keyring/glyndor-release-ed25519.b64}"
 
 [ -f "$KEY_FILE" ] || { echo "::error::release public key $KEY_FILE not found" >&2; exit 1; }
-PUBKEY_B64="$(tr -d '[:space:]' < "$KEY_FILE")"
-[ -n "$PUBKEY_B64" ] || { echo "::error::release public key $KEY_FILE is empty" >&2; exit 1; }
+
+# One base64 key per non-empty, non-comment line. Strip whitespace per line so
+# the multi-key form (one key per line) is not flattened into a single blob.
+KEYS=()
+while IFS= read -r line || [ -n "$line" ]; do
+	line="$(printf '%s' "$line" | tr -d '[:space:]')"
+	case "$line" in '' | '#'*) continue ;; esac
+	KEYS+=("$line")
+done < "$KEY_FILE"
+[ "${#KEYS[@]}" -ge 1 ] || { echo "::error::release public key $KEY_FILE has no keys" >&2; exit 1; }
 
 shopt -s nullglob
 debs=("$DEBS_DIR"/*.deb)
@@ -37,32 +50,65 @@ for deb in "${debs[@]}"; do
 	# product publish an asset under a trusted name to bypass the check. The
 	# locally-built keyring package is produced in a later step (build-keyring),
 	# after this runs, and is signed by the archive key, not the release key.
+
+	# Reject the reserved keyring package name on the *control* field, not just
+	# the filename: a product could ship a normally-named, validly-signed .deb
+	# whose internal Package is glyndor-archive-keyring and so shadow the real
+	# keyring in the archive. The keyring is built locally, never downloaded.
+	pkg="$(dpkg-deb -f "$deb" Package 2>/dev/null || true)"
+	if [ "$pkg" = "glyndor-archive-keyring" ]; then
+		echo "::error::$(basename "$deb") declares the reserved package name glyndor-archive-keyring — a product must not ship the keyring package" >&2
+		exit 1
+	fi
+
 	sig="$deb.sig"
 	if [ ! -f "$sig" ]; then
 		echo "::error::no signature ($sig) for $(basename "$deb") — refusing to publish an unverified package" >&2
 		exit 1
 	fi
 
-	if ! python3 - "$PUBKEY_B64" "$sig" "$deb" <<'PYEOF'
+	if ! python3 - "$sig" "$deb" "${KEYS[@]}" <<'PYEOF'
 import base64
 import sys
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-pubkey_b64, sig_path, data_path = sys.argv[1], sys.argv[2], sys.argv[3]
-key_bytes = base64.b64decode(pubkey_b64 + "==")
-if len(key_bytes) != 32:
-	sys.stderr.write("release public key is not a 32-byte Ed25519 key\n")
+sig_path, data_path, keys_b64 = sys.argv[1], sys.argv[2], sys.argv[3:]
+
+
+def load(b64):
+	# Normalise padding to a 4-char boundary and reject any non-base64 input,
+	# rather than blindly appending pad characters.
+	b64 += "=" * (-len(b64) % 4)
+	key_bytes = base64.b64decode(b64, validate=True)
+	if len(key_bytes) != 32:
+		raise ValueError("release public key is not a 32-byte Ed25519 key")
+	return Ed25519PublicKey.from_public_bytes(key_bytes)
+
+
+try:
+	keys = [load(b64) for b64 in keys_b64]
+except (ValueError, base64.binascii.Error) as exc:
+	sys.stderr.write(f"malformed release public key: {exc}\n")
 	sys.exit(2)
+if not keys:
+	sys.stderr.write("no release public keys provided\n")
+	sys.exit(2)
+
 with open(sig_path, "rb") as f:
 	sig = f.read()
 with open(data_path, "rb") as f:
 	data = f.read()
-try:
-	Ed25519PublicKey.from_public_bytes(key_bytes).verify(sig, data)
-except InvalidSignature:
-	sys.exit(1)
+
+# Admit the package if any trusted key verifies it (rotation overlap).
+for key in keys:
+	try:
+		key.verify(sig, data)
+		sys.exit(0)
+	except InvalidSignature:
+		continue
+sys.exit(1)
 PYEOF
 	then
 		echo "::error::invalid signature for $(basename "$deb") — release may be tampered" >&2
