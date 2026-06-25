@@ -1,0 +1,12 @@
+version: 2
+
+updates:
+  # Keep the SHA-pinned actions in the workflows current. This repo has no
+  # language package manifest (it is POSIX shell + reprepro), so GitHub Actions
+  # is the only ecosystem to track.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    labels: ["type:deps", "type:ci"]
+    open-pull-requests-limit: 10
