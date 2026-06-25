@@ -17,6 +17,14 @@ on:
 permissions:
   contents: read
 
+# Serialise publishes. The daily schedule, a manual run and a product-released
+# dispatch can otherwise overlap and run two `aws s3 sync --delete` against the
+# same bucket at once, racing to a half-deleted, inconsistent index that apt
+# rejects. Never cancel a run in flight — a partial sync must always finish.
+concurrency:
+  group: publish-apt
+  cancel-in-progress: false
+
 env:
   # Space-separated list of Glyndor repos that publish a .deb release asset
   # named <name>_<version>_<arch>.deb. Add a repo here once it ships one.
