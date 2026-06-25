@@ -34,12 +34,15 @@ SOURCES="$HERE/keyring/glyndor.sources"
 BASE_VERSION="$(cat "$HERE/keyring/VERSION")"
 KEY_DATE="$(git -C "$HERE" log -1 --format=%cd --date=format:%Y%m%d%H%M%S \
 	-- keyring/glyndor-apt-key.asc 2>/dev/null || true)"
-if [ -n "$KEY_DATE" ]; then
-	VERSION="${BASE_VERSION}+key${KEY_DATE}"
-else
-	echo "warning: no git history for the key; using bare version $BASE_VERSION" >&2
-	VERSION="$BASE_VERSION"
+# Fail closed if the key's change date can't be derived. A bare version would
+# not bump on a key rotation, so apt upgrade would silently fail to deliver the
+# renewal — the opposite of the guarantee this package exists to provide. The
+# build must run inside a full checkout (CI uses fetch-depth: 0).
+if [ -z "$KEY_DATE" ]; then
+	echo "::error::no git history for keyring/glyndor-apt-key.asc; cannot derive a rotation-safe version (run inside a full git checkout)" >&2
+	exit 1
 fi
+VERSION="${BASE_VERSION}+key${KEY_DATE}"
 
 [ -f "$PUBKEY_ASC" ] || { echo "missing public key: $PUBKEY_ASC" >&2; exit 1; }
 [ -f "$SOURCES" ]    || { echo "missing sources file: $SOURCES" >&2; exit 1; }
