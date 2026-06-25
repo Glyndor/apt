@@ -39,7 +39,16 @@ chmod 700 "$GNUPGHOME"
 cleanup() { gpgconf --kill all 2>/dev/null || true; rm -rf "$GNUPGHOME"; }
 trap cleanup EXIT
 
-printf '%s' "$GLYNDOR_APT_GPG_PRIVATE_KEY" | gpg --batch --quiet --import 2>/dev/null
+# Import the signing key. Don't swallow import errors — if the secret is
+# malformed the failure must be diagnosable, not silent.
+printf '%s' "$GLYNDOR_APT_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+
+# Require exactly one secret key. If the secret ever carried more than one (e.g.
+# old + new pasted in during a rotation), the first-fingerprint pick below would
+# sign with whichever imported first, not necessarily the intended active key.
+SEC_COUNT="$(gpg --batch --with-colons --list-secret-keys | grep -c '^sec:')"
+[ "$SEC_COUNT" -eq 1 ] || { echo "::error::expected exactly one secret key in GLYNDOR_APT_GPG_PRIVATE_KEY, found $SEC_COUNT" >&2; exit 1; }
+
 FPR="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/{print $10; exit}')"
 [ -n "$FPR" ] || { echo "could not determine signing key fingerprint" >&2; exit 1; }
 
