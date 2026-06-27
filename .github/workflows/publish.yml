@@ -144,14 +144,16 @@ jobs:
           #   - pool/ .debs are immutable (the filename carries the version), so
           #     cache them for a year — they never change once published.
           #   - everything else (the dists/ metadata, index.html, the keyring
-          #     .deb) shares a fixed name but changes every rebuild, so cap it at
-          #     an hour AND purge it from Cloudflare below, so a fresh release is
-          #     visible at once instead of pinned to a stale, mismatched index.
+          #     .deb) shares a fixed name but changes every rebuild. Cache it a
+          #     day AND purge it from Cloudflare below on every publish, so a
+          #     fresh release is visible at once; the long TTL is safe because
+          #     each rebuild (daily + manual) purges, and nothing changes between
+          #     rebuilds — it just cuts needless origin revalidations.
           aws s3 sync public/ s3://glyndor-apt/ \
             --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
             --delete --no-progress \
             --exclude "pool/*" \
-            --cache-control "public, max-age=3600"
+            --cache-control "public, max-age=86400"
           aws s3 sync public/ s3://glyndor-apt/ \
             --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
             --delete --no-progress \
