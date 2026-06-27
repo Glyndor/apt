@@ -139,7 +139,60 @@ jobs:
             eval "[ -n \"\${$v:-}\" ]" \
               || { echo "::error::$v is not configured."; exit 1; }
           done
+          # Two passes set the right Cache-Control per file class, served by
+          # Cloudflare in front of R2:
+          #   - pool/ .debs are immutable (the filename carries the version), so
+          #     cache them for a year — they never change once published.
+          #   - everything else (the dists/ metadata, index.html, the keyring
+          #     .deb) shares a fixed name but changes every rebuild, so cap it at
+          #     an hour AND purge it from Cloudflare below, so a fresh release is
+          #     visible at once instead of pinned to a stale, mismatched index.
           aws s3 sync public/ s3://glyndor-apt/ \
             --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
-            --delete \
-            --no-progress
+            --delete --no-progress \
+            --exclude "pool/*" \
+            --cache-control "public, max-age=3600"
+          aws s3 sync public/ s3://glyndor-apt/ \
+            --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
+            --delete --no-progress \
+            --exclude "*" --include "pool/*" \
+            --cache-control "public, max-age=31536000, immutable"
+
+      - name: Purge Cloudflare cache (mutable, fixed-name files)
+        env:
+          CF_TOKEN: ${{ secrets.GLYNDOR_CF_PURGE_TOKEN }}
+          CF_ZONE: ${{ secrets.GLYNDOR_CF_ZONE_ID }}
+        run: |
+          set -euo pipefail
+          # Cloudflare caches the index by URL; a fresh sync changes the bytes
+          # behind the same URL, so without a purge apt can fetch a new InRelease
+          # but a stale Packages it no longer matches (hash/size mismatch). Purge
+          # the mutable, fixed-name files; the immutable pool/ .debs are never
+          # purged. The zone is shared (apt.glyndor.net is a subdomain of
+          # glyndor.net), so purge by URL — never purge_everything.
+          for v in CF_TOKEN CF_ZONE; do
+            eval "[ -n \"\${$v:-}\" ]" \
+              || { echo "::error::$v is not configured."; exit 1; }
+          done
+          base="https://apt.glyndor.net"
+          urls=$(printf '"%s",' \
+            "$base/dists/stable/InRelease" \
+            "$base/dists/stable/Release" \
+            "$base/dists/stable/Release.gpg" \
+            "$base/dists/stable/main/binary-amd64/Packages" \
+            "$base/dists/stable/main/binary-amd64/Packages.gz" \
+            "$base/dists/stable/main/binary-amd64/Packages.xz" \
+            "$base/dists/stable/main/binary-arm64/Packages" \
+            "$base/dists/stable/main/binary-arm64/Packages.gz" \
+            "$base/dists/stable/main/binary-arm64/Packages.xz" \
+            "$base/glyndor-archive-keyring.deb" \
+            "$base/index.html")
+          urls="${urls%,}"
+          resp=$(curl -sS -X POST \
+            "https://api.cloudflare.com/client/v4/zones/$CF_ZONE/purge_cache" \
+            -H "Authorization: Bearer $CF_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "{\"files\":[$urls]}")
+          echo "$resp" | grep -q '"success":true' \
+            || { echo "::error::Cloudflare purge failed: $resp"; exit 1; }
+          echo "Cloudflare cache purged for the apt metadata."
