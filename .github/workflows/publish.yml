@@ -15,10 +15,10 @@ on:
 permissions:
   contents: read
 
-# Serialise publishes. The daily schedule, a manual run and a product-released
-# dispatch can otherwise overlap and run two `aws s3 sync --delete` against the
-# same bucket at once, racing to a half-deleted, inconsistent index that apt
-# rejects. Never cancel a run in flight — a partial sync must always finish.
+# Serialise publishes. The daily schedule and a manual run can otherwise
+# overlap and run two `aws s3 sync --delete` against the same bucket at once,
+# racing to a half-deleted, inconsistent index that apt rejects. Never cancel a
+# run in flight — a partial sync must always finish.
 concurrency:
   group: publish-apt
   cancel-in-progress: false
@@ -28,7 +28,7 @@ env:
   # named <name>_<version>_<arch>.deb. Add a repo here once it ships one.
   PRODUCTS: "podup"
   # Architectures to collect and serve. Must match the reprepro distribution
-  # (build/build-repo.sh) and keyring/glyndor.sources.
+  # (scripts/build-repo.sh) and keyring/glyndor.sources.
   ARCHITECTURES: "amd64 arm64"
 
 jobs:
@@ -64,26 +64,26 @@ jobs:
           MAX_DEB_BYTES=$((300 * 1024 * 1024))
           for p in $PRODUCTS; do
             echo "::group::$p"
-            got=0
             for arch in $ARCHITECTURES; do
               before=$(find debs -maxdepth 1 -name "*_${arch}.deb" | wc -l)
               # Pull the package and its detached release signature together; the
               # signature is verified before the package enters the archive.
-              if gh release download --repo "Glyndor-net/$p" \
+              # A missing or failed download is a hard error: with `aws s3 sync
+              # --delete` below, silently skipping a product would evict it from
+              # the served archive on the next publish.
+              if ! gh release download --repo "Glyndor-net/$p" \
                    --pattern "*_${arch}.deb" --pattern "*_${arch}.deb.sig" \
-                   --dir debs --clobber 2>/dev/null; then
-                after=$(find debs -maxdepth 1 -name "*_${arch}.deb" | wc -l)
-                if [ "$((after - before))" -gt 1 ]; then
-                  echo "::error::Glyndor-net/$p attached more than one ${arch} .deb to its latest release; expected exactly one"
-                  exit 1
-                fi
-                echo "downloaded $arch .deb for $p"
-                got=1
-              else
-                echo "::warning::no $arch .deb release asset for Glyndor-net/$p"
+                   --dir debs --clobber; then
+                echo "::error::could not download the ${arch} .deb (+.sig) of Glyndor-net/$p's latest release; refusing to publish an archive that would drop it"
+                exit 1
               fi
+              after=$(find debs -maxdepth 1 -name "*_${arch}.deb" | wc -l)
+              if [ "$((after - before))" -ne 1 ]; then
+                echo "::error::Glyndor-net/$p's latest release must attach exactly one ${arch} .deb (got $((after - before)))"
+                exit 1
+              fi
+              echo "downloaded $arch .deb for $p"
             done
-            [ "$got" -eq 1 ] || echo "::warning::no .deb release asset found for Glyndor-net/$p — skipping"
             echo "::endgroup::"
           done
           # A product must never ship a keyring-named asset — the real keyring is
@@ -106,10 +106,10 @@ jobs:
           echo "collected $count product package(s)"
 
       - name: Verify product .deb release signatures
-        run: ./build/verify-debs.sh debs
+        run: ./scripts/verify-debs.sh debs
 
       - name: Build keyring package
-        run: ./build/build-keyring.sh debs
+        run: ./scripts/build-keyring.sh debs
 
       - name: Build signed apt repository
         env:
@@ -120,7 +120,7 @@ jobs:
             echo "::error::GLYNDOR_APT_GPG_PRIVATE_KEY secret is not configured."
             exit 1
           fi
-          ./build/build-repo.sh public debs/*.deb
+          ./scripts/build-repo.sh public debs/*.deb
           # The keyring package is also offered at the repo root for first-time
           # bootstrap (curl + dpkg -i before apt knows the repo).
           cp debs/glyndor-archive-keyring.deb public/glyndor-archive-keyring.deb
@@ -139,8 +139,11 @@ jobs:
             eval "[ -n \"\${$v:-}\" ]" \
               || { echo "::error::$v is not configured."; exit 1; }
           done
-          # Two passes set the right Cache-Control per file class, served by
-          # Cloudflare in front of R2:
+          # Three passes: the Cache-Control differs per file class, and the
+          # ordering keeps the live archive consistent for clients mid-publish —
+          # new packages land before the metadata that references them, and old
+          # packages are removed only after the metadata stopped referencing
+          # them, so the signed index never points at a 404.
           #   - pool/ .debs are immutable (the filename carries the version), so
           #     cache them for a year — they never change once published.
           #   - everything else (the dists/ metadata, index.html, the keyring
@@ -149,11 +152,19 @@ jobs:
           #     fresh release is visible at once; the long TTL is safe because
           #     each rebuild (daily + manual) purges, and nothing changes between
           #     rebuilds — it just cuts needless origin revalidations.
+          # 1. Upload new pool/ packages (no deletions yet).
+          aws s3 sync public/ s3://glyndor-apt/ \
+            --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
+            --no-progress \
+            --exclude "*" --include "pool/*" \
+            --cache-control "public, max-age=31536000, immutable"
+          # 2. Publish the new metadata (and clean up stale non-pool files).
           aws s3 sync public/ s3://glyndor-apt/ \
             --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
             --delete --no-progress \
             --exclude "pool/*" \
             --cache-control "public, max-age=86400"
+          # 3. Remove pool/ packages the new metadata no longer references.
           aws s3 sync public/ s3://glyndor-apt/ \
             --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
             --delete --no-progress \
@@ -190,9 +201,14 @@ jobs:
             "$base/glyndor-archive-keyring.deb" \
             "$base/index.html")
           urls="${urls%,}"
+          # Pass the token via a header file, not argv: an -H argument is
+          # world-visible in /proc/<pid>/cmdline for the lifetime of the call.
+          hdr=$(mktemp)
+          trap 'rm -f "$hdr"' EXIT
+          printf 'Authorization: Bearer %s\n' "$CF_TOKEN" > "$hdr"
           resp=$(curl -sS -X POST \
             "https://api.cloudflare.com/client/v4/zones/$CF_ZONE/purge_cache" \
-            -H "Authorization: Bearer $CF_TOKEN" \
+            -H @"$hdr" \
             -H "Content-Type: application/json" \
             --data "{\"files\":[$urls]}")
           echo "$resp" | grep -q '"success":true' \

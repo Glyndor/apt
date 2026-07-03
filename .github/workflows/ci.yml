@@ -1,8 +1,9 @@
 name: CI
 
-# Runs the build-script tests on every pull request and push to main, so a
-# regression in the fail-closed signature gate (build/verify-debs.sh) is caught
-# before it can reach the publish workflow.
+# Runs the shared shell lint plus this repository's build-script tests on every
+# pull request and push to main, so a regression in the fail-closed signature
+# gate (scripts/verify-debs.sh) is caught before it can reach the publish
+# workflow. The logic lives in the org's reusable shell-ci workflow.
 
 on:
   pull_request:
@@ -13,19 +14,10 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-cryptography shellcheck
-
-      - name: Lint shell scripts
-        run: shellcheck -S error build/*.sh tests/*.sh
-
-      - name: Run verify-debs tests
-        run: ./tests/verify-debs.test.sh
+  shell:
+    # The test-command/apt-packages inputs ship in .github v1.8.0; bump this
+    # pin to that release's SHA before merging (v1.7.0 rejects the inputs).
+    uses: Glyndor-net/.github/.github/workflows/shell-ci.yml@367c6651f8a8055085e7cb1e3c289e68f105e1c4 # v1.7.0
+    with:
+      test-command: ./tests/verify-debs.test.sh
+      apt-packages: python3-cryptography
