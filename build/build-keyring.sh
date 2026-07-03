@@ -77,7 +77,7 @@ Architecture: all
 Maintainer: Glyndor <packages@glyndor.net>
 Section: utils
 Priority: optional
-Homepage: https://github.com/Glyndor/apt
+Homepage: https://github.com/Glyndor-net/apt
 Description: GPG key and apt source for the Glyndor repository
  Installs the signing key and source list for the Glyndor apt repository at
  https://apt.glyndor.net so Glyndor packages can be installed and kept up to

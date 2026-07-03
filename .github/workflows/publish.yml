@@ -69,21 +69,21 @@ jobs:
               before=$(find debs -maxdepth 1 -name "*_${arch}.deb" | wc -l)
               # Pull the package and its detached release signature together; the
               # signature is verified before the package enters the archive.
-              if gh release download --repo "Glyndor/$p" \
+              if gh release download --repo "Glyndor-net/$p" \
                    --pattern "*_${arch}.deb" --pattern "*_${arch}.deb.sig" \
                    --dir debs --clobber 2>/dev/null; then
                 after=$(find debs -maxdepth 1 -name "*_${arch}.deb" | wc -l)
                 if [ "$((after - before))" -gt 1 ]; then
-                  echo "::error::Glyndor/$p attached more than one ${arch} .deb to its latest release; expected exactly one"
+                  echo "::error::Glyndor-net/$p attached more than one ${arch} .deb to its latest release; expected exactly one"
                   exit 1
                 fi
                 echo "downloaded $arch .deb for $p"
                 got=1
               else
-                echo "::warning::no $arch .deb release asset for Glyndor/$p"
+                echo "::warning::no $arch .deb release asset for Glyndor-net/$p"
               fi
             done
-            [ "$got" -eq 1 ] || echo "::warning::no .deb release asset found for Glyndor/$p — skipping"
+            [ "$got" -eq 1 ] || echo "::warning::no .deb release asset found for Glyndor-net/$p — skipping"
             echo "::endgroup::"
           done
           # A product must never ship a keyring-named asset — the real keyring is

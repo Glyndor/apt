@@ -96,7 +96,7 @@ cat > "$OUT_DIR/index.html" <<EOF
 sudo dpkg -i glyndor-archive-keyring.deb
 sudo apt update</pre>
 <p>Then install any package, e.g. <code>sudo apt install podup</code>.</p>
-<p>Source: <a href="https://github.com/Glyndor/apt">github.com/Glyndor/apt</a></p>
+<p>Source: <a href="https://github.com/Glyndor-net/apt">github.com/Glyndor-net/apt</a></p>
 EOF
 
 echo "apt repository built at $OUT_DIR (signed by $FPR)"
