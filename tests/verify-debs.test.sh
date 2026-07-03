@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for build/verify-debs.sh — the fail-closed gate that admits a product
+# Tests for scripts/verify-debs.sh — the fail-closed gate that admits a product
 # .deb only when its detached Ed25519 signature verifies against a trusted
 # release key. Each case asserts the script's exit status (0 = admitted,
 # non-zero = rejected) so a regression that lets an unverified or reserved-name
@@ -11,7 +11,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERIFY="$HERE/build/verify-debs.sh"
+VERIFY="$HERE/scripts/verify-debs.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -112,8 +112,7 @@ PYEOF
 
 # --- Case 1: a valid, signed product .deb is admitted. ---
 d="$WORK/case1"; mkdir -p "$d"
-deb="$(make_deb good podup)"; cp "$deb" "$deb.sig" "$d/" 2>/dev/null || true
-cp "$deb" "$d/"; sign "$d/good.deb"
+deb="$(make_deb good podup)"; cp "$deb" "$d/"; sign "$d/good.deb"
 assert 0 "valid signature is admitted" -- "$VERIFY" "$d" "$WORK/key.b64"
 
 # --- Case 2: a missing .sig is rejected. ---
@@ -138,6 +137,13 @@ assert 1 "non-matching key rejects a valid signature" -- "$VERIFY" "$d" "$WORK/k
 d="$WORK/case6"; mkdir -p "$d"
 deb="$(make_deb evil glyndor-archive-keyring)"; cp "$deb" "$d/"; sign "$d/evil.deb"
 assert 1 "reserved keyring package name is rejected" -- "$VERIFY" "$d" "$WORK/key.b64"
+
+# --- Case 7: a .deb whose control data dpkg-deb cannot read is rejected even
+#            with a valid signature (the reserved-name gate must never be
+#            skipped for an unclassifiable package). ---
+d="$WORK/case7"; mkdir -p "$d"
+printf 'not a real debian package' > "$d/garbage.deb"; sign "$d/garbage.deb"
+assert 1 "unreadable package control is rejected" -- "$VERIFY" "$d" "$WORK/key.b64"
 
 echo
 echo "passed $pass, failed $fail"
