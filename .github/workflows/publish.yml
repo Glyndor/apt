@@ -71,15 +71,15 @@ jobs:
               # A missing or failed download is a hard error: with `aws s3 sync
               # --delete` below, silently skipping a product would evict it from
               # the served archive on the next publish.
-              if ! gh release download --repo "Glyndor-net/$p" \
+              if ! gh release download --repo "Glyndor/$p" \
                    --pattern "*_${arch}.deb" --pattern "*_${arch}.deb.sig" \
                    --dir debs --clobber; then
-                echo "::error::could not download the ${arch} .deb (+.sig) of Glyndor-net/$p's latest release; refusing to publish an archive that would drop it"
+                echo "::error::could not download the ${arch} .deb (+.sig) of Glyndor/$p's latest release; refusing to publish an archive that would drop it"
                 exit 1
               fi
               after=$(find debs -maxdepth 1 -name "*_${arch}.deb" | wc -l)
               if [ "$((after - before))" -ne 1 ]; then
-                echo "::error::Glyndor-net/$p's latest release must attach exactly one ${arch} .deb (got $((after - before)))"
+                echo "::error::Glyndor/$p's latest release must attach exactly one ${arch} .deb (got $((after - before)))"
                 exit 1
               fi
               echo "downloaded $arch .deb for $p"
