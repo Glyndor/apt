@@ -10,7 +10,7 @@
 #   build-keyring.sh <output-dir>
 #
 # Produces: <output-dir>/glyndor-archive-keyring.deb (version comes from
-# keyring/VERSION plus the signing-key change date, not the filename, so the
+# keyring/version plus the signing-key change date, not the filename, so the
 # published asset URL is stable).
 #
 # Key rotation (two-phase, automatic to clients): put both the old and the new
@@ -29,9 +29,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PUBKEY_ASC="$HERE/keyring/glyndor-apt-key.asc"
 SOURCES="$HERE/keyring/glyndor.sources"
 
-# Base version from keyring/VERSION, suffixed with the commit date of the key so
+# Base version from keyring/version, suffixed with the commit date of the key so
 # a renewal/rotation always bumps the version that reaches clients.
-BASE_VERSION="$(cat "$HERE/keyring/VERSION")"
+BASE_VERSION="$(cat "$HERE/keyring/version")"
 KEY_DATE="$(git -C "$HERE" log -1 --format=%cd --date=format:%Y%m%d%H%M%S \
 	-- keyring/glyndor-apt-key.asc 2>/dev/null || true)"
 # Fail closed if the key's change date can't be derived. A bare version would

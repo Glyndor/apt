@@ -7,9 +7,9 @@ name: Health check
 # last good state) is good, but it must never be silent.
 #
 # Runs every six hours (offset from the publish cron) and on demand. The archive
-# is treated as stale if the signed Release is older than 24h — four times the
-# six-hourly publish cadence, loud well before the 14-day Valid-Until would lock
-# clients out.
+# is treated as stale if the signed Release is older than 48h — twice the daily
+# publish cadence, so one delayed or skipped cron never false-alarms, yet loud
+# well before the 14-day Valid-Until would lock clients out.
 
 on:
   schedule:
@@ -21,7 +21,7 @@ permissions:
 
 env:
   BASE_URL: "https://apt.glyndor.net"
-  MAX_AGE_HOURS: "24"
+  MAX_AGE_HOURS: "48"
 
 jobs:
   check:

@@ -46,7 +46,10 @@ printf '%s' "$GLYNDOR_APT_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
 # Require exactly one secret key. If the secret ever carried more than one (e.g.
 # old + new pasted in during a rotation), the first-fingerprint pick below would
 # sign with whichever imported first, not necessarily the intended active key.
-SEC_COUNT="$(gpg --batch --with-colons --list-secret-keys | grep -c '^sec:')"
+# `grep -c` exits 1 on zero matches, which pipefail would turn into a silent
+# death inside the substitution — guard it so the count (0) reaches the
+# diagnostic below instead.
+SEC_COUNT="$(gpg --batch --with-colons --list-secret-keys | { grep -c '^sec:' || true; })"
 [ "$SEC_COUNT" -eq 1 ] || { echo "::error::expected exactly one secret key in GLYNDOR_APT_GPG_PRIVATE_KEY, found $SEC_COUNT" >&2; exit 1; }
 
 FPR="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/{print $10; exit}')"
@@ -96,6 +99,9 @@ cat > "$OUT_DIR/index.html" <<EOF
 sudo dpkg -i glyndor-archive-keyring.deb
 sudo apt update</pre>
 <p>Then install any package, e.g. <code>sudo apt install podup</code>.</p>
+<p>Verify the installed signing key against the fingerprint published in the
+<a href="https://github.com/Glyndor/apt#verify-the-signing-key">repository README</a>
+(an independent channel): <code>gpg --show-keys /usr/share/keyrings/glyndor.gpg</code></p>
 <p>Source: <a href="https://github.com/Glyndor/apt">github.com/Glyndor/apt</a></p>
 EOF
 

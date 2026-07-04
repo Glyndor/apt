@@ -55,7 +55,12 @@ for deb in "${debs[@]}"; do
 	# the filename: a product could ship a normally-named, validly-signed .deb
 	# whose internal Package is glyndor-archive-keyring and so shadow the real
 	# keyring in the archive. The keyring is built locally, never downloaded.
-	pkg="$(dpkg-deb -f "$deb" Package 2>/dev/null || true)"
+	# A control field dpkg-deb cannot read is a hard error — an unreadable
+	# package must not slip past the reserved-name gate unclassified.
+	if ! pkg="$(dpkg-deb -f "$deb" Package)"; then
+		echo "::error::cannot read the Package control field of $(basename "$deb") — refusing an unreadable package" >&2
+		exit 1
+	fi
 	if [ "$pkg" = "glyndor-archive-keyring" ]; then
 		echo "::error::$(basename "$deb") declares the reserved package name glyndor-archive-keyring — a product must not ship the keyring package" >&2
 		exit 1
