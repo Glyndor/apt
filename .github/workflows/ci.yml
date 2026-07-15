@@ -15,9 +15,7 @@ permissions:
 
 jobs:
   shell:
-    # The test-command/apt-packages inputs ship in .github v1.8.0; bump this
-    # pin to that release's SHA before merging (v1.7.0 rejects the inputs).
-    uses: Glyndor/.github/.github/workflows/shell-ci.yml@367c6651f8a8055085e7cb1e3c289e68f105e1c4 # v1.7.0
+    uses: Glyndor/.github/.github/workflows/shell-ci.yml@505d78df893bfc2f73261ff285529e6afd46f5ac # v1.9.1
     with:
       test-command: ./tests/verify-debs.test.sh
       apt-packages: python3-cryptography
