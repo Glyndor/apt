@@ -19,13 +19,21 @@
 # Requires: python3 with the `cryptography` module, and dpkg-deb.
 #
 # Usage:
-#   verify-debs.sh <debs-dir> [<pubkey-b64-file>]
+#   verify-debs.sh <debs-dir> [<pubkey-b64-file>] [<expected_package>]
+#
+# When expected_package is given, every .deb in debs-dir must also declare it
+# as the control Package field AND carry it as the filename prefix
+# ("<expected_package>_..."). The release key is shared by every Glyndor
+# product, so a valid signature alone does not prove a .deb is the product it
+# was downloaded from — a compromised release could otherwise ship an asset
+# whose control Package (and/or filename) claims to be a different product.
 
 set -euo pipefail
 
-DEBS_DIR="${1:?usage: verify-debs.sh <debs-dir> [<pubkey-b64-file>]}"
+DEBS_DIR="${1:?usage: verify-debs.sh <debs-dir> [<pubkey-b64-file>] [<expected_package>]}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KEY_FILE="${2:-$HERE/keyring/glyndor-release-ed25519.b64}"
+EXPECTED_PACKAGE="${3:-}"
 
 [ -f "$KEY_FILE" ] || { echo "::error::release public key $KEY_FILE not found" >&2; exit 1; }
 
@@ -64,6 +72,21 @@ for deb in "${debs[@]}"; do
 	if [ "$pkg" = "glyndor-archive-keyring" ]; then
 		echo "::error::$(basename "$deb") declares the reserved package name glyndor-archive-keyring — a product must not ship the keyring package" >&2
 		exit 1
+	fi
+
+	# Bind the verified package to the product it was downloaded from. Without
+	# this, any product's compromised release could sign a .deb whose control
+	# Package (and filename) claims to be a different, unrelated product — the
+	# signature alone would still verify, since the release key is shared.
+	if [ -n "$EXPECTED_PACKAGE" ]; then
+		if [ "$pkg" != "$EXPECTED_PACKAGE" ]; then
+			echo "::error::package name mismatch: $(basename "$deb") declares '$pkg', expected '$EXPECTED_PACKAGE'" >&2
+			exit 1
+		fi
+		if [[ "$(basename "$deb")" != "${EXPECTED_PACKAGE}_"* ]]; then
+			echo "::error::package name mismatch: $(basename "$deb") filename does not start with '${EXPECTED_PACKAGE}_'" >&2
+			exit 1
+		fi
 	fi
 
 	sig="$deb.sig"
