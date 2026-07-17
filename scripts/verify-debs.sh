@@ -147,6 +147,10 @@ if len(sig) > MAX_SIG_BYTES:
 if len(sig) != 64:
 	sys.stderr.write(f"signature is {len(sig)} bytes, expected exactly 64 (Ed25519 detached signature)\n")
 	sys.exit(2)
+# Unbounded read: this loads the whole .deb into memory, so callers must bound
+# the input file's size before invoking this script. publish.yml enforces
+# MAX_DEB_BYTES both pre-download (against the advertised release asset size)
+# and post-download (against the bytes actually written to disk).
 with open(data_path, "rb") as f:
 	data = f.read()
 
