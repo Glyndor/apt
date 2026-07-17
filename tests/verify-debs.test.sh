@@ -33,6 +33,23 @@ assert() {
 	fi
 }
 
+# assert_error <expected-exit> <needle> <description> -- <command...>
+# Same as assert, but also requires the combined stdout+stderr to contain
+# needle, so a rejection is checked for the right reason, not just any exit.
+assert_error() {
+	local want="$1" needle="$2" desc="$3"
+	shift 4 # drop want, needle, desc, and the literal "--"
+	local got=0 out
+	out="$("$@" 2>&1)" || got=$?
+	if [ "$got" -eq "$want" ] && printf '%s' "$out" | grep -qF "$needle"; then
+		echo "ok   - $desc (exit $got)"
+		pass=$((pass + 1))
+	else
+		echo "FAIL - $desc (want exit $want containing '$needle', got exit $got: $out)"
+		fail=$((fail + 1))
+	fi
+}
+
 # Build a .deb with a given control Package name into $WORK, echo its path.
 make_deb() {
 	local name="$1" pkg="$2" root
@@ -144,6 +161,50 @@ assert 1 "reserved keyring package name is rejected" -- "$VERIFY" "$d" "$WORK/ke
 d="$WORK/case7"; mkdir -p "$d"
 printf 'not a real debian package' > "$d/garbage.deb"; sign "$d/garbage.deb"
 assert 1 "unreadable package control is rejected" -- "$VERIFY" "$d" "$WORK/key.b64"
+
+# --- Case 8: a validly-signed .deb whose control Package does not match the
+#            expected_package argument is rejected — the shared release key
+#            lets any product sign a .deb, so a product's identity must also
+#            be bound to the product it claims to be, not just checked for a
+#            valid signature. ---
+d="$WORK/case8"; mkdir -p "$d"
+deb="$(make_deb mismatch podup)"; cp "$deb" "$d/"; sign "$d/mismatch.deb"
+assert_error 1 "package name mismatch" "control Package mismatching expected_package is rejected" \
+	-- "$VERIFY" "$d" "$WORK/key.b64" otherproduct
+
+# --- Case 9: a .deb whose control Package matches expected_package but whose
+#            filename does not carry the "<expected_package>_" prefix is
+#            rejected — matching the control field alone would still admit a
+#            relabeled asset. ---
+d="$WORK/case9"; mkdir -p "$d"
+deb="$(make_deb wrongname podup)"; cp "$deb" "$d/"; sign "$d/wrongname.deb"
+assert_error 1 "package name mismatch" "filename not prefixed with expected_package is rejected" \
+	-- "$VERIFY" "$d" "$WORK/key.b64" podup
+
+# --- Case 10: the three-argument form admits a .deb whose control Package
+#             and filename both match the expected product. ---
+d="$WORK/case10"; mkdir -p "$d"
+deb="$(make_deb podup_1.0_amd64 podup)"; cp "$deb" "$d/"; sign "$d/podup_1.0_amd64.deb"
+assert 0 "three-arg form admits a correctly-named package" -- "$VERIFY" "$d" "$WORK/key.b64" podup
+
+# --- Case 11: the reserved keyring filename is rejected even when the
+#             control Package field is an ordinary product name — the
+#             filename itself must never be able to shadow the locally-built
+#             keyring package. ---
+d="$WORK/case11"; mkdir -p "$d"
+deb="$(make_deb glyndor-archive-keyring_1.0_amd64 podup)"; cp "$deb" "$d/"
+sign "$d/glyndor-archive-keyring_1.0_amd64.deb"
+assert_error 1 "reserved keyring name" "reserved keyring filename is rejected" \
+	-- "$VERIFY" "$d" "$WORK/key.b64"
+
+# --- Case 12: an oversized signature file is rejected by a bounded read
+#             instead of being read into memory wholesale before the length is
+#             known. ---
+d="$WORK/case12"; mkdir -p "$d"
+deb="$(make_deb oversized podup)"; cp "$deb" "$d/"; sign "$d/oversized.deb"
+head -c 5000 /dev/zero > "$d/oversized.deb.sig"
+assert_error 1 "over 4096 bytes" "oversized signature file is rejected" \
+	-- "$VERIFY" "$d" "$WORK/key.b64"
 
 echo
 echo "passed $pass, failed $fail"

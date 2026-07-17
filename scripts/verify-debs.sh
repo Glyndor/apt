@@ -19,13 +19,21 @@
 # Requires: python3 with the `cryptography` module, and dpkg-deb.
 #
 # Usage:
-#   verify-debs.sh <debs-dir> [<pubkey-b64-file>]
+#   verify-debs.sh <debs-dir> [<pubkey-b64-file>] [<expected_package>]
+#
+# When expected_package is given, every .deb in debs-dir must also declare it
+# as the control Package field AND carry it as the filename prefix
+# ("<expected_package>_..."). The release key is shared by every Glyndor
+# product, so a valid signature alone does not prove a .deb is the product it
+# was downloaded from — a compromised release could otherwise ship an asset
+# whose control Package (and/or filename) claims to be a different product.
 
 set -euo pipefail
 
-DEBS_DIR="${1:?usage: verify-debs.sh <debs-dir> [<pubkey-b64-file>]}"
+DEBS_DIR="${1:?usage: verify-debs.sh <debs-dir> [<pubkey-b64-file>] [<expected_package>]}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KEY_FILE="${2:-$HERE/keyring/glyndor-release-ed25519.b64}"
+EXPECTED_PACKAGE="${3:-}"
 
 [ -f "$KEY_FILE" ] || { echo "::error::release public key $KEY_FILE not found" >&2; exit 1; }
 
@@ -51,6 +59,16 @@ for deb in "${debs[@]}"; do
 	# locally-built keyring package is produced in a later step (build-keyring),
 	# after this runs, and is signed by the archive key, not the release key.
 
+	# Reject the reserved keyring name on the *filename* as well as the control
+	# field below: a product could ship an asset literally named
+	# glyndor-archive-keyring_*.deb and, if this were only silently dropped
+	# rather than rejected, evict the real keyring package from the archive
+	# with no signal that anything was wrong.
+	if [[ "$(basename "$deb")" == glyndor-archive-keyring* ]]; then
+		echo "::error::$(basename "$deb") has the reserved keyring name glyndor-archive-keyring — a product must not ship an asset under this filename" >&2
+		exit 1
+	fi
+
 	# Reject the reserved keyring package name on the *control* field, not just
 	# the filename: a product could ship a normally-named, validly-signed .deb
 	# whose internal Package is glyndor-archive-keyring and so shadow the real
@@ -64,6 +82,21 @@ for deb in "${debs[@]}"; do
 	if [ "$pkg" = "glyndor-archive-keyring" ]; then
 		echo "::error::$(basename "$deb") declares the reserved package name glyndor-archive-keyring — a product must not ship the keyring package" >&2
 		exit 1
+	fi
+
+	# Bind the verified package to the product it was downloaded from. Without
+	# this, any product's compromised release could sign a .deb whose control
+	# Package (and filename) claims to be a different, unrelated product — the
+	# signature alone would still verify, since the release key is shared.
+	if [ -n "$EXPECTED_PACKAGE" ]; then
+		if [ "$pkg" != "$EXPECTED_PACKAGE" ]; then
+			echo "::error::package name mismatch: $(basename "$deb") declares '$pkg', expected '$EXPECTED_PACKAGE'" >&2
+			exit 1
+		fi
+		if [[ "$(basename "$deb")" != "${EXPECTED_PACKAGE}_"* ]]; then
+			echo "::error::package name mismatch: $(basename "$deb") filename does not start with '${EXPECTED_PACKAGE}_'" >&2
+			exit 1
+		fi
 	fi
 
 	sig="$deb.sig"
@@ -101,8 +134,23 @@ if not keys:
 	sys.stderr.write("no release public keys provided\n")
 	sys.exit(2)
 
+# An Ed25519 detached signature is exactly 64 bytes. Read at most one byte
+# past a generous 4096-byte cap rather than the whole file — a hostile or
+# corrupt .sig asset must not be read into memory wholesale before its length
+# is even checked.
+MAX_SIG_BYTES = 4096
 with open(sig_path, "rb") as f:
-	sig = f.read()
+	sig = f.read(MAX_SIG_BYTES + 1)
+if len(sig) > MAX_SIG_BYTES:
+	sys.stderr.write(f"signature file is over {MAX_SIG_BYTES} bytes\n")
+	sys.exit(2)
+if len(sig) != 64:
+	sys.stderr.write(f"signature is {len(sig)} bytes, expected exactly 64 (Ed25519 detached signature)\n")
+	sys.exit(2)
+# Unbounded read: this loads the whole .deb into memory, so callers must bound
+# the input file's size before invoking this script. publish.yml enforces
+# MAX_DEB_BYTES both pre-download (against the advertised release asset size)
+# and post-download (against the bytes actually written to disk).
 with open(data_path, "rb") as f:
 	data = f.read()
 
