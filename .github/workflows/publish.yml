@@ -72,10 +72,22 @@ jobs:
             # download — the post-download check below is belt-and-braces in
             # case the advertised size ever disagrees with the delivered one.
             assets="$(gh release view --repo "Glyndor/$p" --json assets \
-                        --jq '.assets[] | "\(.name) \(.size)"')" \
+                        --jq '.assets[] | "\(.size) \(.name)"')" \
               || { echo "::error::could not list Glyndor/$p's release assets to check sizes before download"; exit 1; }
-            while IFS=' ' read -r name size; do
-              [ -n "$name" ] || continue
+            # Emit size before name and read name last: an attacker picks the
+            # asset name, and `read` splits on the first space(s) into all but
+            # the last variable, so a name containing a space would otherwise
+            # shift the case-pattern match off the real filename and skip the
+            # cap silently. Putting the free-form name last means it absorbs
+            # any spaces instead of corrupting the split.
+            while IFS=' ' read -r size name; do
+              [ -n "$size" ] || continue
+              case "$size" in
+                ''|*[!0-9]*)
+                  echo "::error::Glyndor/$p's release asset $name has a non-numeric size ($size) — refusing to compare it against the byte caps"
+                  exit 1
+                  ;;
+              esac
               case "$name" in
                 *.deb)
                   if [ "$size" -gt "$MAX_DEB_BYTES" ]; then
