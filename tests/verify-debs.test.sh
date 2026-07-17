@@ -197,6 +197,15 @@ sign "$d/glyndor-archive-keyring_1.0_amd64.deb"
 assert_error 1 "reserved keyring name" "reserved keyring filename is rejected" \
 	-- "$VERIFY" "$d" "$WORK/key.b64"
 
+# --- Case 12: an oversized signature file is rejected by a bounded read
+#             instead of being read into memory wholesale before the length is
+#             known. ---
+d="$WORK/case12"; mkdir -p "$d"
+deb="$(make_deb oversized podup)"; cp "$deb" "$d/"; sign "$d/oversized.deb"
+head -c 5000 /dev/zero > "$d/oversized.deb.sig"
+assert_error 1 "over 4096 bytes" "oversized signature file is rejected" \
+	-- "$VERIFY" "$d" "$WORK/key.b64"
+
 echo
 echo "passed $pass, failed $fail"
 [ "$fail" -eq 0 ]

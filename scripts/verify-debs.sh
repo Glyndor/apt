@@ -134,8 +134,19 @@ if not keys:
 	sys.stderr.write("no release public keys provided\n")
 	sys.exit(2)
 
+# An Ed25519 detached signature is exactly 64 bytes. Read at most one byte
+# past a generous 4096-byte cap rather than the whole file — a hostile or
+# corrupt .sig asset must not be read into memory wholesale before its length
+# is even checked.
+MAX_SIG_BYTES = 4096
 with open(sig_path, "rb") as f:
-	sig = f.read()
+	sig = f.read(MAX_SIG_BYTES + 1)
+if len(sig) > MAX_SIG_BYTES:
+	sys.stderr.write(f"signature file is over {MAX_SIG_BYTES} bytes\n")
+	sys.exit(2)
+if len(sig) != 64:
+	sys.stderr.write(f"signature is {len(sig)} bytes, expected exactly 64 (Ed25519 detached signature)\n")
+	sys.exit(2)
 with open(data_path, "rb") as f:
 	data = f.read()
 
