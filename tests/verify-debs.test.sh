@@ -187,6 +187,16 @@ d="$WORK/case10"; mkdir -p "$d"
 deb="$(make_deb podup_1.0_amd64 podup)"; cp "$deb" "$d/"; sign "$d/podup_1.0_amd64.deb"
 assert 0 "three-arg form admits a correctly-named package" -- "$VERIFY" "$d" "$WORK/key.b64" podup
 
+# --- Case 11: the reserved keyring filename is rejected even when the
+#             control Package field is an ordinary product name — the
+#             filename itself must never be able to shadow the locally-built
+#             keyring package. ---
+d="$WORK/case11"; mkdir -p "$d"
+deb="$(make_deb glyndor-archive-keyring_1.0_amd64 podup)"; cp "$deb" "$d/"
+sign "$d/glyndor-archive-keyring_1.0_amd64.deb"
+assert_error 1 "reserved keyring name" "reserved keyring filename is rejected" \
+	-- "$VERIFY" "$d" "$WORK/key.b64"
+
 echo
 echo "passed $pass, failed $fail"
 [ "$fail" -eq 0 ]

@@ -59,6 +59,16 @@ for deb in "${debs[@]}"; do
 	# locally-built keyring package is produced in a later step (build-keyring),
 	# after this runs, and is signed by the archive key, not the release key.
 
+	# Reject the reserved keyring name on the *filename* as well as the control
+	# field below: a product could ship an asset literally named
+	# glyndor-archive-keyring_*.deb and, if this were only silently dropped
+	# rather than rejected, evict the real keyring package from the archive
+	# with no signal that anything was wrong.
+	if [[ "$(basename "$deb")" == glyndor-archive-keyring* ]]; then
+		echo "::error::$(basename "$deb") has the reserved keyring name glyndor-archive-keyring — a product must not ship an asset under this filename" >&2
+		exit 1
+	fi
+
 	# Reject the reserved keyring package name on the *control* field, not just
 	# the filename: a product could ship a normally-named, validly-signed .deb
 	# whose internal Package is glyndor-archive-keyring and so shadow the real
