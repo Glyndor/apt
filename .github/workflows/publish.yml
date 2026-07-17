@@ -64,8 +64,33 @@ jobs:
           # assets can be verified against its own name below rather than
           # trusted on signature alone.
           MAX_DEB_BYTES=$((300 * 1024 * 1024))
+          MAX_SIG_BYTES=4096
           for p in $PRODUCTS; do
             echo "::group::$p"
+            # Check the sizes the release actually advertises before pulling
+            # any bytes, so an oversized asset can't exhaust runner disk mid-
+            # download — the post-download check below is belt-and-braces in
+            # case the advertised size ever disagrees with the delivered one.
+            assets="$(gh release view --repo "Glyndor/$p" --json assets \
+                        --jq '.assets[] | "\(.name) \(.size)"')" \
+              || { echo "::error::could not list Glyndor/$p's release assets to check sizes before download"; exit 1; }
+            while IFS=' ' read -r name size; do
+              [ -n "$name" ] || continue
+              case "$name" in
+                *.deb)
+                  if [ "$size" -gt "$MAX_DEB_BYTES" ]; then
+                    echo "::error::Glyndor/$p's release asset $name is $size bytes, over the ${MAX_DEB_BYTES}-byte .deb cap"
+                    exit 1
+                  fi
+                  ;;
+                *.sig)
+                  if [ "$size" -gt "$MAX_SIG_BYTES" ]; then
+                    echo "::error::Glyndor/$p's release asset $name is $size bytes, over the ${MAX_SIG_BYTES}-byte .sig cap"
+                    exit 1
+                  fi
+                  ;;
+              esac
+            done <<< "$assets"
             mkdir -p "debs/$p"
             for arch in $ARCHITECTURES; do
               before=$(find "debs/$p" -maxdepth 1 -name "*_${arch}.deb" | wc -l)
@@ -92,14 +117,27 @@ jobs:
             # is built locally below. verify-debs.sh hard-fails the publish on
             # this filename rather than the asset being silently dropped here,
             # which would evict that product from the archive with no signal.
-            # Reject any oversized package before it is verified or served.
+            # Reject any oversized package or signature before it is verified
+            # or served — belt-and-braces alongside the pre-download check
+            # above, in case the advertised size ever disagrees with the
+            # delivered bytes.
             while IFS= read -r f; do
               sz=$(stat -c%s "$f")
-              if [ "$sz" -gt "$MAX_DEB_BYTES" ]; then
-                echo "::error::$f is $sz bytes, over the ${MAX_DEB_BYTES}-byte per-package cap"
-                exit 1
-              fi
-            done < <(find "debs/$p" -maxdepth 1 -name '*.deb')
+              case "$f" in
+                *.sig)
+                  if [ "$sz" -gt "$MAX_SIG_BYTES" ]; then
+                    echo "::error::$f is $sz bytes, over the ${MAX_SIG_BYTES}-byte signature cap"
+                    exit 1
+                  fi
+                  ;;
+                *)
+                  if [ "$sz" -gt "$MAX_DEB_BYTES" ]; then
+                    echo "::error::$f is $sz bytes, over the ${MAX_DEB_BYTES}-byte per-package cap"
+                    exit 1
+                  fi
+                  ;;
+              esac
+            done < <(find "debs/$p" -maxdepth 1 -type f \( -name '*.deb' -o -name '*.deb.sig' \))
           done
           count=$(find debs -mindepth 2 -maxdepth 2 -name '*.deb' | wc -l)
           if [ "$count" -eq 0 ]; then
