@@ -1,0 +1,14 @@
+name: DCO
+
+# Requires a Signed-off-by trailer on every commit in the pull request, via the
+# shared reusable — the same gate every product repo runs.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    uses: Glyndor/.github/.github/workflows/dco.yml@b12b4c0bb5c2caec50ea8e46a21a5c0519b73ad9 # v1.10.0-pre
