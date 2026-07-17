@@ -60,12 +60,52 @@ jobs:
           # authenticity but not their volume, so bound count and size here:
           # exactly one .deb per product per arch, and a hard per-file size cap,
           # so a compromised or buggy release can't exhaust runner disk or bloat
-          # the served archive.
+          # the served archive. Each product also gets its own directory, so its
+          # assets can be verified against its own name below rather than
+          # trusted on signature alone.
           MAX_DEB_BYTES=$((300 * 1024 * 1024))
+          MAX_SIG_BYTES=4096
           for p in $PRODUCTS; do
             echo "::group::$p"
+            # Check the sizes the release actually advertises before pulling
+            # any bytes, so an oversized asset can't exhaust runner disk mid-
+            # download — the post-download check below is belt-and-braces in
+            # case the advertised size ever disagrees with the delivered one.
+            assets="$(gh release view --repo "Glyndor/$p" --json assets \
+                        --jq '.assets[] | "\(.size) \(.name)"')" \
+              || { echo "::error::could not list Glyndor/$p's release assets to check sizes before download"; exit 1; }
+            # Emit size before name and read name last: an attacker picks the
+            # asset name, and `read` splits on the first space(s) into all but
+            # the last variable, so a name containing a space would otherwise
+            # shift the case-pattern match off the real filename and skip the
+            # cap silently. Putting the free-form name last means it absorbs
+            # any spaces instead of corrupting the split.
+            while IFS=' ' read -r size name; do
+              [ -n "$size" ] || continue
+              case "$size" in
+                ''|*[!0-9]*)
+                  echo "::error::Glyndor/$p's release asset $name has a non-numeric size ($size) — refusing to compare it against the byte caps"
+                  exit 1
+                  ;;
+              esac
+              case "$name" in
+                *.deb)
+                  if [ "$size" -gt "$MAX_DEB_BYTES" ]; then
+                    echo "::error::Glyndor/$p's release asset $name is $size bytes, over the ${MAX_DEB_BYTES}-byte .deb cap"
+                    exit 1
+                  fi
+                  ;;
+                *.sig)
+                  if [ "$size" -gt "$MAX_SIG_BYTES" ]; then
+                    echo "::error::Glyndor/$p's release asset $name is $size bytes, over the ${MAX_SIG_BYTES}-byte .sig cap"
+                    exit 1
+                  fi
+                  ;;
+              esac
+            done <<< "$assets"
+            mkdir -p "debs/$p"
             for arch in $ARCHITECTURES; do
-              before=$(find debs -maxdepth 1 -name "*_${arch}.deb" | wc -l)
+              before=$(find "debs/$p" -maxdepth 1 -name "*_${arch}.deb" | wc -l)
               # Pull the package and its detached release signature together; the
               # signature is verified before the package enters the archive.
               # A missing or failed download is a hard error: with `aws s3 sync
@@ -73,11 +113,11 @@ jobs:
               # the served archive on the next publish.
               if ! gh release download --repo "Glyndor/$p" \
                    --pattern "*_${arch}.deb" --pattern "*_${arch}.deb.sig" \
-                   --dir debs --clobber; then
+                   --dir "debs/$p" --clobber; then
                 echo "::error::could not download the ${arch} .deb (+.sig) of Glyndor/$p's latest release; refusing to publish an archive that would drop it"
                 exit 1
               fi
-              after=$(find debs -maxdepth 1 -name "*_${arch}.deb" | wc -l)
+              after=$(find "debs/$p" -maxdepth 1 -name "*_${arch}.deb" | wc -l)
               if [ "$((after - before))" -ne 1 ]; then
                 echo "::error::Glyndor/$p's latest release must attach exactly one ${arch} .deb (got $((after - before)))"
                 exit 1
@@ -85,20 +125,33 @@ jobs:
               echo "downloaded $arch .deb for $p"
             done
             echo "::endgroup::"
+            # A product must never ship a keyring-named asset — the real keyring
+            # is built locally below. verify-debs.sh hard-fails the publish on
+            # this filename rather than the asset being silently dropped here,
+            # which would evict that product from the archive with no signal.
+            # Reject any oversized package or signature before it is verified
+            # or served — belt-and-braces alongside the pre-download check
+            # above, in case the advertised size ever disagrees with the
+            # delivered bytes.
+            while IFS= read -r f; do
+              sz=$(stat -c%s "$f")
+              case "$f" in
+                *.sig)
+                  if [ "$sz" -gt "$MAX_SIG_BYTES" ]; then
+                    echo "::error::$f is $sz bytes, over the ${MAX_SIG_BYTES}-byte signature cap"
+                    exit 1
+                  fi
+                  ;;
+                *)
+                  if [ "$sz" -gt "$MAX_DEB_BYTES" ]; then
+                    echo "::error::$f is $sz bytes, over the ${MAX_DEB_BYTES}-byte per-package cap"
+                    exit 1
+                  fi
+                  ;;
+              esac
+            done < <(find "debs/$p" -maxdepth 1 -type f \( -name '*.deb' -o -name '*.deb.sig' \))
           done
-          # A product must never ship a keyring-named asset — the real keyring is
-          # built locally below. Drop any so it can neither bypass verification
-          # under a trusted name nor abort the whole publish by failing it.
-          rm -f debs/glyndor-archive-keyring*.deb debs/glyndor-archive-keyring*.deb.sig
-          # Reject any oversized package before it is verified or served.
-          while IFS= read -r f; do
-            sz=$(stat -c%s "$f")
-            if [ "$sz" -gt "$MAX_DEB_BYTES" ]; then
-              echo "::error::$f is $sz bytes, over the ${MAX_DEB_BYTES}-byte per-package cap"
-              exit 1
-            fi
-          done < <(find debs -maxdepth 1 -name '*.deb')
-          count=$(find debs -maxdepth 1 -name '*.deb' | wc -l)
+          count=$(find debs -mindepth 2 -maxdepth 2 -name '*.deb' | wc -l)
           if [ "$count" -eq 0 ]; then
             echo "::error::no product .deb files were downloaded; refusing to publish an empty repo"
             exit 1
@@ -106,7 +159,19 @@ jobs:
           echo "collected $count product package(s)"
 
       - name: Verify product .deb release signatures
-        run: ./scripts/verify-debs.sh debs
+        run: |
+          set -euo pipefail
+          # Bind each verified .deb to the product directory it was downloaded
+          # into. The release key is shared by every product, so a valid
+          # signature alone does not prove a .deb is the product it claims to
+          # be — a compromised release could otherwise ship an asset that
+          # impersonates another product.
+          for p in $PRODUCTS; do
+            ./scripts/verify-debs.sh "debs/$p" keyring/glyndor-release-ed25519.b64 "$p"
+          done
+          # Flatten the per-product, now-verified .deb files into a single
+          # directory for reprepro and the keyring build below.
+          find debs -mindepth 2 -maxdepth 2 -name '*.deb' -exec mv -t debs {} +
 
       - name: Build keyring package
         run: ./scripts/build-keyring.sh debs
