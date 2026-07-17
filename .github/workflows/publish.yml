@@ -231,11 +231,15 @@ jobs:
           # Passes 1 and 3 use --size-only: reprepro never writes a different
           # .deb under a name pool/ already carries (the version is baked into
           # the filename), so a size match is sufficient proof the object is
-          # unchanged and its content hash never needs comparing. Pass 2 keeps
-          # the default (hash + size) comparison — the dists/ metadata and
-          # keyring .deb reuse the same filename every rebuild, so a re-signed
-          # index that happens to land on the same byte count must still
-          # re-upload.
+          # unchanged. The one case it trades away — a same-name, same-size but
+          # different-content re-publish — can only happen if the release
+          # immutability rule is violated (a version re-run with changed bytes),
+          # and the client's signed-index hash check refuses that install
+          # anyway; forward-fix means it never reaches here. Pass 2 keeps the
+          # default comparison (size + modification time; the AWS CLI never
+          # content-hashes) — the dists/ metadata and keyring .deb reuse the
+          # same filename every rebuild, and each rebuild regenerates them with
+          # a fresh mtime, so a re-signed index always re-uploads.
           # 1. Upload new pool/ packages (no deletions yet).
           aws s3 sync public/ s3://glyndor-apt/ \
             --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
