@@ -263,16 +263,21 @@ jobs:
               || { echo "::error::$v is not configured."; exit 1; }
           done
           base="https://apt.glyndor.net"
+          # Generate the per-arch Packages URLs from $ARCHITECTURES instead of
+          # hardcoding amd64/arm64, so an architecture added to that list is
+          # purged automatically instead of silently going stale in the cache.
+          arch_urls=""
+          for arch in $ARCHITECTURES; do
+            arch_urls="$arch_urls $base/dists/stable/main/binary-${arch}/Packages"
+            arch_urls="$arch_urls $base/dists/stable/main/binary-${arch}/Packages.gz"
+            arch_urls="$arch_urls $base/dists/stable/main/binary-${arch}/Packages.xz"
+          done
+          # shellcheck disable=SC2086 # arch_urls is a deliberate word-split list of URLs, none attacker-controlled
           urls=$(printf '"%s",' \
             "$base/dists/stable/InRelease" \
             "$base/dists/stable/Release" \
             "$base/dists/stable/Release.gpg" \
-            "$base/dists/stable/main/binary-amd64/Packages" \
-            "$base/dists/stable/main/binary-amd64/Packages.gz" \
-            "$base/dists/stable/main/binary-amd64/Packages.xz" \
-            "$base/dists/stable/main/binary-arm64/Packages" \
-            "$base/dists/stable/main/binary-arm64/Packages.gz" \
-            "$base/dists/stable/main/binary-arm64/Packages.xz" \
+            $arch_urls \
             "$base/glyndor-archive-keyring.deb" \
             "$base/index.html")
           urls="${urls%,}"
@@ -281,11 +286,15 @@ jobs:
           hdr=$(mktemp)
           trap 'rm -f "$hdr"' EXIT
           printf 'Authorization: Bearer %s\n' "$CF_TOKEN" > "$hdr"
-          resp=$(curl -sS -X POST \
+          resp=$(curl -sS --retry 3 --retry-all-errors --retry-delay 5 -X POST \
             "https://api.cloudflare.com/client/v4/zones/$CF_ZONE/purge_cache" \
             -H @"$hdr" \
             -H "Content-Type: application/json" \
             --data "{\"files\":[$urls]}")
-          echo "$resp" | grep -q '"success":true' \
+          # jq -e parses the actual JSON structure instead of grep matching
+          # against the raw response text, which a `"success":true` embedded
+          # in an unrelated field (or a differently-formatted but still
+          # successful response) could fool either way.
+          echo "$resp" | jq -e '.success == true' >/dev/null \
             || { echo "::error::Cloudflare purge failed: $resp"; exit 1; }
           echo "Cloudflare cache purged for the apt metadata."
