@@ -60,12 +60,15 @@ jobs:
           # authenticity but not their volume, so bound count and size here:
           # exactly one .deb per product per arch, and a hard per-file size cap,
           # so a compromised or buggy release can't exhaust runner disk or bloat
-          # the served archive.
+          # the served archive. Each product also gets its own directory, so its
+          # assets can be verified against its own name below rather than
+          # trusted on signature alone.
           MAX_DEB_BYTES=$((300 * 1024 * 1024))
           for p in $PRODUCTS; do
             echo "::group::$p"
+            mkdir -p "debs/$p"
             for arch in $ARCHITECTURES; do
-              before=$(find debs -maxdepth 1 -name "*_${arch}.deb" | wc -l)
+              before=$(find "debs/$p" -maxdepth 1 -name "*_${arch}.deb" | wc -l)
               # Pull the package and its detached release signature together; the
               # signature is verified before the package enters the archive.
               # A missing or failed download is a hard error: with `aws s3 sync
@@ -73,11 +76,11 @@ jobs:
               # the served archive on the next publish.
               if ! gh release download --repo "Glyndor/$p" \
                    --pattern "*_${arch}.deb" --pattern "*_${arch}.deb.sig" \
-                   --dir debs --clobber; then
+                   --dir "debs/$p" --clobber; then
                 echo "::error::could not download the ${arch} .deb (+.sig) of Glyndor/$p's latest release; refusing to publish an archive that would drop it"
                 exit 1
               fi
-              after=$(find debs -maxdepth 1 -name "*_${arch}.deb" | wc -l)
+              after=$(find "debs/$p" -maxdepth 1 -name "*_${arch}.deb" | wc -l)
               if [ "$((after - before))" -ne 1 ]; then
                 echo "::error::Glyndor/$p's latest release must attach exactly one ${arch} .deb (got $((after - before)))"
                 exit 1
@@ -85,20 +88,20 @@ jobs:
               echo "downloaded $arch .deb for $p"
             done
             echo "::endgroup::"
+            # A product must never ship a keyring-named asset — the real keyring is
+            # built locally below. Drop any so it can neither bypass verification
+            # under a trusted name nor abort the whole publish by failing it.
+            rm -f "debs/$p"/glyndor-archive-keyring*.deb "debs/$p"/glyndor-archive-keyring*.deb.sig
+            # Reject any oversized package before it is verified or served.
+            while IFS= read -r f; do
+              sz=$(stat -c%s "$f")
+              if [ "$sz" -gt "$MAX_DEB_BYTES" ]; then
+                echo "::error::$f is $sz bytes, over the ${MAX_DEB_BYTES}-byte per-package cap"
+                exit 1
+              fi
+            done < <(find "debs/$p" -maxdepth 1 -name '*.deb')
           done
-          # A product must never ship a keyring-named asset — the real keyring is
-          # built locally below. Drop any so it can neither bypass verification
-          # under a trusted name nor abort the whole publish by failing it.
-          rm -f debs/glyndor-archive-keyring*.deb debs/glyndor-archive-keyring*.deb.sig
-          # Reject any oversized package before it is verified or served.
-          while IFS= read -r f; do
-            sz=$(stat -c%s "$f")
-            if [ "$sz" -gt "$MAX_DEB_BYTES" ]; then
-              echo "::error::$f is $sz bytes, over the ${MAX_DEB_BYTES}-byte per-package cap"
-              exit 1
-            fi
-          done < <(find debs -maxdepth 1 -name '*.deb')
-          count=$(find debs -maxdepth 1 -name '*.deb' | wc -l)
+          count=$(find debs -mindepth 2 -maxdepth 2 -name '*.deb' | wc -l)
           if [ "$count" -eq 0 ]; then
             echo "::error::no product .deb files were downloaded; refusing to publish an empty repo"
             exit 1
@@ -106,7 +109,19 @@ jobs:
           echo "collected $count product package(s)"
 
       - name: Verify product .deb release signatures
-        run: ./scripts/verify-debs.sh debs
+        run: |
+          set -euo pipefail
+          # Bind each verified .deb to the product directory it was downloaded
+          # into. The release key is shared by every product, so a valid
+          # signature alone does not prove a .deb is the product it claims to
+          # be — a compromised release could otherwise ship an asset that
+          # impersonates another product.
+          for p in $PRODUCTS; do
+            ./scripts/verify-debs.sh "debs/$p" keyring/glyndor-release-ed25519.b64 "$p"
+          done
+          # Flatten the per-product, now-verified .deb files into a single
+          # directory for reprepro and the keyring build below.
+          find debs -mindepth 2 -maxdepth 2 -name '*.deb' -exec mv -t debs {} +
 
       - name: Build keyring package
         run: ./scripts/build-keyring.sh debs
