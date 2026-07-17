@@ -67,11 +67,19 @@ jobs:
           MAX_SIG_BYTES=4096
           for p in $PRODUCTS; do
             echo "::group::$p"
+            # Resolve "latest" exactly once per product and reuse that tag for
+            # every arch below. Without this, each `gh release download` call
+            # re-resolves "latest" independently, so a release landing mid-run
+            # can hand amd64 and arm64 two different tags — a mixed-version
+            # archive with no signal that anything went wrong.
+            tag="$(gh release view --repo "Glyndor/$p" --json tagName --jq .tagName)" \
+              || { echo "::error::could not resolve Glyndor/$p's latest release tag"; exit 1; }
+            echo "pinned $p to release $tag"
             # Check the sizes the release actually advertises before pulling
             # any bytes, so an oversized asset can't exhaust runner disk mid-
             # download — the post-download check below is belt-and-braces in
             # case the advertised size ever disagrees with the delivered one.
-            assets="$(gh release view --repo "Glyndor/$p" --json assets \
+            assets="$(gh release view "$tag" --repo "Glyndor/$p" --json assets \
                         --jq '.assets[] | "\(.size) \(.name)"')" \
               || { echo "::error::could not list Glyndor/$p's release assets to check sizes before download"; exit 1; }
             # Emit size before name and read name last: an attacker picks the
@@ -110,16 +118,18 @@ jobs:
               # signature is verified before the package enters the archive.
               # A missing or failed download is a hard error: with `aws s3 sync
               # --delete` below, silently skipping a product would evict it from
-              # the served archive on the next publish.
-              if ! gh release download --repo "Glyndor/$p" \
+              # the served archive on the next publish. Download the tag pinned
+              # above, not "latest" again, so every arch comes from the same
+              # release.
+              if ! gh release download "$tag" --repo "Glyndor/$p" \
                    --pattern "*_${arch}.deb" --pattern "*_${arch}.deb.sig" \
                    --dir "debs/$p" --clobber; then
-                echo "::error::could not download the ${arch} .deb (+.sig) of Glyndor/$p's latest release; refusing to publish an archive that would drop it"
+                echo "::error::could not download the ${arch} .deb (+.sig) of Glyndor/$p's $tag release; refusing to publish an archive that would drop it"
                 exit 1
               fi
               after=$(find "debs/$p" -maxdepth 1 -name "*_${arch}.deb" | wc -l)
               if [ "$((after - before))" -ne 1 ]; then
-                echo "::error::Glyndor/$p's latest release must attach exactly one ${arch} .deb (got $((after - before)))"
+                echo "::error::Glyndor/$p's $tag release must attach exactly one ${arch} .deb (got $((after - before)))"
                 exit 1
               fi
               echo "downloaded $arch .deb for $p"
@@ -217,10 +227,23 @@ jobs:
           #     fresh release is visible at once; the long TTL is safe because
           #     each rebuild (daily + manual) purges, and nothing changes between
           #     rebuilds — it just cuts needless origin revalidations.
+          #
+          # Passes 1 and 3 use --size-only: reprepro never writes a different
+          # .deb under a name pool/ already carries (the version is baked into
+          # the filename), so a size match is sufficient proof the object is
+          # unchanged. The one case it trades away — a same-name, same-size but
+          # different-content re-publish — can only happen if the release
+          # immutability rule is violated (a version re-run with changed bytes),
+          # and the client's signed-index hash check refuses that install
+          # anyway; forward-fix means it never reaches here. Pass 2 keeps the
+          # default comparison (size + modification time; the AWS CLI never
+          # content-hashes) — the dists/ metadata and keyring .deb reuse the
+          # same filename every rebuild, and each rebuild regenerates them with
+          # a fresh mtime, so a re-signed index always re-uploads.
           # 1. Upload new pool/ packages (no deletions yet).
           aws s3 sync public/ s3://glyndor-apt/ \
             --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
-            --no-progress \
+            --no-progress --size-only \
             --exclude "*" --include "pool/*" \
             --cache-control "public, max-age=31536000, immutable"
           # 2. Publish the new metadata (and clean up stale non-pool files).
@@ -232,7 +255,7 @@ jobs:
           # 3. Remove pool/ packages the new metadata no longer references.
           aws s3 sync public/ s3://glyndor-apt/ \
             --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
-            --delete --no-progress \
+            --delete --no-progress --size-only \
             --exclude "*" --include "pool/*" \
             --cache-control "public, max-age=31536000, immutable"
 
@@ -253,16 +276,21 @@ jobs:
               || { echo "::error::$v is not configured."; exit 1; }
           done
           base="https://apt.glyndor.net"
+          # Generate the per-arch Packages URLs from $ARCHITECTURES instead of
+          # hardcoding amd64/arm64, so an architecture added to that list is
+          # purged automatically instead of silently going stale in the cache.
+          arch_urls=""
+          for arch in $ARCHITECTURES; do
+            arch_urls="$arch_urls $base/dists/stable/main/binary-${arch}/Packages"
+            arch_urls="$arch_urls $base/dists/stable/main/binary-${arch}/Packages.gz"
+            arch_urls="$arch_urls $base/dists/stable/main/binary-${arch}/Packages.xz"
+          done
+          # shellcheck disable=SC2086 # arch_urls is a deliberate word-split list of URLs, none attacker-controlled
           urls=$(printf '"%s",' \
             "$base/dists/stable/InRelease" \
             "$base/dists/stable/Release" \
             "$base/dists/stable/Release.gpg" \
-            "$base/dists/stable/main/binary-amd64/Packages" \
-            "$base/dists/stable/main/binary-amd64/Packages.gz" \
-            "$base/dists/stable/main/binary-amd64/Packages.xz" \
-            "$base/dists/stable/main/binary-arm64/Packages" \
-            "$base/dists/stable/main/binary-arm64/Packages.gz" \
-            "$base/dists/stable/main/binary-arm64/Packages.xz" \
+            $arch_urls \
             "$base/glyndor-archive-keyring.deb" \
             "$base/index.html")
           urls="${urls%,}"
@@ -271,11 +299,15 @@ jobs:
           hdr=$(mktemp)
           trap 'rm -f "$hdr"' EXIT
           printf 'Authorization: Bearer %s\n' "$CF_TOKEN" > "$hdr"
-          resp=$(curl -sS -X POST \
+          resp=$(curl -sS --retry 3 --retry-all-errors --retry-delay 5 -X POST \
             "https://api.cloudflare.com/client/v4/zones/$CF_ZONE/purge_cache" \
             -H @"$hdr" \
             -H "Content-Type: application/json" \
             --data "{\"files\":[$urls]}")
-          echo "$resp" | grep -q '"success":true' \
+          # jq -e parses the actual JSON structure instead of grep matching
+          # against the raw response text, which a `"success":true` embedded
+          # in an unrelated field (or a differently-formatted but still
+          # successful response) could fool either way.
+          echo "$resp" | jq -e '.success == true' >/dev/null \
             || { echo "::error::Cloudflare purge failed: $resp"; exit 1; }
           echo "Cloudflare cache purged for the apt metadata."

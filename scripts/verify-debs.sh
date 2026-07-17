@@ -105,7 +105,14 @@ for deb in "${debs[@]}"; do
 		exit 1
 	fi
 
-	if ! python3 - "$sig" "$deb" "${KEYS[@]}" <<'PYEOF'
+	# Capture the verifier's exit code (rather than just its pass/fail status)
+	# so the message below can tell a malformed local trust anchor apart from
+	# an untrusted signature that plainly fails verification — conflating the
+	# two previously reported "release may be tampered" even when the real
+	# cause was our own key file, which sent whoever was debugging it looking
+	# for an attack that wasn't there.
+	python_rc=0
+	python3 - "$sig" "$deb" "${KEYS[@]}" <<'PYEOF' || python_rc=$?
 import base64
 import sys
 
@@ -138,15 +145,22 @@ if not keys:
 # past a generous 4096-byte cap rather than the whole file — a hostile or
 # corrupt .sig asset must not be read into memory wholesale before its length
 # is even checked.
+#
+# Both checks below exit 1, not 2: exit 2 is reserved for a malformed LOCAL
+# trust anchor (the committed key file this script itself was given), so the
+# caller can tell "our config is broken" apart from "the downloaded asset is
+# bad". An oversized or wrong-length .sig is the latter — untrusted data the
+# release supplied, not our key material — so it belongs in the same bucket
+# as a signature that fails cryptographic verification below.
 MAX_SIG_BYTES = 4096
 with open(sig_path, "rb") as f:
 	sig = f.read(MAX_SIG_BYTES + 1)
 if len(sig) > MAX_SIG_BYTES:
 	sys.stderr.write(f"signature file is over {MAX_SIG_BYTES} bytes\n")
-	sys.exit(2)
+	sys.exit(1)
 if len(sig) != 64:
 	sys.stderr.write(f"signature is {len(sig)} bytes, expected exactly 64 (Ed25519 detached signature)\n")
-	sys.exit(2)
+	sys.exit(1)
 # Unbounded read: this loads the whole .deb into memory, so callers must bound
 # the input file's size before invoking this script. publish.yml enforces
 # MAX_DEB_BYTES both pre-download (against the advertised release asset size)
@@ -163,8 +177,16 @@ for key in keys:
 		continue
 sys.exit(1)
 PYEOF
-	then
-		echo "::error::invalid signature for $(basename "$deb") — release may be tampered" >&2
+	if [ "$python_rc" -ne 0 ]; then
+		if [ "$python_rc" -eq 2 ]; then
+			# Our bug: the committed release public key file failed to load, so
+			# no key was even available to check the signature against.
+			echo "::error::local release trust file is malformed — could not load a release public key to verify $(basename "$deb") against" >&2
+		else
+			# Their bug: a key loaded fine, but $(basename "$deb")'s signature did
+			# not verify against any of them.
+			echo "::error::invalid signature for $(basename "$deb") — release may be tampered" >&2
+		fi
 		exit 1
 	fi
 

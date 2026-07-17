@@ -206,6 +206,18 @@ head -c 5000 /dev/zero > "$d/oversized.deb.sig"
 assert_error 1 "over 4096 bytes" "oversized signature file is rejected" \
 	-- "$VERIFY" "$d" "$WORK/key.b64"
 
+# --- Case 13: a malformed local trust file — the release public key itself
+#             fails to load — is diagnosed as our bug and must not be
+#             reported as "release may be tampered": that message points
+#             whoever is debugging it at an attack that isn't there, when
+#             the real cause is our own committed key file. ---
+d="$WORK/case13"; mkdir -p "$d"
+deb="$(make_deb good2 podup)"; cp "$deb" "$d/"; sign "$d/good2.deb"
+printf 'not-valid-base64!!\n' > "$WORK/key-malformed.b64"
+assert_error 1 "local release trust file is malformed" \
+	"malformed local trust file is diagnosed, not reported as tampered" \
+	-- "$VERIFY" "$d" "$WORK/key-malformed.b64"
+
 echo
 echo "passed $pass, failed $fail"
 [ "$fail" -eq 0 ]

@@ -36,7 +36,7 @@ jobs:
           set -euo pipefail
           url="$BASE_URL/dists/stable/InRelease"
           tmp="$(mktemp)"
-          if ! curl -fsS --max-time 30 "$url" -o "$tmp"; then
+          if ! curl -fsS --retry 3 --retry-all-errors --retry-delay 5 --max-time 30 "$url" -o "$tmp"; then
             echo "::error::apt archive is unreachable at $url"
             exit 1
           fi
@@ -53,8 +53,10 @@ jobs:
             echo "::error::InRelease signature verification failed — the served index is unsigned or signed by an untrusted key"
             exit 1
           fi
-          # The Date field is read from the cryptographically verified body.
-          date_line="$(grep -m1 '^Date:' "$verified" | sed 's/^Date:[[:space:]]*//')"
+          # The Date field is read from the cryptographically verified body. The
+          # `|| true` keeps a no-match (grep exit 1) from dying under pipefail
+          # before the emptiness guard below can run and print its own diagnostic.
+          date_line="$(grep -m1 '^Date:' "$verified" | sed 's/^Date:[[:space:]]*//')" || true
           if [ -z "$date_line" ]; then
             echo "::error::no Date field in InRelease — the served index is malformed"
             exit 1
@@ -68,3 +70,18 @@ jobs:
             exit 1
           fi
           echo "archive reachable and fresh"
+
+      - name: Bootstrap keyring package reachable
+        run: |
+          set -euo pipefail
+          # The freshness check above only proves the *established* client path
+          # (an apt already trusting the archive key) works. A first-time install
+          # instead starts from `curl ... glyndor-archive-keyring.deb`, a
+          # different URL this check would otherwise never exercise — so a broken
+          # bootstrap path could go unnoticed indefinitely.
+          url="$BASE_URL/glyndor-archive-keyring.deb"
+          if ! curl -fsSI --retry 3 --retry-all-errors --retry-delay 5 --max-time 30 "$url" >/dev/null; then
+            echo "::error::bootstrap keyring unreachable"
+            exit 1
+          fi
+          echo "bootstrap keyring reachable"

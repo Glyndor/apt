@@ -43,6 +43,11 @@ trap cleanup EXIT
 # malformed the failure must be diagnosable, not silent.
 printf '%s' "$GLYNDOR_APT_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
 
+# The key now lives in the ephemeral GNUPGHOME above; nothing past this point
+# needs it in the environment, and no child process (or a stray debug trace)
+# should be able to read the private key out of this shell's env after import.
+unset GLYNDOR_APT_GPG_PRIVATE_KEY
+
 # Require exactly one secret key. If the secret ever carried more than one (e.g.
 # old + new pasted in during a rotation), the first-fingerprint pick below would
 # sign with whichever imported first, not necessarily the intended active key.
