@@ -88,10 +88,10 @@ jobs:
               echo "downloaded $arch .deb for $p"
             done
             echo "::endgroup::"
-            # A product must never ship a keyring-named asset — the real keyring is
-            # built locally below. Drop any so it can neither bypass verification
-            # under a trusted name nor abort the whole publish by failing it.
-            rm -f "debs/$p"/glyndor-archive-keyring*.deb "debs/$p"/glyndor-archive-keyring*.deb.sig
+            # A product must never ship a keyring-named asset — the real keyring
+            # is built locally below. verify-debs.sh hard-fails the publish on
+            # this filename rather than the asset being silently dropped here,
+            # which would evict that product from the archive with no signal.
             # Reject any oversized package before it is verified or served.
             while IFS= read -r f; do
               sz=$(stat -c%s "$f")
