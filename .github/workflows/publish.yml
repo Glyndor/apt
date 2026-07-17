@@ -67,11 +67,19 @@ jobs:
           MAX_SIG_BYTES=4096
           for p in $PRODUCTS; do
             echo "::group::$p"
+            # Resolve "latest" exactly once per product and reuse that tag for
+            # every arch below. Without this, each `gh release download` call
+            # re-resolves "latest" independently, so a release landing mid-run
+            # can hand amd64 and arm64 two different tags — a mixed-version
+            # archive with no signal that anything went wrong.
+            tag="$(gh release view --repo "Glyndor/$p" --json tagName --jq .tagName)" \
+              || { echo "::error::could not resolve Glyndor/$p's latest release tag"; exit 1; }
+            echo "pinned $p to release $tag"
             # Check the sizes the release actually advertises before pulling
             # any bytes, so an oversized asset can't exhaust runner disk mid-
             # download — the post-download check below is belt-and-braces in
             # case the advertised size ever disagrees with the delivered one.
-            assets="$(gh release view --repo "Glyndor/$p" --json assets \
+            assets="$(gh release view "$tag" --repo "Glyndor/$p" --json assets \
                         --jq '.assets[] | "\(.size) \(.name)"')" \
               || { echo "::error::could not list Glyndor/$p's release assets to check sizes before download"; exit 1; }
             # Emit size before name and read name last: an attacker picks the
@@ -110,16 +118,18 @@ jobs:
               # signature is verified before the package enters the archive.
               # A missing or failed download is a hard error: with `aws s3 sync
               # --delete` below, silently skipping a product would evict it from
-              # the served archive on the next publish.
-              if ! gh release download --repo "Glyndor/$p" \
+              # the served archive on the next publish. Download the tag pinned
+              # above, not "latest" again, so every arch comes from the same
+              # release.
+              if ! gh release download "$tag" --repo "Glyndor/$p" \
                    --pattern "*_${arch}.deb" --pattern "*_${arch}.deb.sig" \
                    --dir "debs/$p" --clobber; then
-                echo "::error::could not download the ${arch} .deb (+.sig) of Glyndor/$p's latest release; refusing to publish an archive that would drop it"
+                echo "::error::could not download the ${arch} .deb (+.sig) of Glyndor/$p's $tag release; refusing to publish an archive that would drop it"
                 exit 1
               fi
               after=$(find "debs/$p" -maxdepth 1 -name "*_${arch}.deb" | wc -l)
               if [ "$((after - before))" -ne 1 ]; then
-                echo "::error::Glyndor/$p's latest release must attach exactly one ${arch} .deb (got $((after - before)))"
+                echo "::error::Glyndor/$p's $tag release must attach exactly one ${arch} .deb (got $((after - before)))"
                 exit 1
               fi
               echo "downloaded $arch .deb for $p"
