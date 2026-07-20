@@ -22,9 +22,7 @@
 #
 # Stopping at the indices would read as a stronger guarantee than it is. A
 # missing uncompressed Packages breaks only clients that do not prefer the .gz;
-# a missing .deb breaks apt install for everyone. The pool objects are also
-# served under a one-year immutable cache that is never purged, so a bad one
-# outlives a bad index by a wide margin.
+# a missing .deb breaks apt install for everyone.
 #
 # Fails closed: an unverifiable signature, a malformed index, an unreachable
 # file or any size/hash mismatch is a non-zero exit, so the publish goes red
@@ -298,11 +296,17 @@ verify_set "index file(s)" "$WORK/index-entries" "$DIST_PATH" "$MAX_INDEX_BYTES"
 # --- What the verified indices declare ---------------------------------------
 
 # The chain does not end at the indices. Each Packages file declares the .deb an
-# apt client actually installs, with its size and SHA256, and those objects are
-# served under a one-year immutable cache that is deliberately never purged — so
-# a bad one lasts far longer than a bad index would. Parse the Packages bytes
-# that were just verified above, never a fresh download, or the gap between what
-# was checked and what was used reopens here.
+# apt client actually installs, with its size and SHA256, and that is the object
+# whose absence breaks every client rather than a subset. Parse the Packages
+# bytes that were just verified above, never a fresh download, or the gap
+# between what was checked and what was used reopens here.
+#
+# Pool objects are served under a one-year immutable cache. They used to be
+# left out of the publish's purge, which meant a bad edge copy could outlast a
+# bad index by a year AND could not be cleared by publishing again; #59 added
+# them to the purge, so a bad edge copy is now bounded by the publish cadence
+# like everything else. A wrong object in R2 itself is still only fixed by the
+# next correct upload — purging does not conjure the right bytes.
 #
 # Deduplicate: an architecture-independent package (the keyring) is declared in
 # every architecture's Packages, and fetching it once per architecture proves
