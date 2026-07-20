@@ -222,7 +222,10 @@ jobs:
           # ordering keeps the live archive consistent for clients mid-publish —
           # new packages land before the metadata that references them, and old
           # packages are removed only after the metadata stopped referencing
-          # them, so the signed index never points at a 404.
+          # them, so the signed index never points at a package that 404s. That
+          # ordering is necessary and not sufficient: it says nothing about an
+          # index file being removed after it is written, which is what #47/#53
+          # were — hence the read-back verification that closes this job.
           #   - pool/ .debs are immutable (the filename carries the version), so
           #     cache them for a year — they never change once published.
           #   - everything else (the dists/ metadata, index.html, the keyring
@@ -244,16 +247,40 @@ jobs:
           # content-hashes) — the dists/ metadata and keyring .deb reuse the
           # same filename every rebuild, and each rebuild regenerates them with
           # a fresh mtime, so a re-signed index always re-uploads.
+          #
+          # Pass 2 carries no --delete, and must not gain one back. With it,
+          # sync emitted an upload AND a delete for the same key in the same
+          # pass and let them race: run 29718989917 uploaded binary-arm64's
+          # Packages at .2227 and deleted it at .2682, leaving the freshly
+          # signed index declaring a file the bucket no longer had. Every key it
+          # did that to was a strict prefix of a sibling (Packages of
+          # Packages.gz, Release of Release.gpg) and no other key ever was, so
+          # the comparator appears to classify a prefix key as local-only and
+          # remote-only at once. This is what #47 actually was — not the R2
+          # visibility lag recorded there at the time.
+          #
+          # Do NOT "fix" this by splitting the pass into upload-then-delete:
+          # that makes the delete deterministically last and turns an
+          # intermittent breakage into one on every publish. Dropping --delete
+          # removes the race outright; the cost is that an index file reprepro
+          # stops emitting lingers in the bucket, which is harmless because apt
+          # only ever fetches what the signed InRelease declares.
+          #
+          # Pass 3 keeps its --delete: superseded .debs are real storage that
+          # has to go, no pool filename is a prefix of another (they all end in
+          # .deb and differ before it), and the read-back check at the end of
+          # this job verifies the pool too, so a recurrence there would be loud
+          # rather than silent.
           # 1. Upload new pool/ packages (no deletions yet).
           aws s3 sync public/ s3://glyndor-apt/ \
             --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
             --no-progress --size-only \
             --exclude "*" --include "pool/*" \
             --cache-control "public, max-age=31536000, immutable"
-          # 2. Publish the new metadata (and clean up stale non-pool files).
+          # 2. Publish the new metadata. Deliberately NOT --delete: see below.
           aws s3 sync public/ s3://glyndor-apt/ \
             --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
-            --delete --no-progress \
+            --no-progress \
             --exclude "pool/*" \
             --cache-control "public, max-age=86400"
           # 3. Remove pool/ packages the new metadata no longer references.
