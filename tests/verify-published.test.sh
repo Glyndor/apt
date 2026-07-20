@@ -52,6 +52,24 @@ assert() {
 	fi
 }
 
+# assert_says <expected-exit> <needle> <description> -- <command...>
+# For asserting something about a run that is expected to succeed — what it
+# reports, not just that it exited zero.
+assert_says() {
+	local want="$1" needle="$2" desc="$3"
+	shift 4
+	local got=0 out
+	out="$("$@" 2>&1)" || got=$?
+	if [ "$got" -eq "$want" ] && printf '%s' "$out" | grep -qF "$needle"; then
+		echo "ok   - $desc (exit $got)"
+		pass=$((pass + 1))
+	else
+		echo "FAIL - $desc (want exit $want saying '$needle', got exit $got)"
+		printf '%s\n' "$out" | sed 's/^/       /'
+		fail=$((fail + 1))
+	fi
+}
+
 # assert_error <expected-exit> <needle> <description> -- <command...>
 # Same as assert, but also requires the combined output to contain needle, so a
 # rejection is checked for the right reason rather than for any reason at all.
@@ -87,13 +105,44 @@ gpg --batch --quiet --armor --export "$TRUSTED_KEY" > "$TRUSTED_ASC"
 
 # --- Archive construction ----------------------------------------------------
 
+# The keyring package is architecture-independent, so it is declared in every
+# architecture's Packages. That is what makes it the dedup case: four
+# declarations across two architectures, three distinct objects.
+PODUP_POOL="pool/main/p/podup"
+KEYRING_POOL="pool/main/g/glyndor-archive-keyring"
+# The '+' is deliberate — a real Debian version carries one, and the path
+# validation has to allow it without allowing traversal.
+KEYRING_DEB="$KEYRING_POOL/glyndor-archive-keyring_1.0.0+key1_all.deb"
+
+# write_pool — the .deb objects the indices point at.
+write_pool() {
+	local arch
+	mkdir -p "$SITE/$PODUP_POOL" "$SITE/$KEYRING_POOL"
+	for arch in amd64 arm64; do
+		printf 'fake podup deb for %s\n' "$arch" > "$SITE/$PODUP_POOL/podup_1.12.0_${arch}.deb"
+	done
+	printf 'fake keyring deb\n' > "$SITE/$KEYRING_DEB"
+}
+
+# stanza <package> <architecture> <pool-path> — one Packages entry, declaring
+# the pool object the way a real index does.
+stanza() {
+	printf 'Package: %s\nVersion: 1.12.0\nArchitecture: %s\nFilename: %s\nSize: %s\nSHA256: %s\n\n' \
+		"$1" "$2" "$3" \
+		"$(stat -c%s "$SITE/$3")" \
+		"$(sha256sum "$SITE/$3" | cut -d' ' -f1)"
+}
+
 # write_indices — the index files a two-architecture reprepro export produces.
 write_indices() {
 	local arch
+	write_pool
 	for arch in amd64 arm64; do
 		mkdir -p "$DIST/main/binary-$arch"
-		printf 'Package: podup\nVersion: 1.12.0\nArchitecture: %s\n\n' "$arch" \
-			> "$DIST/main/binary-$arch/Packages"
+		{
+			stanza podup "$arch" "$PODUP_POOL/podup_1.12.0_${arch}.deb"
+			stanza glyndor-archive-keyring all "$KEYRING_DEB"
+		} > "$DIST/main/binary-$arch/Packages"
 		printf 'Archive: stable\nComponent: main\nArchitecture: %s\n' "$arch" \
 			> "$DIST/main/binary-$arch/Release"
 	done
@@ -242,6 +291,38 @@ wait "$restore_pid"
 build_archive
 assert_error 1 "could not fetch" "an unreachable archive is rejected" -- \
 	"$VERIFY" "http://127.0.0.1:1" "$TRUSTED_ASC" 1 0
+
+# --- The pool: the link the indices vouch for --------------------------------
+
+build_archive
+rm "$SITE/$PODUP_POOL/podup_1.12.0_arm64.deb"
+assert_error 1 "podup_1.12.0_arm64.deb" "a declared package that 404s is rejected" -- run
+
+build_archive
+# Same length, different bytes. The indices still verify; only the package does
+# not, which is the case an index-only check waves through.
+sed -i 's/fake podup deb for arm64/fake podup deb for ar_64/' \
+	"$SITE/$PODUP_POOL/podup_1.12.0_arm64.deb"
+assert_error 1 "hash mismatch" "a declared package served with the wrong content is rejected" -- run
+
+build_archive
+# Four declarations across two architectures, three distinct objects: the
+# architecture-independent keyring must not be fetched once per architecture.
+assert_says 0 "declare 3 package(s)" "an architecture-independent package is checked once, not per architecture" -- run
+
+build_archive
+: > "$DIST/main/binary-amd64/Packages"
+: > "$DIST/main/binary-arm64/Packages"
+write_release "$TRUSTED_KEY"
+assert_error 1 "declare no packages" "an archive whose indices declare no installable package is rejected" -- run
+
+build_archive
+# The second link of the chain needs the same path validation as the first: a
+# verified index is authentic, and authentic is still not safe.
+sed -i "s|Filename: $PODUP_POOL/podup_1.12.0_amd64.deb|Filename: pool/../../etc/passwd|" \
+	"$DIST/main/binary-amd64/Packages"
+write_release "$TRUSTED_KEY"
+assert_error 1 "not a plain relative path" "a traversal path in a verified index is rejected" -- run
 
 # --- Result ------------------------------------------------------------------
 
