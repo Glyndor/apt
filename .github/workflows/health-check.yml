@@ -1,10 +1,14 @@
 name: Health check
 
-# Verifies that the published archive at apt.glyndor.net is reachable and fresh,
-# and fails loudly if it is not. The publish workflow only notifies when a build
-# runs and fails; this catches the cases it can't — the edge or R2 serving a
-# stale or missing index while no publish has errored. Failing safe (serving the
-# last good state) is good, but it must never be silent.
+# Verifies that the published archive at apt.glyndor.net is reachable, fresh and
+# internally consistent, and fails loudly if it is not. The publish workflow only
+# notifies when a build runs and fails; this catches the cases it can't — the
+# edge or R2 serving a stale, missing or mismatched index while no publish has
+# errored. Failing safe (serving the last good state) is good, but it must never
+# be silent.
+#
+# Reachable, fresh and consistent are three different properties and each step
+# below asserts exactly one, so a failure names which one broke.
 #
 # Runs every six hours (offset from the publish cron) and on demand. The archive
 # is treated as stale if the signed Release is older than 48h — twice the daily
@@ -70,6 +74,27 @@ jobs:
             exit 1
           fi
           echo "archive reachable and fresh"
+
+      - name: Served archive matches the signed index
+        run: |
+          set -euo pipefail
+          # The same check publish.yml gates on, run on this workflow's cadence.
+          # The gate proves the archive was consistent at the moment it was
+          # published; without this, the up-to-24h until the next publish is
+          # watched by nobody — the same shape of gap #47 was about. Sharing the
+          # script rather than restating the logic is the point: if the two
+          # diverged, this would pass what the gate would reject.
+          #
+          # Be clear about the ceiling. Between publishes nothing writes to the
+          # archive, so what this adds over the freshness check above is catching
+          # a partially-purged edge or degradation at rest — from whichever PoP
+          # this runner happens to reach. A green run means "consistent from
+          # where this looked", not "consistent everywhere"; the multi-region
+          # version is the external-watcher class already declined.
+          #
+          # Three attempts, not the gate's six: no sync is in flight here, so a
+          # mismatch should not be transient and an alert should not be held back.
+          ./scripts/verify-published.sh "$BASE_URL" keyring/glyndor-apt-key.asc 3 10
 
       - name: Bootstrap keyring package reachable
         run: |

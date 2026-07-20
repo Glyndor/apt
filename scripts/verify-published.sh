@@ -14,6 +14,18 @@
 # Nothing here is derived from a list written by hand, so an index file that
 # reprepro starts or stops emitting is picked up with no change to this script.
 #
+# The whole signed chain is walked, not just its first link:
+#
+#   InRelease (signed by the archive key)
+#     -> main/binary-<arch>/Packages   (size + SHA256 declared in InRelease)
+#       -> pool/**/*.deb               (size + SHA256 declared in Packages)
+#
+# Stopping at the indices would read as a stronger guarantee than it is. A
+# missing uncompressed Packages breaks only clients that do not prefer the .gz;
+# a missing .deb breaks apt install for everyone. The pool objects are also
+# served under a one-year immutable cache that is never purged, so a bad one
+# outlives a bad index by a wide margin.
+#
 # Fails closed: an unverifiable signature, a malformed index, an unreachable
 # file or any size/hash mismatch is a non-zero exit, so the publish goes red
 # rather than reporting success over a broken archive.
@@ -54,6 +66,13 @@ MAX_INDEX_BYTES=$((64 * 1024 * 1024))
 # A bound on how many files the index may declare, for the same reason: the
 # signed body is authentic, but authenticity is not a size limit.
 MAX_ENTRIES=200
+# A package is a real binary, so it gets its own, larger per-object cap — kept
+# in step with the per-.deb cap publish.yml enforces on the way in.
+MAX_POOL_OBJECT_BYTES=$((300 * 1024 * 1024))
+# And a budget for the whole pool. The archive is latest-only, so this grows
+# with the number of products rather than with time; blowing through it means
+# the check needs redesigning, which should be an error and not a slow publish.
+MAX_POOL_BYTES=$((2 * 1024 * 1024 * 1024))
 
 case "$ATTEMPTS" in '' | *[!0-9]*) echo "::error::attempts must be a positive integer, got '$ATTEMPTS'" >&2; exit 1 ;; esac
 case "$DELAY" in '' | *[!0-9]*) echo "::error::delay must be a non-negative integer, got '$DELAY'" >&2; exit 1 ;; esac
@@ -73,13 +92,13 @@ trap cleanup EXIT
 gpg --batch --quiet --import "$PUBKEY_ASC" \
 	|| { echo "::error::could not import the archive public key from $PUBKEY_ASC" >&2; exit 1; }
 
-# fetch <url> <destination>
+# fetch <url> <destination> [<max-bytes>]
 # Transport-level retries only. An HTTP error is retried too (--retry-all-errors
 # with -f), which absorbs a brief 404 while an object becomes visible; the
 # caller's own retry loop handles a lag longer than that.
 fetch() {
-	curl -fsS --retry 3 --retry-all-errors --retry-delay 2 --max-time 60 \
-		--max-filesize "$MAX_INDEX_BYTES" "$1" -o "$2"
+	curl -fsS --retry 3 --retry-all-errors --retry-delay 2 --max-time 300 \
+		--max-filesize "${3:-$MAX_INDEX_BYTES}" "$1" -o "$2"
 }
 
 # verify_clearsigned <clearsigned-file> <output-body>
@@ -107,17 +126,60 @@ declared_files() {
 	' "$1"
 }
 
-# check_entry <sha256> <size> <path>
-# Fetches one declared file and compares it against the declaration. Prints a
-# diagnostic and returns non-zero on any disagreement.
+# declared_packages <verified-Packages-file>
+# Emits "<sha256> <size> <path>" for every package stanza. This is the third
+# link of the chain: the signed index vouches for these Packages bytes, and
+# these Packages bytes vouch for the .deb files an apt client actually installs.
+declared_packages() {
+	awk '
+		/^Filename:/ { filename = $2 }
+		/^Size:/ { size = $2 }
+		/^SHA256:/ { hash = $2 }
+		/^[[:space:]]*$/ {
+			if (filename != "") { print hash, size, filename }
+			filename = ""; size = ""; hash = ""
+		}
+		END { if (filename != "") { print hash, size, filename } }
+	' "$1"
+}
+
+# reject_unsafe_paths <label> <entries-file>
+# The paths come from a signed document, so they are authentic — but authentic
+# is not the same as safe, and the key that signs them is the one thing this
+# script cannot detect the compromise of. Reject anything that is not a plain
+# relative path before it is pasted into a URL or used as a filename.
+reject_unsafe_paths() {
+	local label="$1" path
+	while read -r _ _ path; do
+		case "$path" in
+			*/../* | ../* | */.. | /* | *//*)
+				echo "::error::the $label declares a path that is not a plain relative path: $path" >&2
+				exit 1
+				;;
+		esac
+		case "$path" in
+			*[!A-Za-z0-9._/+~-]*)
+				echo "::error::the $label declares a path with unexpected characters: $path" >&2
+				exit 1
+				;;
+		esac
+	done < "$2"
+}
+
+# check_entry <sha256> <size> <path> <url-prefix> <max-bytes> <save-dir>
+# Fetches one declared file and compares it against the declaration. On success
+# the verified bytes are kept under save-dir, so a later stage can parse exactly
+# what was checked rather than re-downloading and re-opening the gap between
+# what was verified and what was used. Prints a diagnostic and returns non-zero
+# on any disagreement.
 check_entry() {
-	local want_hash="$1" want_size="$2" path="$3"
-	local url="$BASE_URL/$DIST_PATH/$path"
+	local want_hash="$1" want_size="$2" path="$3" prefix="$4" max_bytes="$5" save_dir="$6"
+	local url="$BASE_URL${prefix:+/$prefix}/$path"
 	local dest="$WORK/served"
 	local got_hash got_size
 
 	rm -f "$dest"
-	if ! fetch "$url" "$dest"; then
+	if ! fetch "$url" "$dest" "$max_bytes"; then
 		echo "  unreachable: $path"
 		return 1
 	fi
@@ -131,7 +193,52 @@ check_entry() {
 		echo "  hash mismatch: $path (signed $want_hash, served $got_hash)"
 		return 1
 	fi
+	if [ -n "$save_dir" ]; then
+		mkdir -p "$save_dir"
+		mv "$dest" "$save_dir/${path//\//_}"
+	fi
 	return 0
+}
+
+# verify_set <label> <entries-file> <url-prefix> <max-bytes> <save-dir>
+# Checks every entry, re-reading only the ones that disagree, on a bounded
+# schedule. Exits non-zero once they stop converging.
+verify_set() {
+	local label="$1" entries_file="$2" prefix="$3" max_bytes="$4" save_dir="$5"
+	local -a pending failed
+	local attempt=1 entry entry_hash entry_size entry_path total
+
+	mapfile -t pending < "$entries_file"
+	total="${#pending[@]}"
+
+	while :; do
+		failed=()
+		for entry in "${pending[@]}"; do
+			read -r entry_hash entry_size entry_path <<< "$entry"
+			if ! check_entry "$entry_hash" "$entry_size" "$entry_path" \
+				"$prefix" "$max_bytes" "$save_dir"; then
+				failed+=("$entry")
+			fi
+		done
+
+		if [ "${#failed[@]}" -eq 0 ]; then
+			break
+		fi
+		if [ "$attempt" -ge "$ATTEMPTS" ]; then
+			echo "::error::${#failed[@]} of $total $label are not being served as signed, after $attempt attempt(s)" >&2
+			for entry in "${failed[@]}"; do
+				echo "::error::  ${entry##* }" >&2
+			done
+			exit 1
+		fi
+
+		echo "attempt $attempt/$ATTEMPTS: ${#failed[@]} $label not yet consistent, re-reading in ${DELAY}s"
+		sleep "$DELAY"
+		pending=("${failed[@]}")
+		attempt=$((attempt + 1))
+	done
+
+	echo "all $total $label are served exactly as signed"
 }
 
 echo "verifying the archive served at $BASE_URL against its signed index"
@@ -167,66 +274,60 @@ fi
 
 # --- What the index declares -------------------------------------------------
 
-mapfile -t entries < <(declared_files "$WORK/InRelease.body")
-if [ "${#entries[@]}" -eq 0 ]; then
+declared_files "$WORK/InRelease.body" > "$WORK/index-entries"
+index_count="$(wc -l < "$WORK/index-entries")"
+if [ "$index_count" -eq 0 ]; then
 	echo "::error::the signed index declares no SHA256 entries — it is malformed" >&2
 	exit 1
 fi
-if [ "${#entries[@]}" -gt "$MAX_ENTRIES" ]; then
-	echo "::error::the signed index declares ${#entries[@]} files, over the $MAX_ENTRIES cap" >&2
+if [ "$index_count" -gt "$MAX_ENTRIES" ]; then
+	echo "::error::the signed index declares $index_count files, over the $MAX_ENTRIES cap" >&2
+	exit 1
+fi
+reject_unsafe_paths "signed index" "$WORK/index-entries"
+
+echo "the signed index declares $index_count index file(s)"
+verify_set "index file(s)" "$WORK/index-entries" "$DIST_PATH" "$MAX_INDEX_BYTES" "$WORK/indices"
+
+# --- What the verified indices declare ---------------------------------------
+
+# The chain does not end at the indices. Each Packages file declares the .deb an
+# apt client actually installs, with its size and SHA256, and those objects are
+# served under a one-year immutable cache that is deliberately never purged — so
+# a bad one lasts far longer than a bad index would. Parse the Packages bytes
+# that were just verified above, never a fresh download, or the gap between what
+# was checked and what was used reopens here.
+#
+# Deduplicate: an architecture-independent package (the keyring) is declared in
+# every architecture's Packages, and fetching it once per architecture proves
+# nothing extra.
+: > "$WORK/pool-entries"
+shopt -s nullglob
+for index in "$WORK"/indices/*_Packages; do
+	declared_packages "$index" >> "$WORK/pool-entries"
+done
+shopt -u nullglob
+sort -u -o "$WORK/pool-entries" "$WORK/pool-entries"
+
+pool_count="$(wc -l < "$WORK/pool-entries")"
+if [ "$pool_count" -eq 0 ]; then
+	echo "::error::the verified indices declare no packages — an archive serving no installable package is broken" >&2
+	exit 1
+fi
+if [ "$pool_count" -gt "$MAX_ENTRIES" ]; then
+	echo "::error::the verified indices declare $pool_count packages, over the $MAX_ENTRIES cap" >&2
+	exit 1
+fi
+reject_unsafe_paths "verified indices" "$WORK/pool-entries"
+
+# The declaration is authentic, not a budget. Cap the total so the archive
+# outgrowing what this check can afford to download fails loudly here rather
+# than quietly turning every publish into a long transfer.
+pool_bytes="$(awk '{ total += $2 } END { print total + 0 }' "$WORK/pool-entries")"
+if [ "$pool_bytes" -gt "$MAX_POOL_BYTES" ]; then
+	echo "::error::the verified indices declare $pool_bytes bytes of packages, over the $MAX_POOL_BYTES cap; this check needs to move to ranged or sampled reads" >&2
 	exit 1
 fi
 
-# The paths come from a signed document, so they are authentic — but authentic
-# is not the same as safe, and the key that signs them is the one thing whose
-# compromise this script cannot detect. Reject anything that is not a plain
-# relative path before it is pasted into a URL.
-for entry in "${entries[@]}"; do
-	path="${entry##* }"
-	case "$path" in
-		*/../* | ../* | */.. | /* | *//*)
-			echo "::error::the signed index declares a path that is not a plain relative path: $path" >&2
-			exit 1
-			;;
-	esac
-	case "$path" in
-		*[!A-Za-z0-9._/-]*)
-			echo "::error::the signed index declares a path with unexpected characters: $path" >&2
-			exit 1
-			;;
-	esac
-done
-
-echo "the signed index declares ${#entries[@]} file(s)"
-
-# --- Compare served against signed, retrying a lag ---------------------------
-
-pending=("${entries[@]}")
-attempt=1
-while :; do
-	failed=()
-	for entry in "${pending[@]}"; do
-		read -r entry_hash entry_size entry_path <<< "$entry"
-		if ! check_entry "$entry_hash" "$entry_size" "$entry_path"; then
-			failed+=("$entry")
-		fi
-	done
-
-	if [ "${#failed[@]}" -eq 0 ]; then
-		break
-	fi
-	if [ "$attempt" -ge "$ATTEMPTS" ]; then
-		echo "::error::${#failed[@]} of ${#entries[@]} file(s) declared by the signed index are not being served as signed, after $attempt attempt(s)" >&2
-		for entry in "${failed[@]}"; do
-			echo "::error::  ${entry##* }" >&2
-		done
-		exit 1
-	fi
-
-	echo "attempt $attempt/$ATTEMPTS: ${#failed[@]} file(s) not yet consistent, re-reading in ${DELAY}s"
-	sleep "$DELAY"
-	pending=("${failed[@]}")
-	attempt=$((attempt + 1))
-done
-
-echo "all ${#entries[@]} declared file(s) are served exactly as signed"
+echo "the verified indices declare $pool_count package(s), $pool_bytes byte(s)"
+verify_set "package(s)" "$WORK/pool-entries" "" "$MAX_POOL_OBJECT_BYTES" ""
