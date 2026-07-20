@@ -279,25 +279,43 @@ jobs:
             eval "[ -n \"\${$v:-}\" ]" \
               || { echo "::error::$v is not configured."; exit 1; }
           done
-          base="https://apt.glyndor.net"
-          # Generate the per-arch Packages URLs from $ARCHITECTURES instead of
-          # hardcoding amd64/arm64, so an architecture added to that list is
-          # purged automatically instead of silently going stale in the cache.
-          arch_urls=""
-          for arch in $ARCHITECTURES; do
-            arch_urls="$arch_urls $base/dists/stable/main/binary-${arch}/Packages"
-            arch_urls="$arch_urls $base/dists/stable/main/binary-${arch}/Packages.gz"
-            arch_urls="$arch_urls $base/dists/stable/main/binary-${arch}/Packages.xz"
-          done
-          # shellcheck disable=SC2086 # arch_urls is a deliberate word-split list of URLs, none attacker-controlled
+          # Derive the index URLs from the Release this run just built and signed,
+          # rather than restating here what reprepro is expected to have written.
+          # A hand-maintained list drifts from that decision in both directions
+          # and does it silently: it named a Packages.xz reprepro never emits
+          # (its default DebIndices is "Packages Release . .gz"), and never named
+          # the per-architecture Release files it does emit — two of the six files
+          # the signed index declares went unpurged. Reading the index means an
+          # index file reprepro starts or stops writing is followed automatically,
+          # and adding an architecture no longer has a fourth place to remember.
+          index_urls=""
+          while IFS= read -r p; do
+            index_urls="$index_urls $ARCHIVE_URL/dists/stable/$p"
+          done < <(awk '
+            /^SHA256:/ { in_section = 1; next }
+            /^[^[:space:]]/ { in_section = 0 }
+            in_section && NF == 3 { print $3 }
+          ' public/dists/stable/Release | sort -u)
+          [ -n "$index_urls" ] \
+            || { echo "::error::the built Release declares no index files to purge"; exit 1; }
+          # shellcheck disable=SC2086 # index_urls is a deliberate word-split list of URLs, none attacker-controlled
           urls=$(printf '"%s",' \
-            "$base/dists/stable/InRelease" \
-            "$base/dists/stable/Release" \
-            "$base/dists/stable/Release.gpg" \
-            $arch_urls \
-            "$base/glyndor-archive-keyring.deb" \
-            "$base/index.html")
+            "$ARCHIVE_URL/dists/stable/InRelease" \
+            "$ARCHIVE_URL/dists/stable/Release" \
+            "$ARCHIVE_URL/dists/stable/Release.gpg" \
+            $index_urls \
+            "$ARCHIVE_URL/glyndor-archive-keyring.deb" \
+            "$ARCHIVE_URL/index.html")
           urls="${urls%,}"
+          # Cloudflare rejects a purge-by-URL request carrying more than 30 files.
+          # Fail loudly rather than let the API reject the whole call and leave
+          # every listed URL stale behind a fresh signature.
+          url_count=$(printf '%s' "$urls" | tr -cd ',' | wc -c)
+          url_count=$((url_count + 1))
+          if [ "$url_count" -gt 30 ]; then
+            echo "::error::the purge list has $url_count URLs, over Cloudflare's 30-per-request limit; it needs to be sent in batches"
+            exit 1
+          fi
           # Pass the token via a header file, not argv: an -H argument is
           # world-visible in /proc/<pid>/cmdline for the lifetime of the call.
           hdr=$(mktemp)
