@@ -24,6 +24,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Public base URL the archive is served from. Used by the cache purge and by
+  # the read-back verification below, so the two never disagree about which
+  # archive this run published.
+  ARCHIVE_URL: "https://apt.glyndor.net"
   # Space-separated list of Glyndor repos that publish a .deb release asset
   # named <name>_<version>_<arch>.deb. Add a repo here once it ships one.
   PRODUCTS: "podup"
@@ -311,3 +315,25 @@ jobs:
           echo "$resp" | jq -e '.success == true' >/dev/null \
             || { echo "::error::Cloudflare purge failed: $resp"; exit 1; }
           echo "Cloudflare cache purged for the apt metadata."
+
+      - name: Verify the published archive matches the signed index
+        run: |
+          # Everything above verifies the inputs and then trusts the output. A
+          # publish has finished green with the signed index declaring an arm64
+          # index file that the archive answered with 404, and it stayed that way
+          # until the next scheduled run (issue #47). Read the archive back and
+          # fail the run when what is served disagrees with what was signed, so
+          # the breakage is known in a minute instead of in a day.
+          #
+          # This is detection, not preservation: by now the sync has already
+          # replaced the metadata and dropped the pool entries the new metadata
+          # stopped referencing, so there is no earlier state left to fall back
+          # to. A red run and a forward fix is the archive's policy everywhere
+          # else, and it is what this buys.
+          #
+          # It runs after the purge, not before: checking while the edge still
+          # holds the previous metadata would compare a fresh signature against
+          # stale bytes. The script retries internally, which covers both the
+          # R2 write-then-read visibility lag behind #47 and the purge being
+          # asynchronous.
+          ./scripts/verify-published.sh "$ARCHIVE_URL"
