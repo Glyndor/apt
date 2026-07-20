@@ -30,12 +30,18 @@
 # file or any size/hash mismatch is a non-zero exit, so the publish goes red
 # rather than reporting success over a broken archive.
 #
-# Retries before failing. The observed cause of the 404 was a visibility lag
-# between the R2 write and the read rather than anything the pipeline got wrong,
-# and the Cloudflare purge that precedes this check is asynchronous too. A gate
-# that goes red on a condition which resolves itself seconds later is a gate
-# that gets ignored, so mismatches are re-read on a bounded schedule and only a
-# mismatch that never converges fails the run.
+# Retries before failing, because the Cloudflare purge that precedes this check
+# is asynchronous: a gate that goes red on a condition which clears itself
+# seconds later is a gate that gets ignored. Mismatches are re-read on a bounded
+# schedule and only one that never converges fails the run.
+#
+# That is the ONLY thing the retry buys, and the schedule (6 x 10 s by default)
+# is not measured — nobody has timed how long an edge purge takes to propagate.
+# It was originally also justified by a write-then-read visibility lag in R2,
+# which turned out not to exist: #47's object was deleted by the publish racing
+# itself, not briefly invisible (#53). Retrying a deleted object only fails
+# slower. If the retry ever needs re-tuning, measure the purge; do not reason
+# from the lag.
 #
 # Trust rests on the archive public key, never on the transport: an http:// base
 # URL is accepted (the test suite serves one locally) because TLS is not what

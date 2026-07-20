@@ -418,7 +418,7 @@ jobs:
           #
           # It runs after the purge, not before: checking while the edge still
           # holds the previous metadata would compare a fresh signature against
-          # stale bytes. The script retries internally, which covers both the
-          # R2 write-then-read visibility lag behind #47 and the purge being
-          # asynchronous.
+          # stale bytes. The script retries internally to cover that purge being
+          # asynchronous — that alone, since the R2 visibility lag it was also
+          # written for turned out not to exist (#53).
           ./scripts/verify-published.sh "$ARCHIVE_URL"
