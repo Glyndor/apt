@@ -82,10 +82,60 @@ else
 	no "the built package declares the reserved keyring name"
 fi
 
-if printf '%s' "$control" | grep -qE '^Version: .+\+key[0-9]{14}$'; then
-	ok "the version carries the signing key's change date"
+if printf '%s' "$control" | grep -qE '^Version: .+\+pkg[0-9]{14}$'; then
+	ok "the version carries the packaged inputs' change date"
 else
-	no "the version carries the signing key's change date"
+	no "the version carries the packaged inputs' change date"
+fi
+
+# --- The version tracks every packaged input ---------------------------------
+# Tracking only the key meant a change to the sources list reached clients'
+# machines only if someone also remembered to bump keyring/version by hand.
+# When they forgot, apt saw a version it already had and never delivered the
+# new configuration — and nothing caught it, because the published archive
+# stays perfectly self-consistent while being wrong.
+
+before_version="$(dpkg-deb --field "$first" Version)"
+
+bump_input() {
+	local path="$1" line="$2" out="$3"
+	printf '%s\n' "$line" >> "$REPO/$path"
+	git -C "$REPO" add -A
+	# A distinct, later commit date, so the suffix must move if the input is
+	# tracked at all. Fixed rather than "now" so the case cannot race the clock.
+	git -C "$REPO" -c user.name=test -c user.email=test@example.invalid \
+		-c "commit.gpgsign=false" \
+		commit -qm "touch $path" --date="2030-01-02T03:04:05+00:00"
+	GIT_COMMITTER_DATE="2030-01-02T03:04:05+00:00" \
+		git -C "$REPO" -c user.name=test -c user.email=test@example.invalid \
+		commit -q --amend --no-edit --date="2030-01-02T03:04:05+00:00"
+	mkdir -p "$WORK/$out"
+	"$BUILD" "$WORK/$out" >/dev/null
+	dpkg-deb --field "$WORK/$out/glyndor-archive-keyring.deb" Version
+}
+
+after_sources="$(bump_input keyring/glyndor.sources "# tracked-input probe" sources-bump)"
+if [ "$after_sources" != "$before_version" ]; then
+	ok "editing the sources list moves the version ($before_version -> $after_sources)"
+else
+	no "editing the sources list moves the version (stayed $before_version)"
+fi
+
+# apt refuses to move a client backwards, so a version that changes but does not
+# INCREASE is as undeliverable as one that never moved.
+if dpkg --compare-versions "$after_sources" gt "$before_version"; then
+	ok "the new version sorts strictly above the old one"
+else
+	no "the new version sorts strictly above the old one ($before_version -> $after_sources)"
+fi
+
+# The suffix was renamed from +key to +pkg once it stopped tracking only the
+# key. A rename that sorted below what is already published would strand every
+# installed client on a version apt would refuse to upgrade.
+if dpkg --compare-versions "1.0.0+pkg20260614003800" gt "1.0.0+key20260613233717"; then
+	ok "the +pkg suffix sorts above the +key versions already published"
+else
+	no "the +pkg suffix sorts above the +key versions already published"
 fi
 
 contents="$(dpkg-deb --contents "$first")"
