@@ -336,12 +336,38 @@ jobs:
           ' public/dists/stable/Release | sort -u)
           [ -n "$index_urls" ] \
             || { echo "::error::the built Release declares no index files to purge"; exit 1; }
-          # shellcheck disable=SC2086 # index_urls is a deliberate word-split list of URLs, none attacker-controlled
+          # And the packages those indices point at. pool/ objects are served
+          # immutable for a year and were deliberately left unpurged, on the
+          # grounds that the version is baked into the filename so a name
+          # determines its bytes. That assumption already failed once (#55: the
+          # keyring package was rebuilt non-deterministically under a stable
+          # pool filename), and it was fixed at the producer, not here.
+          #
+          # Leaving them out puts a silent exception in the archive's own
+          # policy. "No rollback, fix forward by publishing again" is why
+          # staging and snapshot rollback were declined in #47 — but a stale
+          # pool object at the edge is exactly the case where publishing again
+          # does NOT clear it, and the read-back check below would keep failing
+          # with nothing to explain why. Purging them makes that policy true for
+          # the whole archive rather than true with fine print. See #59.
+          #
+          # Cost is three extra origin reads a day against a 10M/month free
+          # tier: the first request after each publish misses the edge and then
+          # re-caches for a year, unchanged.
+          pool_urls=""
+          while IFS= read -r p; do
+            pool_urls="$pool_urls $ARCHIVE_URL/$p"
+          done < <(awk '/^Filename:/ { print $2 }' \
+            public/dists/stable/main/binary-*/Packages | sort -u)
+          [ -n "$pool_urls" ] \
+            || { echo "::error::the built indices declare no packages to purge"; exit 1; }
+          # shellcheck disable=SC2086 # index_urls and pool_urls are deliberate word-split lists of URLs, none attacker-controlled
           urls=$(printf '"%s",' \
             "$ARCHIVE_URL/dists/stable/InRelease" \
             "$ARCHIVE_URL/dists/stable/Release" \
             "$ARCHIVE_URL/dists/stable/Release.gpg" \
             $index_urls \
+            $pool_urls \
             "$ARCHIVE_URL/glyndor-archive-keyring.deb" \
             "$ARCHIVE_URL/index.html")
           urls="${urls%,}"
@@ -370,7 +396,10 @@ jobs:
           # successful response) could fool either way.
           echo "$resp" | jq -e '.success == true' >/dev/null \
             || { echo "::error::Cloudflare purge failed: $resp"; exit 1; }
-          echo "Cloudflare cache purged for the apt metadata."
+          # Print what was purged. The list is derived rather than written, so
+          # the log is the only place it can be audited after the fact.
+          echo "Cloudflare cache purged, $url_count URL(s):"
+          printf '%s' "$urls" | tr ',' '\n' | tr -d '"' | sed 's/^/  /'
 
       - name: Verify the published archive matches the signed index
         run: |
