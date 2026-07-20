@@ -3,6 +3,9 @@
 Signed apt repository for Glyndor's Debian/Ubuntu packages (amd64, arm64),
 served at **https://apt.glyndor.net**.
 
+[![Publish apt repository](https://github.com/Glyndor/apt/actions/workflows/publish.yml/badge.svg)](https://github.com/Glyndor/apt/actions/workflows/publish.yml)
+[![Health check](https://github.com/Glyndor/apt/actions/workflows/health-check.yml/badge.svg)](https://github.com/Glyndor/apt/actions/workflows/health-check.yml)
+
 ## Install
 
 ```bash
@@ -13,7 +16,7 @@ sudo apt install podup        # or any other Glyndor package
 ```
 
 The keyring package installs the signing key and the source list. Because the
-key ships as a package, apt owns it — renewals arrive automatically with
+key ships as a package, apt owns it, so renewals arrive automatically with
 `apt upgrade`.
 
 ### Verify the signing key
@@ -37,8 +40,23 @@ report it via the Security tab.
 
 ## How it works
 
+```mermaid
+flowchart LR
+  P["Product release<br/>.deb + .sig"] -->|daily pull| V["verify-debs.sh<br/>release key"]
+  V -->|admitted| R["reprepro<br/>signs the index<br/>archive key"]
+  R --> S[("R2 bucket")]
+  S --> E["Cloudflare edge"]
+  E -->|apt update| C["Client<br/>glyndor-archive-keyring"]
+  V -.->|bad signature| X["publish fails, nothing served"]
+```
+
+Two keys do two different jobs. The release key proves a package is the one its
+product published; the archive key proves the index is the one this repository
+built. A client checks the second, and this repository checks the first on the
+client's behalf before anything enters the archive.
+
 The repository is rebuilt fresh from the latest release of every Glyndor
-product, so it always serves the current version — no old-version support. Every
-package is verified against Glyndor's Ed25519 release signature before it enters
-the archive, and the published index is GPG-signed. A missing or invalid
+product, so it always serves the current version, with no old-version support.
+Every package is verified against Glyndor's Ed25519 release signature before it
+enters the archive, and the published index is GPG-signed. A missing or invalid
 signature fails the build, so nothing unsigned is ever served.
