@@ -235,18 +235,29 @@ jobs:
           #     each rebuild (daily + manual) purges, and nothing changes between
           #     rebuilds — it just cuts needless origin revalidations.
           #
-          # Passes 1 and 3 use --size-only: reprepro never writes a different
-          # .deb under a name pool/ already carries (the version is baked into
-          # the filename), so a size match is sufficient proof the object is
-          # unchanged. The one case it trades away — a same-name, same-size but
-          # different-content re-publish — can only happen if the release
-          # immutability rule is violated (a version re-run with changed bytes),
-          # and the client's signed-index hash check refuses that install
-          # anyway; forward-fix means it never reaches here. Pass 2 keeps the
-          # default comparison (size + modification time; the AWS CLI never
-          # content-hashes) — the dists/ metadata and keyring .deb reuse the
-          # same filename every rebuild, and each rebuild regenerates them with
-          # a fresh mtime, so a re-signed index always re-uploads.
+          # Passes 1 and 3 use --size-only: a product .deb is built once and
+          # published, and its version is baked into the filename, so a size
+          # match is sufficient proof pool/ already carries the same object.
+          #
+          # That reasoning covers product .debs and nothing else, which is the
+          # part that bit. The keyring package is ALSO in pool/ and is NOT a
+          # release — publish.yml rebuilds it every run, under a filename that
+          # only moves when the signing key changes. So "same name, same size,
+          # different content" needs no immutability violation to happen here;
+          # it just needs a non-deterministic build, which is what #55 was. When
+          # the rebuild landed on the same size, --size-only skipped the upload
+          # while reprepro had already written the new hash into the signed
+          # index, and the archive served a package its own index rejected.
+          # build-keyring.sh is reproducible now (stamped from the key's commit,
+          # locked by tests/build-keyring.test.sh), which is what makes
+          # --size-only sound for that object too. If anything else that is
+          # regenerated per run is ever added under pool/, it needs the same
+          # property or it does not belong in these passes.
+          #
+          # Pass 2 keeps the default comparison (size + modification time; the
+          # AWS CLI never content-hashes) — the dists/ metadata and the
+          # bucket-root keyring copy are rewritten every rebuild and land with a
+          # current mtime, so a re-signed index always re-uploads.
           #
           # Pass 2 carries no --delete, and must not gain one back. With it,
           # sync emitted an upload AND a delete for the same key in the same
