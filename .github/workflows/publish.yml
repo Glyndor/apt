@@ -30,6 +30,14 @@ env:
   ARCHIVE_URL: "https://apt.glyndor.net"
   # Space-separated list of Glyndor repos that publish a .deb release asset
   # named <name>_<version>_<arch>.deb. Add a repo here once it ships one.
+  #
+  # A bare name means the product ships every architecture in ARCHITECTURES.
+  # Append ":arch,arch" to declare a narrower set — "klyradb:amd64" for a
+  # product that has no arm64 build. DECLARE it rather than letting a missing
+  # .deb pass silently: this archive is rebuilt from scratch and synced with
+  # --delete, so a product quietly skipped is a product EVICTED from the served
+  # archive. A declared architecture that does not arrive is still a hard error;
+  # an undeclared one is never looked for.
   PRODUCTS: "podup"
   # Architectures to collect and serve. Must match the reprepro distribution
   # (scripts/build-repo.sh) and keyring/glyndor.sources.
@@ -69,8 +77,30 @@ jobs:
           # trusted on signature alone.
           MAX_DEB_BYTES=$((300 * 1024 * 1024))
           MAX_SIG_BYTES=4096
-          for p in $PRODUCTS; do
-            echo "::group::$p"
+          for spec in $PRODUCTS; do
+            # "<repo>" or "<repo>:<arch>,<arch>". A bare entry means every
+            # architecture the archive serves.
+            p="${spec%%:*}"
+            if [ "$spec" = "$p" ]; then
+              product_archs="$ARCHITECTURES"
+            else
+              product_archs="$(echo "${spec#*:}" | tr ',' ' ')"
+            fi
+            # A product cannot declare an architecture the archive does not
+            # serve: reprepro would refuse the .deb after it had been downloaded
+            # and verified, which is a confusing place to find a typo.
+            for a in $product_archs; do
+              case " $ARCHITECTURES " in
+                *" $a "*) ;;
+                *)
+                  echo "::error::Glyndor/$p declares architecture $a, which is not in ARCHITECTURES ($ARCHITECTURES)"
+                  exit 1
+                  ;;
+              esac
+            done
+            [ -n "$product_archs" ] \
+              || { echo "::error::Glyndor/$p declares no architectures"; exit 1; }
+            echo "::group::$p ($product_archs)"
             # Resolve "latest" exactly once per product and reuse that tag for
             # every arch below. Without this, each `gh release download` call
             # re-resolves "latest" independently, so a release landing mid-run
@@ -116,7 +146,7 @@ jobs:
               esac
             done <<< "$assets"
             mkdir -p "debs/$p"
-            for arch in $ARCHITECTURES; do
+            for arch in $product_archs; do
               before=$(find "debs/$p" -maxdepth 1 -name "*_${arch}.deb" | wc -l)
               # Pull the package and its detached release signature together; the
               # signature is verified before the package enters the archive.
@@ -180,7 +210,8 @@ jobs:
           # signature alone does not prove a .deb is the product it claims to
           # be — a compromised release could otherwise ship an asset that
           # impersonates another product.
-          for p in $PRODUCTS; do
+          for spec in $PRODUCTS; do
+            p="${spec%%:*}"
             ./scripts/verify-debs.sh "debs/$p" keyring/glyndor-release-ed25519.b64 "$p"
           done
           # Flatten the per-product, now-verified .deb files into a single
@@ -306,100 +337,19 @@ jobs:
           CF_TOKEN: ${{ secrets.GLYNDOR_CF_PURGE_TOKEN }}
           CF_ZONE: ${{ secrets.GLYNDOR_CF_ZONE_ID }}
         run: |
-          set -euo pipefail
-          # Cloudflare caches the index by URL; a fresh sync changes the bytes
-          # behind the same URL, so without a purge apt can fetch a new InRelease
-          # but a stale Packages it no longer matches (hash/size mismatch). Purge
-          # the mutable, fixed-name files; the immutable pool/ .debs are never
-          # purged. The zone is shared (apt.glyndor.net is a subdomain of
-          # glyndor.net), so purge by URL — never purge_everything.
-          for v in CF_TOKEN CF_ZONE; do
-            eval "[ -n \"\${$v:-}\" ]" \
-              || { echo "::error::$v is not configured."; exit 1; }
-          done
-          # Derive the index URLs from the Release this run just built and signed,
-          # rather than restating here what reprepro is expected to have written.
-          # A hand-maintained list drifts from that decision in both directions
-          # and does it silently: it named a Packages.xz reprepro never emits
-          # (its default DebIndices is "Packages Release . .gz"), and never named
-          # the per-architecture Release files it does emit — two of the six files
-          # the signed index declares went unpurged. Reading the index means an
-          # index file reprepro starts or stops writing is followed automatically,
-          # and adding an architecture no longer has a fourth place to remember.
-          index_urls=""
-          while IFS= read -r p; do
-            index_urls="$index_urls $ARCHIVE_URL/dists/stable/$p"
-          done < <(awk '
-            /^SHA256:/ { in_section = 1; next }
-            /^[^[:space:]]/ { in_section = 0 }
-            in_section && NF == 3 { print $3 }
-          ' public/dists/stable/Release | sort -u)
-          [ -n "$index_urls" ] \
-            || { echo "::error::the built Release declares no index files to purge"; exit 1; }
-          # And the packages those indices point at. pool/ objects are served
-          # immutable for a year and were deliberately left unpurged, on the
-          # grounds that the version is baked into the filename so a name
-          # determines its bytes. That assumption already failed once (#55: the
-          # keyring package was rebuilt non-deterministically under a stable
-          # pool filename), and it was fixed at the producer, not here.
+          # The list is derived from the Release and Packages this run built,
+          # and split across requests because Cloudflare takes at most 30 URLs
+          # each. The zone is shared (apt.glyndor.net is a subdomain of
+          # glyndor.net), so this purges by URL and never purge_everything.
           #
-          # Leaving them out puts a silent exception in the archive's own
-          # policy. "No rollback, fix forward by publishing again" is why
-          # staging and snapshot rollback were declined in #47 — but a stale
-          # pool object at the edge is exactly the case where publishing again
-          # does NOT clear it, and the read-back check below would keep failing
-          # with nothing to explain why. Purging them makes that policy true for
-          # the whole archive rather than true with fine print. See #59.
-          #
-          # Cost is three extra origin reads a day against a 10M/month free
-          # tier: the first request after each publish misses the edge and then
-          # re-caches for a year, unchanged.
-          pool_urls=""
-          while IFS= read -r p; do
-            pool_urls="$pool_urls $ARCHIVE_URL/$p"
-          done < <(awk '/^Filename:/ { print $2 }' \
-            public/dists/stable/main/binary-*/Packages | sort -u)
-          [ -n "$pool_urls" ] \
-            || { echo "::error::the built indices declare no packages to purge"; exit 1; }
-          # shellcheck disable=SC2086 # index_urls and pool_urls are deliberate word-split lists of URLs, none attacker-controlled
-          urls=$(printf '"%s",' \
-            "$ARCHIVE_URL/dists/stable/InRelease" \
-            "$ARCHIVE_URL/dists/stable/Release" \
-            "$ARCHIVE_URL/dists/stable/Release.gpg" \
-            $index_urls \
-            $pool_urls \
-            "$ARCHIVE_URL/glyndor-archive-keyring.deb" \
-            "$ARCHIVE_URL/index.html")
-          urls="${urls%,}"
-          # Cloudflare rejects a purge-by-URL request carrying more than 30 files.
-          # Fail loudly rather than let the API reject the whole call and leave
-          # every listed URL stale behind a fresh signature.
-          url_count=$(printf '%s' "$urls" | tr -cd ',' | wc -c)
-          url_count=$((url_count + 1))
-          if [ "$url_count" -gt 30 ]; then
-            echo "::error::the purge list has $url_count URLs, over Cloudflare's 30-per-request limit; it needs to be sent in batches"
-            exit 1
-          fi
-          # Pass the token via a header file, not argv: an -H argument is
-          # world-visible in /proc/<pid>/cmdline for the lifetime of the call.
-          hdr=$(mktemp)
-          trap 'rm -f "$hdr"' EXIT
-          printf 'Authorization: Bearer %s\n' "$CF_TOKEN" > "$hdr"
-          resp=$(curl -sS --retry 3 --retry-all-errors --retry-delay 5 -X POST \
-            "https://api.cloudflare.com/client/v4/zones/$CF_ZONE/purge_cache" \
-            -H @"$hdr" \
-            -H "Content-Type: application/json" \
-            --data "{\"files\":[$urls]}")
-          # jq -e parses the actual JSON structure instead of grep matching
-          # against the raw response text, which a `"success":true` embedded
-          # in an unrelated field (or a differently-formatted but still
-          # successful response) could fool either way.
-          echo "$resp" | jq -e '.success == true' >/dev/null \
-            || { echo "::error::Cloudflare purge failed: $resp"; exit 1; }
-          # Print what was purged. The list is derived rather than written, so
-          # the log is the only place it can be audited after the fact.
-          echo "Cloudflare cache purged, $url_count URL(s):"
-          printf '%s' "$urls" | tr ',' '\n' | tr -d '"' | sed 's/^/  /'
+          # It used to be inline here, and it refused to send more than 30 with
+          # a message saying the list "needed to be sent in batches" — which it
+          # never did. That ceiling is reached by the roster in the product
+          # context on three architectures, and it would have failed the run
+          # AFTER the sync, leaving a fresh archive behind a stale edge cache.
+          # tests/purge-cache.test.sh covers the batching and the fail-closed
+          # paths.
+          ./scripts/purge-cache.sh "$ARCHIVE_URL" public
 
       - name: Verify the published archive matches the signed index
         run: |
