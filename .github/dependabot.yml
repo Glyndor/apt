@@ -10,12 +10,6 @@ updates:
       interval: "daily"
     labels: ["type:deps", "type:ci"]
     open-pull-requests-limit: 10
-    # A freshly published action version is the weakest moment in the supply
-    # chain: a compromised tag is usually caught and yanked within days. Wait a
-    # week before proposing one — this repository signs and publishes packages,
-    # so nothing here needs to be on the newest release the hour it lands.
-    cooldown:
-      default-days: 7
     # Six action references across six workflows, all pinned by SHA: without
     # grouping, one upstream release day means six near-identical pull requests
     # and six full CI runs on a repo whose CI publishes a signed apt repository.
