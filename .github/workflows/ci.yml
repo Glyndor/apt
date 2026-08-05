@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   shell:
-    uses: Glyndor/.github/.github/workflows/shell-ci.yml@7099f8a9c8be91fa1732fe2402268b338771233f # v1.10.1
+    uses: Glyndor/.github/.github/workflows/shell-ci.yml@d2e4c3db2ae66befaae8399ba4cdf0074511c2c2 # v1.13.2
     with:
       test-command: ./tests/verify-debs.test.sh && ./tests/verify-published.test.sh && ./tests/build-keyring.test.sh && ./tests/purge-cache.test.sh && ./tests/build-index-page.test.sh
       apt-packages: python3-cryptography
