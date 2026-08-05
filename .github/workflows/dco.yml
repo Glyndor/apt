@@ -11,4 +11,4 @@ permissions:
 
 jobs:
   dco:
-    uses: Glyndor/.github/.github/workflows/dco.yml@045903bf83a58651f119bc7d952aa45242b897c5 # v1.12.0
+    uses: Glyndor/.github/.github/workflows/dco.yml@e61aaf0e920345b3dbb82cacd3bd36a499951a92 # v1.13.0
