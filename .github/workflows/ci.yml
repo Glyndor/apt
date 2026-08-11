@@ -21,4 +21,4 @@ jobs:
       apt-packages: python3-cryptography
   empty-diff:
     if: github.event_name == 'pull_request'
-    uses: Glyndor/.github/.github/workflows/empty-diff.yml@7eb2c699bed5e49b7974ff9b0e613712d5da88cb # v1.14.0
+    uses: Glyndor/.github/.github/workflows/empty-diff.yml@c958978687af37dc2d826a967d9c549589afb39f # v1.14.1
