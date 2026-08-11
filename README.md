@@ -1,8 +1,6 @@
 # Glyndor apt repository
 
 Signed apt repository for Glyndor's Debian/Ubuntu packages (amd64, arm64),
-
-[![Release v1.13.2](https://github.com/Glyndor/.github/releases/tag/v1.13.2)](https://github.com/Glyndor/.github/releases)
 served at **https://apt.glyndor.net**.
 
 [![Publish apt repository](https://github.com/Glyndor/apt/actions/workflows/publish.yml/badge.svg)](https://github.com/Glyndor/apt/actions/workflows/publish.yml)
