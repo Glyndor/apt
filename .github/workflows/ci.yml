@@ -20,4 +20,5 @@ jobs:
       test-command: ./tests/verify-debs.test.sh && ./tests/verify-published.test.sh && ./tests/build-keyring.test.sh && ./tests/purge-cache.test.sh && ./tests/build-index-page.test.sh
       apt-packages: python3-cryptography
   empty-diff:
-    uses: Glyndor/.github/.github/workflows/empty-diff.yml@7eb2c699bed5e49b7974ff9b0e613712d5da88cb
+    if: github.event_name == 'pull_request'
+    uses: Glyndor/.github/.github/workflows/empty-diff.yml@7eb2c699bed5e49b7974ff9b0e613712d5da88cb # v1.14.0
