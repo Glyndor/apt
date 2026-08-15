@@ -30,8 +30,8 @@ jobs:
     if: github.event_name == 'pull_request'
     uses: Glyndor/.github/.github/workflows/empty-diff.yml@c958978687af37dc2d826a967d9c549589afb39f # v1.14.1
   pin-policy:
-    uses: Glyndor/.github/.github/workflows/pin-policy-reusable.yml@6535f511b5eb35123e0c0d0719e722db69860407 # v1.15.0
+    uses: Glyndor/.github/.github/workflows/pin-policy-reusable.yml@eee4c4e129feca3970a6550151d13bf50bfc568d # v1.15.0
   dependabot-freshness:
-    uses: Glyndor/.github/.github/workflows/dependabot-freshness.yml@6535f511b5eb35123e0c0d0719e722db69860407 # v1.14.0
+    uses: Glyndor/.github/.github/workflows/dependabot-freshness.yml@eee4c4e129feca3970a6550151d13bf50bfc568d # v1.14.0
     with:
       max-age-days: 15
