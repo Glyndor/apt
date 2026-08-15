@@ -32,6 +32,6 @@ jobs:
   pin-policy:
     uses: Glyndor/.github/.github/workflows/pin-policy-reusable.yml@0795ea8b8ad6e69466e99ca530e681d423943cc2 # v1.15.0
   dependabot-freshness:
-    uses: Glyndor/.github/.github/workflows/dependabot-freshness.yml@c149c99e5b3a06c7f54f8d5b7c4a4cd0f9c8ebef # v1.14.0
+    uses: Glyndor/.github/.github/workflows/dependabot-freshness.yml@c149c995c10d3ed908489866bafe7d3c97920977 # v1.14.0
     with:
       max-age-days: 15
