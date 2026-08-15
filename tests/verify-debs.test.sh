@@ -218,6 +218,20 @@ assert_error 1 "local release trust file is malformed" \
 	"malformed local trust file is diagnosed, not reported as tampered" \
 	-- "$VERIFY" "$d" "$WORK/key-malformed.b64"
 
+# --- Case 14: an empty .deb directory fails closed with the right message,
+#             so a product whose downloads all failed (release retired, 404,
+#             network) cannot publish an archive that claims "verified 0
+#             packages" with exit 0. The empty-array check at verify-debs.sh
+#             depends on `shopt -s nullglob` to actually produce an empty
+#             array when the glob has no matches; that option is what makes
+#             this control exercisable, and removing either line 50 (the
+#             shopt) or line 52 (the check itself) takes this test red —
+#             verified by mutation on the PR branch. ---
+d="$WORK/case14"; mkdir -p "$d"
+assert_error 1 "no .deb files to verify" \
+	"an empty .deb directory fails closed rather than admitting zero packages" \
+	-- "$VERIFY" "$d" "$WORK/key.b64"
+
 echo
 echo "passed $pass, failed $fail"
 [ "$fail" -eq 0 ]
