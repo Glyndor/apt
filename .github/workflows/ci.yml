@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   shell:
-    uses: Glyndor/.github/.github/workflows/shell-ci.yml@3a46ffe91ecadcce7f14c99ea8b23ead4274f325 # v1.13.2
+    uses: Glyndor/.github/.github/workflows/shell-ci.yml@c958978687af37dc2d826a967d9c549589afb39f # v1.14.1
     with:
       test-command: ./tests/verify-debs.test.sh && ./tests/verify-published.test.sh && ./tests/build-keyring.test.sh && ./tests/purge-cache.test.sh && ./tests/build-index-page.test.sh
       apt-packages: python3-cryptography
@@ -30,8 +30,8 @@ jobs:
     if: github.event_name == 'pull_request'
     uses: Glyndor/.github/.github/workflows/empty-diff.yml@c958978687af37dc2d826a967d9c549589afb39f # v1.14.1
   pin-policy:
-    uses: Glyndor/.github/.github/workflows/pin-policy-reusable.yml@0795ea8b8ad6e69466e99ca530e681d423943cc2 # v1.15.0
+    uses: Glyndor/.github/.github/workflows/pin-policy-reusable.yml@6535f511b5eb35123e0c0d0719e722db69860407 # v1.15.0
   dependabot-freshness:
-    uses: Glyndor/.github/.github/workflows/dependabot-freshness.yml@c149c995c10d3ed908489866bafe7d3c97920977 # v1.14.0
+    uses: Glyndor/.github/.github/workflows/dependabot-freshness.yml@6535f511b5eb35123e0c0d0719e722db69860407 # v1.14.0
     with:
       max-age-days: 15
