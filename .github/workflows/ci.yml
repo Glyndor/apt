@@ -4,6 +4,13 @@ name: CI
 # pull request and push to main, so a regression in the fail-closed signature
 # gate (scripts/verify-debs.sh) is caught before it can reach the publish
 # workflow. The logic lives in the org's reusable shell-ci workflow.
+#
+# `pin-policy` and `dependabot-freshness` are the per-repo guard pair
+# (PR rollout #3-#7 of the pin-policy refactor). Both run against this
+# repository's own state with the caller workflow's GITHUB_TOKEN, so a
+# private repository or a stale reusable pin is no longer invisible to
+# the guard. The cross-repo form that lived on .github's own schedule
+# was retired in PR #119.
 
 on:
   pull_request:
@@ -22,3 +29,9 @@ jobs:
   empty-diff:
     if: github.event_name == 'pull_request'
     uses: Glyndor/.github/.github/workflows/empty-diff.yml@c958978687af37dc2d826a967d9c549589afb39f # v1.14.1
+  pin-policy:
+    uses: Glyndor/.github/.github/workflows/pin-policy-reusable.yml@0795ea8b8ad6e69466e99ca530e681d423943cc2 # v1.15.0
+  dependabot-freshness:
+    uses: Glyndor/.github/.github/workflows/dependabot-freshness.yml@c149c995c10d3ed908489866bafe7d3c97920977 # v1.14.0
+    with:
+      max-age-days: 15
