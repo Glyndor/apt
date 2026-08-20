@@ -35,3 +35,27 @@ jobs:
     uses: Glyndor/.github/.github/workflows/dependabot-freshness.yml@8517d94fde00466f59b95c5d1bd838e2ad24a8bf # v1.15.2
     with:
       max-age-days: 15
+
+  # A cron that stops firing emits nothing, and "no alert" is indistinguishable
+  # from "all clear". Every scheduled workflow in this org went dark on
+  # 2026-06-29 and four repos stayed dark for another four weeks, all reporting
+  # `active` throughout. This turns the absence of a scheduled run into a red
+  # check on ordinary work.
+
+  freshness-publish:
+    permissions:
+      contents: read
+      actions: read
+    uses: Glyndor/.github/.github/workflows/schedule-freshness.yml@118244b8d758bdec6d2c5115d815dbc2e5c4f4e9 # v1.16.0
+    with:
+      workflow: publish.yml
+      max-age-days: 3
+
+  freshness-health-check:
+    permissions:
+      contents: read
+      actions: read
+    uses: Glyndor/.github/.github/workflows/schedule-freshness.yml@118244b8d758bdec6d2c5115d815dbc2e5c4f4e9 # v1.16.0
+    with:
+      workflow: health-check.yml
+      max-age-days: 1
