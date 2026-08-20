@@ -1,0 +1,21 @@
+// Let unattended-upgrades install from the Glyndor archive.
+//
+// Installing a package is not the same as keeping it current: `apt upgrade` is
+// something a person runs. unattended-upgrades is what makes it automatic, and
+// it only touches origins on this allowlist - which ships covering Debian's own
+// security suite and nothing else. Without this line a Glyndor package sits at
+// the version it was installed at until somebody remembers it.
+//
+// That matters most for the products that are exposed: a mail server listening
+// on 25, 465, 587 and 993 should not be waiting on someone's memory for a
+// security fix.
+//
+// Numbered above Debian's 50unattended-upgrades so this loads after it. apt
+// appends repeated blocks rather than replacing them (measured with
+// `apt-config dump`), so whatever the operator already allows is untouched.
+//
+// To opt out, edit this file - it is a conffile, so dpkg keeps your version
+// across upgrades and will ask before overwriting it.
+Unattended-Upgrade::Allowed-Origins {
+        "Glyndor:stable";
+};
