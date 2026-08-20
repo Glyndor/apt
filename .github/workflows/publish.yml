@@ -38,7 +38,7 @@ env:
   # --delete, so a product quietly skipped is a product EVICTED from the served
   # archive. A declared architecture that does not arrive is still a hard error;
   # an undeclared one is never looked for.
-  PRODUCTS: "podup"
+  PRODUCTS: "podup epistle"
   # Architectures to collect and serve. Must match the reprepro distribution
   # (scripts/build-repo.sh) and keyring/glyndor.sources.
   ARCHITECTURES: "amd64 arm64"
