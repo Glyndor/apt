@@ -29,6 +29,7 @@ BUILD="$REPO/scripts/build-keyring.sh"
 mkdir -p "$REPO/scripts" "$REPO/keyring"
 cp "$HERE/scripts/build-keyring.sh" "$REPO/scripts/"
 cp "$HERE"/keyring/glyndor-apt-key.asc "$HERE"/keyring/glyndor.sources \
+	"$HERE"/keyring/glyndor-unattended-upgrades \
 	"$HERE"/keyring/version "$REPO/keyring/"
 git -C "$REPO" init -q
 git -C "$REPO" add -A
@@ -121,6 +122,16 @@ else
 	no "editing the sources list moves the version (stayed $before_version)"
 fi
 
+# Same guarantee for the unattended-upgrades allowlist. Shipping a changed
+# allowlist under a version apt has already installed means apt never offers it,
+# so the file would be correct in the archive and absent on every machine.
+after_unattended="$(bump_input keyring/glyndor-unattended-upgrades "// tracked-input probe" unattended-bump)"
+if [ "$after_unattended" != "$before_version" ]; then
+	ok "editing the unattended-upgrades config moves the version ($before_version -> $after_unattended)"
+else
+	no "editing the unattended-upgrades config moves the version (stayed $before_version)"
+fi
+
 # apt refuses to move a client backwards, so a version that changes but does not
 # INCREASE is as undeliverable as one that never moved.
 if dpkg --compare-versions "$after_sources" gt "$before_version"; then
@@ -139,7 +150,8 @@ else
 fi
 
 contents="$(dpkg-deb --contents "$first")"
-for path in ./usr/share/keyrings/glyndor.gpg ./etc/apt/sources.list.d/glyndor.sources; do
+for path in ./usr/share/keyrings/glyndor.gpg ./etc/apt/sources.list.d/glyndor.sources \
+	./etc/apt/apt.conf.d/51glyndor-unattended-upgrades; do
 	if printf '%s' "$contents" | grep -qF " $path"; then
 		ok "the package ships $path"
 	else
@@ -155,7 +167,11 @@ done
 detached="$WORK/detached"
 mkdir -p "$detached/scripts" "$detached/keyring" "$detached/out"
 cp "$BUILD" "$detached/scripts/"
+# Every packaged input, not just the ones this case is about: the build fails
+# closed on a missing one, and a fixture short of a file would fail here for
+# that reason instead of the missing history this case exists to check.
 cp "$REPO"/keyring/glyndor-apt-key.asc "$REPO"/keyring/glyndor.sources \
+	"$REPO"/keyring/glyndor-unattended-upgrades \
 	"$REPO"/keyring/version "$detached/keyring/"
 
 got=0
