@@ -91,7 +91,8 @@ class Handler(BaseHTTPRequestHandler):
 		body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
 		with open(LOG, "a") as fh:
 			fh.write(body.decode() + "\n")
-		if MODE == "fail-second" and sum(1 for _ in open(LOG)) == 2:
+		seen = sum(1 for _ in open(LOG))
+		if (MODE == "fail-second" and seen == 2) or (MODE == "fail-first" and seen == 1):
 			payload = {"success": False, "errors": [{"message": "too many files"}]}
 		else:
 			payload = {"success": True, "errors": []}
@@ -137,20 +138,35 @@ export CF_API_BASE="http://127.0.0.1:$PORT/client/v4"
 
 # --- one product, two architectures: today's archive ------------------------
 # 5 fixed + 6 index (3 per arch) + 3 pool (1 per arch, plus the keyring, which
-# both indices declare and the list deduplicates) = 14, one request.
+# both indices declare and the list deduplicates) = 14 URLs.
+#
+# Two requests, not one: content first, then the indices on their own. A
+# partial purge is not degradation for apt but a signature that does not
+# verify, so the indices have to move together and last. See purge-cache.sh.
 start_server ok
 build_archive 1 "amd64 arm64"
 "$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 \
 	|| { echo "FAIL  the one-product case exited non-zero"; cat "$WORK/out"; exit 1; }
 
-check "one product on two arches sends a single request" \
-	"1" "$(wc -l < "$REQUESTS")"
-check "one product on two arches purges 14 URLs" \
-	"14" "$(jq -r '.files | length' < "$REQUESTS")"
+check "one product on two arches sends content and indices separately" \
+	"2" "$(wc -l < "$REQUESTS")"
+check "one product on two arches purges 14 URLs in total" \
+	"14" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
 check "the pool object is deduplicated across the two indices" \
-	"1" "$(jq -r '[.files[] | select(endswith("_all.deb"))] | length' < "$REQUESTS")"
+	"1" "$(jq -s -r '[.[].files[] | select(endswith("_all.deb"))] | length' < "$REQUESTS")"
 check "the per-architecture Release files are purged" \
-	"2" "$(jq -r '[.files[] | select(endswith("binary-amd64/Release") or endswith("binary-arm64/Release"))] | length' < "$REQUESTS")"
+	"2" "$(jq -s -r '[.[].files[] | select(endswith("binary-amd64/Release") or endswith("binary-arm64/Release"))] | length' < "$REQUESTS")"
+
+# The ordering is the whole point: an InRelease purged before the Packages it
+# names leaves the edge serving a new signature over stale indices, which is a
+# hard error on the updating machine. Purged the other way round, a failure
+# just leaves the archive on its previous version.
+check "no index is purged in the first request" \
+	"0" "$(head -1 "$REQUESTS" | jq -r '[.files[] | select(contains("/dists/stable/"))] | length')"
+check "every index is purged in the last request" \
+	"9" "$(tail -1 "$REQUESTS" | jq -r '[.files[] | select(contains("/dists/stable/"))] | length')"
+check "the last request carries nothing but indices" \
+	"9" "$(tail -1 "$REQUESTS" | jq -r '.files | length')"
 
 # --- the roster on three architectures: the case that used to fail ----------
 # 5 fixed + 9 index + (7 products + keyring) × 3 arches deduplicated to 22 pool
@@ -176,8 +192,27 @@ build_archive 7 "amd64 arm64 armhf"
 rc=0
 "$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 || rc=$?
 check "a rejected batch fails the purge" "1" "$rc"
-check "the error names which batch was rejected" \
-	"1" "$(grep -c 'failed on batch 2' "$WORK/out")"
+# The second request is the index one — content fits in a single batch here.
+check "the error names which group and batch was rejected" \
+	"1" "$(grep -c 'failed on index batch 2' "$WORK/out")"
+
+# --- a content failure leaves the archive consistent ------------------------
+#
+# Failing the FIRST request means the indices were never touched, so the edge
+# still serves old indices pointing at files that are still there: the archive
+# is stale, not broken. The operator reading a red run needs to know which of
+# those it is, because they call for very different responses.
+start_server fail-first
+build_archive 7 "amd64 arm64 armhf"
+rc=0
+"$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 || rc=$?
+check "a rejected content batch fails the purge" "1" "$rc"
+check "the error names the content group" \
+	"1" "$(grep -c 'failed on content batch 1' "$WORK/out")"
+check "a content failure says the archive is still consistent" \
+	"1" "$(grep -c 'the indices were not purged' "$WORK/out")"
+check "a content failure never reaches the indices" \
+	"1" "$(wc -l < "$REQUESTS")"
 
 # --- fail closed on missing inputs ------------------------------------------
 start_server ok
