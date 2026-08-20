@@ -37,11 +37,12 @@ OUT_DIR="${1:?usage: build-keyring.sh <output-dir>}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PUBKEY_ASC="$HERE/keyring/glyndor-apt-key.asc"
 SOURCES="$HERE/keyring/glyndor.sources"
+UNATTENDED="$HERE/keyring/glyndor-unattended-upgrades"
 
 # Every file this package installs. The version suffix is the date the newest of
 # them last changed, so any edit to what clients receive bumps the version that
 # reaches them.
-PACKAGED_INPUTS=(keyring/glyndor-apt-key.asc keyring/glyndor.sources)
+PACKAGED_INPUTS=(keyring/glyndor-apt-key.asc keyring/glyndor.sources keyring/glyndor-unattended-upgrades)
 
 # Base version from keyring/version, suffixed with that date.
 BASE_VERSION="$(cat "$HERE/keyring/version")"
@@ -69,6 +70,7 @@ VERSION="${BASE_VERSION}+pkg${PKG_DATE}"
 
 [ -f "$PUBKEY_ASC" ] || { echo "missing public key: $PUBKEY_ASC" >&2; exit 1; }
 [ -f "$SOURCES" ]    || { echo "missing sources file: $SOURCES" >&2; exit 1; }
+[ -f "$UNATTENDED" ] || { echo "missing unattended-upgrades config: $UNATTENDED" >&2; exit 1; }
 
 mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
@@ -80,6 +82,7 @@ chmod 0755 "$ROOT"
 install -d -m 0755 "$ROOT/DEBIAN"
 install -d -m 0755 "$ROOT/usr/share/keyrings"
 install -d -m 0755 "$ROOT/etc/apt/sources.list.d"
+install -d -m 0755 "$ROOT/etc/apt/apt.conf.d"
 
 gpg --dearmor < "$PUBKEY_ASC" > "$ROOT/usr/share/keyrings/glyndor.gpg"
 chmod 0644 "$ROOT/usr/share/keyrings/glyndor.gpg"
@@ -92,6 +95,10 @@ key_count="$(gpg --show-keys --with-colons "$ROOT/usr/share/keyrings/glyndor.gpg
 echo "keyring carries $key_count key(s)"
 
 install -m 0644 "$SOURCES" "$ROOT/etc/apt/sources.list.d/glyndor.sources"
+# 51 so it loads after Debian's own 50unattended-upgrades. apt appends repeated
+# Allowed-Origins blocks rather than replacing them, so the operator's existing
+# allowlist survives.
+install -m 0644 "$UNATTENDED" "$ROOT/etc/apt/apt.conf.d/51glyndor-unattended-upgrades"
 
 cat > "$ROOT/DEBIAN/control" <<EOF
 Package: glyndor-archive-keyring
@@ -105,10 +112,15 @@ Description: GPG key and apt source for the Glyndor repository
  Installs the signing key and source list for the Glyndor apt repository at
  https://apt.glyndor.net so Glyndor packages can be installed and kept up to
  date with apt. Key renewals are delivered through apt upgrade.
+ .
+ It also allows unattended-upgrades to install from this archive, so security
+ fixes for Glyndor packages arrive without anyone running apt by hand. Edit
+ /etc/apt/apt.conf.d/51glyndor-unattended-upgrades to opt out.
 EOF
 
 cat > "$ROOT/DEBIAN/conffiles" <<'EOF'
 /etc/apt/sources.list.d/glyndor.sources
+/etc/apt/apt.conf.d/51glyndor-unattended-upgrades
 EOF
 
 # Build reproducibly. Without this the tree's mtimes are the build time, they go
