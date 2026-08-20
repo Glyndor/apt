@@ -67,17 +67,46 @@ pool_paths="$(awk '/^Filename:/ { print $2 }' \
 [ -n "$pool_paths" ] \
 	|| { echo "::error::the built indices declare no packages to purge"; exit 1; }
 
+# Split into content and indices, and purge the indices LAST.
+#
+# A partial purge is not degradation for apt, it is a signature that does not
+# verify: an InRelease naming hashes for a Packages the edge still serves from
+# cache is a hard error on the updating machine, and it persists until the next
+# publish. Batches can fail independently, so the order decides what a failure
+# leaves behind.
+#
+# The asymmetry is what makes this safe. Pool files carry their version in the
+# name (podup_3.8.0_amd64.deb), so purging the new one never touches the old;
+# indices are fixed URLs whose contents change. Purging content first and
+# failing before the indices leaves old indices pointing at old files — the
+# archive simply stays on the previous version, consistent. Purging indices
+# first and failing leaves a new InRelease over stale Packages, which breaks.
+#
+# The indices go in a single request so they move together: there are nine of
+# them against a BATCH_SIZE of 30, and the guard below refuses to run rather
+# than split them if that ever stops being true.
+{
+	printf '%s\n' \
+		"$ARCHIVE_URL/glyndor-archive-keyring.deb" \
+		"$ARCHIVE_URL/index.html"
+	printf '%s\n' "$pool_paths" | sed "s|^|$ARCHIVE_URL/|"
+} | awk 'NF' | sort -u > "$work/urls-content"
+
 {
 	printf '%s\n' \
 		"$ARCHIVE_URL/dists/stable/InRelease" \
 		"$ARCHIVE_URL/dists/stable/Release" \
-		"$ARCHIVE_URL/dists/stable/Release.gpg" \
-		"$ARCHIVE_URL/glyndor-archive-keyring.deb" \
-		"$ARCHIVE_URL/index.html"
+		"$ARCHIVE_URL/dists/stable/Release.gpg"
 	printf '%s\n' "$index_paths" | sed "s|^|$ARCHIVE_URL/dists/stable/|"
-	printf '%s\n' "$pool_paths" | sed "s|^|$ARCHIVE_URL/|"
-} | awk 'NF' | sort -u > "$work/urls"
+} | awk 'NF' | sort -u > "$work/urls-index"
 
+index_total="$(wc -l < "$work/urls-index")"
+[ "$index_total" -le "$BATCH_SIZE" ] || {
+	echo "::error::$index_total index URLs exceed BATCH_SIZE=$BATCH_SIZE; they must purge in one request or a partial failure leaves apt with a signature that does not verify"
+	exit 1
+}
+
+cat "$work/urls-content" "$work/urls-index" > "$work/urls"
 total="$(wc -l < "$work/urls")"
 
 # Pass the token via a header file, not argv: an -H argument is world-visible
@@ -85,30 +114,47 @@ total="$(wc -l < "$work/urls")"
 hdr="$work/hdr"
 printf 'Authorization: Bearer %s\n' "$CF_TOKEN" > "$hdr"
 
-sent=0
 batches=0
-while [ "$sent" -lt "$total" ]; do
-	# jq -R/-s builds the JSON array from the raw lines, so a URL can never
-	# break out of the payload the way hand-assembled quoting could.
-	body="$(sed -n "$((sent + 1)),$((sent + BATCH_SIZE))p" "$work/urls" \
-		| jq -R . | jq -sc '{files: .}')"
 
-	resp="$(curl -sS --retry 3 --retry-all-errors --retry-delay 5 -X POST \
-		"$CF_API_BASE/zones/$CF_ZONE/purge_cache" \
-		-H @"$hdr" \
-		-H "Content-Type: application/json" \
-		--data "$body")"
+# Purge one file's worth of URLs in BATCH_SIZE-sized requests. $2 names the
+# group for the error message, so a failure says which half stopped.
+purge_file() { # $1=path $2=label
+	_count="$(wc -l < "$1")"
+	_sent=0
+	while [ "$_sent" -lt "$_count" ]; do
+		# jq -R/-s builds the JSON array from the raw lines, so a URL can never
+		# break out of the payload the way hand-assembled quoting could.
+		body="$(sed -n "$((_sent + 1)),$((_sent + BATCH_SIZE))p" "$1" \
+			| jq -R . | jq -sc '{files: .}')"
 
-	# jq -e parses the actual JSON structure instead of grep matching the raw
-	# response text, which a `"success":true` embedded in an unrelated field
-	# (or a differently formatted but still successful response) could fool
-	# either way.
-	echo "$resp" | jq -e '.success == true' >/dev/null \
-		|| { echo "::error::Cloudflare purge failed on batch $((batches + 1)): $resp"; exit 1; }
+		resp="$(curl -sS --retry 3 --retry-all-errors --retry-delay 5 -X POST \
+			"$CF_API_BASE/zones/$CF_ZONE/purge_cache" \
+			-H @"$hdr" \
+			-H "Content-Type: application/json" \
+			--data "$body")"
 
-	sent=$((sent + BATCH_SIZE))
-	batches=$((batches + 1))
-done
+		# jq -e parses the actual JSON structure instead of grep matching the raw
+		# response text, which a `"success":true` embedded in an unrelated field
+		# (or a differently formatted but still successful response) could fool
+		# either way.
+		echo "$resp" | jq -e '.success == true' >/dev/null || {
+			echo "::error::Cloudflare purge failed on $2 batch $((batches + 1)): $resp"
+			if [ "$2" = "content" ]; then
+				echo "::notice::the indices were not purged, so the archive keeps serving the previous version consistently"
+			fi
+			exit 1
+		}
+
+		_sent=$((_sent + BATCH_SIZE))
+		batches=$((batches + 1))
+	done
+}
+
+# Content first: a failure here leaves the old indices in place, pointing at
+# files that are still there. Indices last and in one request, so they never
+# move halfway.
+purge_file "$work/urls-content" "content"
+purge_file "$work/urls-index" "index"
 
 # Print what was purged. The list is derived rather than written, so the run log
 # is the only place it can be audited after the fact.
