@@ -39,6 +39,11 @@ env:
   # archive. A declared architecture that does not arrive is still a hard error;
   # an undeclared one is never looked for.
   PRODUCTS: "podup epistle"
+  # Products that get a bootstrap installer published at /install/<product>.
+  # Opt-in and deliberately separate from PRODUCTS: serving a package is the
+  # archive's business, but telling people to pipe a script into a root shell is
+  # the product's call, so a product appears here when its maintainers say so.
+  INSTALLERS: "epistle"
   # Architectures to collect and serve. Must match the reprepro distribution
   # (scripts/build-repo.sh) and keyring/glyndor.sources.
   ARCHITECTURES: "amd64 arm64"
@@ -234,6 +239,17 @@ jobs:
           # The keyring package is also offered at the repo root for first-time
           # bootstrap (curl + dpkg -i before apt knows the repo).
           cp debs/glyndor-archive-keyring.deb public/glyndor-archive-keyring.deb
+
+      - name: Build the bootstrap installers
+        run: |
+          set -euo pipefail
+          # One script per product in INSTALLERS, generated from a single
+          # template so a fix reaches every product at once. Served from here
+          # rather than as a release asset because the script does not change
+          # when a product cuts a version - and as an asset, a fix to the
+          # installer could not reach anyone until the next tag.
+          # shellcheck disable=SC2086
+          ./scripts/build-installers.sh public/install $INSTALLERS
 
       - name: Publish to R2
         env:
