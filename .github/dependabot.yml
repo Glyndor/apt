@@ -21,6 +21,22 @@ updates:
     # grouping, one upstream release day means six near-identical pull requests
     # and six full CI runs on a repo whose CI publishes a signed apt repository.
     # One pull request per day is enough to review the same information.
+    # Grouped into two, not one. The Glyndor reusables and the third-party
+    # actions get opposite answers from the same review, and a single group
+    # forces one answer for both.
+    #
+    # A .github release usually changes nothing this repository calls. The
+    # reusables come back byte-identical and I close the bump as a no-op --
+    # #94, #107 and #108 in the month to 23 August 2026. A third-party bump is the
+    # opposite: actions/checkout moving is the one thing here worth reading
+    # line by line.
+    #
+    # Under patterns: ["*"] both arrive in the same pull request, so closing
+    # the no-op closes the bump that mattered. That is the whole reason for
+    # the split: one pull request, one answer.
     groups:
-      actions:
+      glyndor-reusables:
+        patterns: ["Glyndor/.github*"]
+      third-party:
         patterns: ["*"]
+        exclude-patterns: ["Glyndor/.github*"]
