@@ -11,8 +11,12 @@
 # machine current. A binary dropped somewhere by hand stays on the version it
 # was installed at until somebody remembers it.
 #
-# Installing through apt also brings podman and podup in on its own - they are
-# Recommends of the package, and apt installs those by default.
+# Installing through apt also brings in whatever @PRODUCT@ recommends, because
+# apt installs Recommends by default. This sentence used to name podman and
+# podup specifically: true of epistle, which was the only product generated
+# from this template at the time, and false the moment the template rendered
+# for anything else - podup recommends podman alone, so its own installer would
+# have claimed that installing podup brings podup in.
 set -eu
 
 KEYRING_URL="${KEYRING_URL:-https://apt.glyndor.net/glyndor-archive-keyring.deb}"

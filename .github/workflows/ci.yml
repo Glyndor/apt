@@ -24,7 +24,7 @@ jobs:
   shell:
     uses: Glyndor/.github/.github/workflows/shell-ci.yml@d4bbc5b6ec0c351ca4cb17d948ceaad818da4078 # v1.18.1
     with:
-      test-command: ./tests/verify-debs.test.sh && ./tests/verify-published.test.sh && ./tests/build-keyring.test.sh && ./tests/purge-cache.test.sh && ./tests/build-index-page.test.sh
+      test-command: ./tests/verify-debs.test.sh && ./tests/verify-published.test.sh && ./tests/build-keyring.test.sh && ./tests/purge-cache.test.sh && ./tests/build-index-page.test.sh && ./tests/build-installers.test.sh
       apt-packages: python3-cryptography
   empty-diff:
     if: github.event_name == 'pull_request'
