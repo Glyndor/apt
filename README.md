@@ -50,7 +50,8 @@ Only once the fingerprint matches:
 ```bash
 sudo dpkg -i glyndor-archive-keyring.deb
 sudo apt update
-sudo apt install podup        # or any other Glyndor package
+sudo apt install podup
+# to list every Glyndor package: apt list '?origin(Glyndor)'
 ```
 
 The keyring package installs the signing key and the source list. Because the
