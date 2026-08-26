@@ -65,7 +65,14 @@ jobs:
             echo "::error::no Date field in InRelease — the served index is malformed"
             exit 1
           fi
-          rel_epoch="$(date -u -d "$date_line" +%s)"
+          # `date -d` on an unparseable value dies under `set -e` with no
+          # ::error:: line, so the alert would name nothing and whoever opened
+          # it would start from a bare exit code. A malformed Date is the same
+          # class of breakage as a missing one and deserves the same sentence.
+          if ! rel_epoch="$(date -u -d "$date_line" +%s 2>/dev/null)"; then
+            echo "::error::the Date field in InRelease could not be read ('$date_line') — the served index is malformed"
+            exit 1
+          fi
           now_epoch="$(date -u +%s)"
           age_h=$(( (now_epoch - rel_epoch) / 3600 ))
           echo "InRelease Date: $date_line (${age_h}h old)"
