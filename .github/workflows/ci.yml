@@ -31,7 +31,7 @@ jobs:
   shell:
     uses: ./.github/workflows/reusable-shell-ci.yml
     with:
-      test-command: ./tests/verify-debs.test.sh && ./tests/verify-published.test.sh && ./tests/build-keyring.test.sh && ./tests/purge-cache.test.sh && ./tests/build-index-page.test.sh && ./tests/build-installers.test.sh && ./tests/install-template.test.sh && ./tests/readme-bootstrap.test.sh && ./tests/build-repo.test.sh && ./tests/check-test-coverage.test.sh
+      test-command: ./tests/verify-debs.test.sh && ./tests/verify-published.test.sh && ./tests/build-keyring.test.sh && ./tests/purge-cache.test.sh && ./tests/build-index-page.test.sh && ./tests/build-installers.test.sh && ./tests/install-template.test.sh && ./tests/readme-bootstrap.test.sh && ./tests/build-repo.test.sh && ./tests/check-test-coverage.test.sh && ./tests/publish-workflow.test.sh
       apt-packages: python3-cryptography reprepro
   empty-diff:
     if: github.event_name == 'pull_request'
