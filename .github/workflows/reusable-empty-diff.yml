@@ -1,0 +1,50 @@
+name: empty-diff (reusable)
+
+# Fail a pull request when its diff against the base branch is empty.
+# Eight no-op PRs landed on Glyndor/homebrew-tap and Glyndor/scoop-bucket
+# before this gate existed: the work was already in main via squash-merge,
+# the branch was recreated as `-v2`, and the second merge landed as a commit
+# with zero files changed. CI is happy with that — a commit with no diff is
+# valid git and a green GitHub Actions run, and only `git show --stat` flags
+# it.
+#
+# Add this as an advisory caller in every repository that opens PRs against
+# `main`, then promote it to a required status check once the emitted check
+# name has stayed stable across a few weeks of green. Promoting it before
+# the name has settled is how a phantom required check is created (see the
+# `dco` and `line-limit` reusable docs for the by-name matching detail).
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: empty-diff-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  empty-diff:
+    name: empty diff
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fail when the pull request changes nothing
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE:-}" ]; then
+            echo "::error::could not determine the pull request base ref — this reusable must be called from a pull_request-triggered workflow"
+            exit 1
+          fi
+          if git diff --quiet "origin/${BASE}...HEAD"; then
+            echo "::error::this pull request has an empty diff against ${BASE}"
+            exit 1
+          fi
