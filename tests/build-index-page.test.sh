@@ -155,6 +155,39 @@ rc=0; run "$WORK/h" || rc=$?
 check "an attribute-breaking Architectures value is rejected" "1" "$rc"
 check "and no script tag reaches the page" "0" "$(find "$WORK/h" -name index.html 2>/dev/null | wc -l)"
 
+# --- the package list must not depend on the machine's collation ------------
+#
+# `sort -u` compares by the locale's collation, and UTF-8 collations ignore
+# punctuation at the primary level: `pod-up` and `podup` are both legal Debian
+# names, and under en_US.UTF-8 they compare EQUAL, so one of them is dropped
+# from the page without a word. The runner's locale is not the user's, so this
+# has to be pinned rather than left to the environment.
+
+check "the package list is sorted under a fixed collation" "1" \
+	"$(grep -c 'LC_ALL=C sort -u' "$BUILD")"
+
+# The static check above catches a removal; this one catches the behaviour. It
+# needs a locale that actually collapses the two names, which not every machine
+# has -- when none does, say so rather than counting a pass nothing verified.
+collapsing_locale=""
+for loc in en_US.UTF-8 en_GB.UTF-8 de_DE.UTF-8 fr_FR.UTF-8; do
+	locale -a 2>/dev/null | grep -qix "${loc/UTF-8/utf8}" || continue
+	[ "$(printf 'pod-up\npodup\n' | LC_ALL="$loc" sort -u | wc -l)" -eq 1 ] || continue
+	collapsing_locale="$loc"; break
+done
+if [ -n "$collapsing_locale" ]; then
+	archive "$WORK/j" "amd64" pod-up podup
+	rc=0; LC_ALL="$collapsing_locale" run "$WORK/j" || rc=$?
+	check "a page still builds under $collapsing_locale" "0" "$rc"
+	# Both <li> land on one line, so count matches, not lines.
+	check "both names survive a collation that treats them as equal" "2" \
+		"$(grep -o '<li><code>sudo apt install pod[a-z-]*</code></li>' \
+			"$WORK/j/index.html" | wc -l | tr -d ' ')"
+else
+	echo "NOTE  no locale here collapses 'pod-up' and 'podup';"
+	echo "      the behavioural half of the collation check did not run"
+fi
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

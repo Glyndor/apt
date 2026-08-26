@@ -67,7 +67,7 @@ while IFS= read -r pkg; do
 	PACKAGE_ITEMS="$PACKAGE_ITEMS<li><code>sudo apt install $pkg</code></li>"
 done <<EOF_PKGS
 $(awk '/^Package:/ { print $2 }' "$OUT_DIR"/dists/stable/main/binary-*/Packages \
-	| grep -vx 'glyndor-archive-keyring' | sort -u)
+	| grep -vx 'glyndor-archive-keyring' | LC_ALL=C sort -u)
 EOF_PKGS
 [ -n "$PACKAGE_ITEMS" ] \
 	|| { echo "the built indices declare no installable packages" >&2; exit 1; }
