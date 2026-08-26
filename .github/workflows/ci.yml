@@ -31,8 +31,8 @@ jobs:
   shell:
     uses: ./.github/workflows/reusable-shell-ci.yml
     with:
-      test-command: ./tests/verify-debs.test.sh && ./tests/verify-published.test.sh && ./tests/build-keyring.test.sh && ./tests/purge-cache.test.sh && ./tests/build-index-page.test.sh && ./tests/build-installers.test.sh && ./tests/install-template.test.sh && ./tests/readme-bootstrap.test.sh
-      apt-packages: python3-cryptography
+      test-command: ./tests/verify-debs.test.sh && ./tests/verify-published.test.sh && ./tests/build-keyring.test.sh && ./tests/purge-cache.test.sh && ./tests/build-index-page.test.sh && ./tests/build-installers.test.sh && ./tests/install-template.test.sh && ./tests/readme-bootstrap.test.sh && ./tests/build-repo.test.sh
+      apt-packages: python3-cryptography reprepro
   empty-diff:
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/reusable-empty-diff.yml
