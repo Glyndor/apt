@@ -110,10 +110,17 @@ jobs:
           # `if:` skips, so a check inside it shares the fate of the thing it
           # would be checking. workflow-lint is a separate required check and
           # survives.
+          # Requiring at least one caller is half the check, and the half I
+          # left out first. Iterating callers and finding none passes: "no
+          # violations found" and "nothing to look at" produce the same green,
+          # which is the exact failure this assertion was written against.
+          # Deleting tests.yml outright would have walked straight past it.
+          callers=0
           missing=""
           for wf in .github/workflows/*.yml; do
             case "$(basename "$wf")" in reusable-*) continue ;; esac
             grep -q 'reusable-shell-ci\.yml' "$wf" || continue
+            callers=$((callers + 1))
             # A caller of reusable-shell-ci must pass a non-empty test-command.
             # `>-` folds the value onto following lines, so read the block
             # rather than the single line the key sits on.
@@ -122,6 +129,11 @@ jobs:
               missing="$missing $wf"
             fi
           done
+          if [ "$callers" -eq 0 ]; then
+            echo "::error::no workflow calls reusable-shell-ci, so the required \`shell / test\` check would never report" >&2
+            echo "A required check that is never reported blocks a pull request, but nothing here would have said why." >&2
+            exit 1
+          fi
           if [ -n "$missing" ]; then
             echo "::error::a workflow calls reusable-shell-ci without a test-command that runs any suite:$missing" >&2
             echo "An empty test-command skips the \`test\` job, and a skipped required check reports Success." >&2
