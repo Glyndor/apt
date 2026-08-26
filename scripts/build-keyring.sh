@@ -89,9 +89,57 @@ chmod 0644 "$ROOT/usr/share/keyrings/glyndor.gpg"
 
 # Fail closed if dearmor produced no key, and report how many it carries so a
 # two-phase rotation (both keys present during the overlap) is visible in logs.
-key_count="$(gpg --show-keys --with-colons "$ROOT/usr/share/keyrings/glyndor.gpg" 2>/dev/null \
-	| grep -c '^pub:' || true)"
+pub_lines="$(gpg --show-keys --with-colons "$ROOT/usr/share/keyrings/glyndor.gpg" 2>/dev/null \
+	| grep '^pub:' || true)"
+key_count="$(printf '%s' "$pub_lines" | grep -c . || true)"
 [ "$key_count" -ge 1 ] || { echo "::error::keyring contains no usable key" >&2; exit 1; }
+
+# Counting keys is not the same as having a usable one. An expired or revoked
+# key dearmors and counts exactly like a live one, so the build would package it
+# and every client that installed it would then reject every Release signature
+# this archive produces -- and the breakage reads as "the archive is broken"
+# rather than "the key is expired", because nothing in the publish log mentions
+# expiry.
+#
+# Field 2 of a `pub:` record is the validity: `e` expired, `r` revoked, `d`
+# disabled. It is `-` for a key with no ownertrust assigned, which is what the
+# archive key looks like in a fresh keyring, so the test is that the value is
+# not one of the three -- not that it is `u`.
+bad=""
+while IFS= read -r line; do
+	[ -n "$line" ] || continue
+	validity="$(printf '%s' "$line" | cut -d: -f2)"
+	fpr="$(printf '%s' "$line" | cut -d: -f5)"
+	case "$validity" in
+		e) bad="$bad expired:$fpr" ;;
+		r) bad="$bad revoked:$fpr" ;;
+		d) bad="$bad disabled:$fpr" ;;
+	esac
+done <<EOF_PUB
+$pub_lines
+EOF_PUB
+if [ -n "$bad" ]; then
+	echo "::error::keyring carries a key that clients cannot use:$bad" >&2
+	echo "Rotate the key in keyring/glyndor-apt-key.asc before publishing." >&2
+	exit 1
+fi
+
+# A key that is live today and expires next week is not an error, but shipping
+# it without saying so is how the expiry arrives as a surprise. The archive
+# publishes daily, so a warning in the log is seen long before it matters.
+now="$(date -u +%s)"
+while IFS= read -r line; do
+	[ -n "$line" ] || continue
+	expiry="$(printf '%s' "$line" | cut -d: -f7)"
+	[ -n "$expiry" ] || continue
+	days=$(( (expiry - now) / 86400 ))
+	if [ "$days" -lt 30 ]; then
+		echo "::warning::archive key $(printf '%s' "$line" | cut -d: -f5) expires in ${days}d" >&2
+	fi
+done <<EOF_EXP
+$pub_lines
+EOF_EXP
+
 echo "keyring carries $key_count key(s)"
 
 install -m 0644 "$SOURCES" "$ROOT/etc/apt/sources.list.d/glyndor.sources"

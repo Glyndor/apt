@@ -182,6 +182,87 @@ else
 	no "a build outside a git checkout fails closed (exit $got)"
 fi
 
+# --- a key clients cannot use must not be packaged --------------------------
+#
+# Counting keys is not the same as having a usable one: an expired or revoked
+# key dearmors and counts exactly like a live one. A client that installed it
+# would reject every Release signature this archive produces, and the breakage
+# would read as "the archive is broken" rather than "the key is expired",
+# because nothing in the publish log mentioned expiry.
+
+key_repo() { # $1=dir $2=gpg lifetime spec
+	local dir="$1" life="$2"
+	rm -rf "$dir"; mkdir -p "$dir/scripts" "$dir/keyring"
+	cp "$HERE/scripts/build-keyring.sh" "$dir/scripts/"
+	cp "$HERE"/keyring/glyndor.sources "$HERE"/keyring/glyndor-unattended-upgrades \
+		"$HERE"/keyring/version "$dir/keyring/"
+	local home="$dir/.gnupg"; mkdir -p "$home"; chmod 700 "$home"
+	GNUPGHOME="$home" gpg --batch --quiet --passphrase '' \
+		--quick-generate-key "fixture <f@test.invalid>" default default "$life" \
+		>/dev/null 2>&1
+	GNUPGHOME="$home" gpg --batch --armor --export fixture \
+		> "$dir/keyring/glyndor-apt-key.asc"
+	GNUPGHOME="$home" gpgconf --kill all >/dev/null 2>&1 || true
+	git -C "$dir" init -q
+	git -C "$dir" add -A
+	git -C "$dir" -c user.name=test -c user.email=test@example.invalid \
+		commit -qm fixture
+}
+
+# The acceptance half first. Without it the refusal below is satisfied by a
+# script that refuses every generated key, and the case would prove nothing.
+key_repo "$WORK/live" "never"
+rc=0
+out="$("$WORK/live/scripts/build-keyring.sh" "$WORK/out-live" 2>&1)" || rc=$?
+if [ "$rc" -eq 0 ]; then
+	ok "a key with no expiry is packaged"
+else
+	no "a key with no expiry is packaged (exit $rc: $out)"
+fi
+
+# `seconds=1` plus a wait, rather than a date in the past: gpg refuses to create
+# a key that is already expired.
+key_repo "$WORK/exp" "seconds=1"
+sleep 2
+rc=0
+out="$("$WORK/exp/scripts/build-keyring.sh" "$WORK/out-exp" 2>&1)" || rc=$?
+if [ "$rc" -ne 0 ]; then
+	ok "an expired key is refused"
+else
+	no "an expired key is refused (exited 0)"
+fi
+if printf '%s' "$out" | grep -q 'clients cannot use'; then
+	ok "and the error says clients could not use it"
+else
+	no "and the error says clients could not use it (got: $out)"
+fi
+if printf '%s' "$out" | grep -q 'expired:'; then
+	ok "and says which way it is unusable"
+else
+	no "and says which way it is unusable (got: $out)"
+fi
+if [ ! -f "$WORK/out-exp/glyndor-archive-keyring.deb" ]; then
+	ok "and no package was written"
+else
+	no "and no package was written"
+fi
+
+# Live today, expiring soon: a warning, not a refusal. The archive publishes
+# daily, so the log is read long before the expiry lands.
+key_repo "$WORK/soon" "7d"
+rc=0
+out="$("$WORK/soon/scripts/build-keyring.sh" "$WORK/out-soon" 2>&1)" || rc=$?
+if [ "$rc" -eq 0 ]; then
+	ok "a key expiring soon is still packaged"
+else
+	no "a key expiring soon is still packaged (exit $rc: $out)"
+fi
+if printf '%s' "$out" | grep -q 'expires in'; then
+	ok "and the run warns how long is left"
+else
+	no "and the run warns how long is left (got: $out)"
+fi
+
 # --- Result ------------------------------------------------------------------
 
 echo
