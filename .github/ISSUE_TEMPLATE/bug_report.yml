@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a bug or unexpected behavior
+title: "[bug]: "
+labels: ["type:bug", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting, please search existing issues to avoid duplicates.
+        **Security issue? Do NOT file it here** — use the Security tab → "Report a vulnerability" instead.
+  - type: input
+    id: component
+    attributes:
+      label: Component
+      description: Which part of this repository is affected (e.g. publish, keyring, installer, index page).
+      placeholder: publish
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: e.g. Ubuntu 24.04, Debian 13, Fedora 42
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Project version and how you installed it.
+      placeholder: v0.3.1 (install.sh)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste relevant log output. **Redact secrets, IPs, hostnames and emails.**
+      render: shell
