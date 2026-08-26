@@ -1,0 +1,51 @@
+name: Freshness
+
+# Watchers for things whose failure mode is silence.
+#
+# A cron that stops firing emits nothing, and "no alert" is indistinguishable
+# from "all clear". Every scheduled workflow in this org went dark on
+# 2026-06-29 and four repositories stayed dark for another four weeks, all
+# reporting `active` throughout. These jobs turn the ABSENCE of a scheduled run
+# into a red check on ordinary work, which is the only place anyone would see
+# it.
+#
+# dependabot-freshness watches the same shape from the other side: a
+# dependabot.yml sitting in the repository is not proof Dependabot is running,
+# because registration is lost when the config stops changing on the default
+# branch.
+#
+# Separate from the test suite on purpose. These fail because something did not
+# happen elsewhere, never because this pull request is wrong, and reading them
+# in the same file as the tests invites treating them as flakes.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dependabot-freshness:
+    uses: ./.github/workflows/reusable-dependabot-freshness.yml
+    with:
+      max-age-days: 15
+
+  freshness-publish:
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/reusable-schedule-freshness.yml
+    with:
+      workflow: publish.yml
+      max-age-days: 3
+
+  freshness-health-check:
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/reusable-schedule-freshness.yml
+    with:
+      workflow: health-check.yml
+      max-age-days: 1

@@ -1,0 +1,21 @@
+name: PR hygiene
+
+# Checks that only make sense against a pull request, kept apart from the test
+# suite so a red here reads as "the pull request is malformed" rather than "the
+# code is broken".
+#
+# empty-diff catches a pull request whose diff against the base is empty. Eight
+# no-op pull requests landed across the distribution repositories before this
+# gate existed: the work was already on main via squash-merge, the branch was
+# recreated as -v2, and the second merge landed as a commit with zero files
+# changed. CI was happy with that, because a commit with no diff is valid git.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  empty-diff:
+    uses: ./.github/workflows/reusable-empty-diff.yml

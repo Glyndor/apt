@@ -1,0 +1,51 @@
+name: Tests
+
+# The shell lint and this repository's own test suite. Split out of the former
+# ci.yml, which carried five unrelated concerns in one file: the suite, pull
+# request hygiene, and three freshness watchers. They fail for different
+# reasons and are read by different people.
+#
+# The job id stays `shell`. A required status check is named
+# `<caller job id> / <inner job name>`, and the FILE is not part of that name,
+# so moving this job to its own workflow leaves `shell / test` and
+# `shell / shellcheck` exactly as the ruleset requires them. Renaming the job
+# would create two phantom required checks and block every pull request, which
+# is why it did not happen for tidiness.
+#
+# The suite is listed one per line. As a single line it grew past the width of
+# any terminal, and tests/locale-pinned.test.sh was dropped from it without
+# anyone noticing -- it sat in tests/, passed by hand, and CI never ran it.
+# tests/ci-runs-every-test.test.sh now fails when that happens again.
+#
+# Order is roughly cheapest-first, so a broken fixture surfaces before the
+# suites that build .debs and shell out to gpg.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    uses: ./.github/workflows/reusable-shell-ci.yml
+    with:
+      test-command: >-
+        ./tests/verify-debs.test.sh
+        && ./tests/verify-published.test.sh
+        && ./tests/build-keyring.test.sh
+        && ./tests/build-repo.test.sh
+        && ./tests/purge-cache.test.sh
+        && ./tests/build-index-page.test.sh
+        && ./tests/build-installers.test.sh
+        && ./tests/install-template.test.sh
+        && ./tests/install-template-behaviour.test.sh
+        && ./tests/readme-bootstrap.test.sh
+        && ./tests/publish-workflow.test.sh
+        && ./tests/health-check-workflow.test.sh
+        && ./tests/locale-pinned.test.sh
+        && ./tests/check-test-coverage.test.sh
+        && ./tests/ci-runs-every-test.test.sh
+      apt-packages: python3-cryptography reprepro
