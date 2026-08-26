@@ -96,6 +96,39 @@ jobs:
       # nothing. `pip install --require-hashes` is the exception because a
       # hash-pinned install resolves nothing — the artifacts are fixed by
       # the lockfile, so no surprise tree appears.
+      - name: A required test job must not be switchable off by an empty input
+        run: |
+          set -euo pipefail
+          # reusable-shell-ci.yml's `test` job carries
+          # `if: inputs.test-command != ''`, and `shell / test` is a required
+          # check here. GitHub reports a skipped job as Success and it does not
+          # block a merge even when required, so emptying `test-command` in a
+          # caller -- a one-line deletion that reads as tidying -- would merge
+          # pull requests without running a single test, with nothing red.
+          #
+          # This assertion cannot live in the shell job: that is the job the
+          # `if:` skips, so a check inside it shares the fate of the thing it
+          # would be checking. workflow-lint is a separate required check and
+          # survives.
+          missing=""
+          for wf in .github/workflows/*.yml; do
+            case "$(basename "$wf")" in reusable-*) continue ;; esac
+            grep -q 'reusable-shell-ci\.yml' "$wf" || continue
+            # A caller of reusable-shell-ci must pass a non-empty test-command.
+            # `>-` folds the value onto following lines, so read the block
+            # rather than the single line the key sits on.
+            if ! sed -n '/test-command:/,/^      [a-z-]*:/p' "$wf" \
+                 | grep -qE '\./tests/.*\.test\.sh'; then
+              missing="$missing $wf"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::a workflow calls reusable-shell-ci without a test-command that runs any suite:$missing" >&2
+            echo "An empty test-command skips the \`test\` job, and a skipped required check reports Success." >&2
+            exit 1
+          fi
+          echo "every reusable-shell-ci caller passes a test-command that runs a suite"
+
       - name: A job holding a secret must not install third-party tooling
         if: ${{ inputs.tooling-isolation }}
         run: |
