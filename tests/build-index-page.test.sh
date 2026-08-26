@@ -155,6 +155,34 @@ rc=0; run "$WORK/h" || rc=$?
 check "an attribute-breaking Architectures value is rejected" "1" "$rc"
 check "and no script tag reaches the page" "0" "$(find "$WORK/h" -name index.html 2>/dev/null | wc -l)"
 
+# --- the page must not tell people to install before checking ---------------
+#
+# `dpkg -i` runs the package's maintainer scripts as root. The bootstrap block
+# the page publishes is a manual path around scripts/install-template.sh, so it
+# has to carry the same order: extract, read the fingerprint, only then install.
+
+archive "$WORK/i" "amd64" podup
+rc=0; run "$WORK/i" || rc=$?
+check "the archive builds a page" "0" "$rc"
+P="$WORK/i/index.html"
+extract_at="$(grep -n 'dpkg-deb -x glyndor-archive-keyring.deb' "$P" | cut -d: -f1 | head -1)"
+show_at="$(grep -n 'gpg --show-keys keyring-check' "$P" | cut -d: -f1 | head -1)"
+install_at="$(grep -n 'sudo dpkg -i glyndor-archive-keyring.deb' "$P" | cut -d: -f1 | head -1)"
+check "the page extracts the keyring without installing it" "1" \
+	"$([ -n "$extract_at" ] && echo 1 || echo 0)"
+check "the page reads the fingerprint from the extracted copy" "1" \
+	"$([ -n "$show_at" ] && echo 1 || echo 0)"
+check "the page still shows the install step" "1" \
+	"$([ -n "$install_at" ] && echo 1 || echo 0)"
+check "extraction comes before the fingerprint is read" "1" \
+	"$([ -n "$extract_at" ] && [ -n "$show_at" ] && [ "$extract_at" -lt "$show_at" ] && echo 1 || echo 0)"
+check "the fingerprint is read before dpkg -i runs" "1" \
+	"$([ -n "$show_at" ] && [ -n "$install_at" ] && [ "$show_at" -lt "$install_at" ] && echo 1 || echo 0)"
+# The README is a separate host, so a compromised archive cannot vouch for its
+# own key. Losing that link would turn the check into a self-attestation.
+check "the fingerprint is still compared against an independent channel" "1" \
+	"$(grep -c 'github.com/Glyndor/apt#verify-the-signing-key' "$P")"
+
 # --- the package list must not depend on the machine's collation ------------
 #
 # `sort -u` compares by the locale's collation, and UTF-8 collations ignore
