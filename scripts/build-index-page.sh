@@ -67,7 +67,7 @@ while IFS= read -r pkg; do
 	PACKAGE_ITEMS="$PACKAGE_ITEMS<li><code>sudo apt install $pkg</code></li>"
 done <<EOF_PKGS
 $(awk '/^Package:/ { print $2 }' "$OUT_DIR"/dists/stable/main/binary-*/Packages \
-	| grep -vx 'glyndor-archive-keyring' | sort -u)
+	| grep -vx 'glyndor-archive-keyring' | LC_ALL=C sort -u)
 EOF_PKGS
 [ -n "$PACKAGE_ITEMS" ] \
 	|| { echo "the built indices declare no installable packages" >&2; exit 1; }
@@ -77,14 +77,21 @@ cat > "$OUT_DIR/index.html" <<EOF
 <meta charset="utf-8">
 <title>Glyndor apt repository</title>
 <h1>Glyndor apt repository</h1>
-<p>Set up on Debian/Ubuntu ($ARCH_LIST):</p>
+<p>Set up on Debian/Ubuntu ($ARCH_LIST). Download the keyring and read its
+fingerprint <em>before</em> installing it -- <code>dpkg -i</code> runs the
+package's maintainer scripts as root, so a package that has not been checked
+yet must not be handed to it:</p>
 <pre>curl -fsSLO https://apt.glyndor.net/glyndor-archive-keyring.deb
-sudo dpkg -i glyndor-archive-keyring.deb
+dpkg-deb -x glyndor-archive-keyring.deb keyring-check
+gpg --show-keys keyring-check/usr/share/keyrings/glyndor.gpg</pre>
+<p><code>dpkg-deb -x</code> unpacks the package without running anything from
+it. Compare the fingerprint it prints against the one published in the
+<a href="https://github.com/Glyndor/apt#verify-the-signing-key">repository README</a>
+-- an independent channel, so a page served from a compromised archive cannot
+vouch for its own key. Only if the two match:</p>
+<pre>sudo dpkg -i glyndor-archive-keyring.deb
 sudo apt update</pre>
 <p>Then install any of the packages this archive serves:</p>
 <ul>$PACKAGE_ITEMS</ul>
-<p>Verify the installed signing key against the fingerprint published in the
-<a href="https://github.com/Glyndor/apt#verify-the-signing-key">repository README</a>
-(an independent channel): <code>gpg --show-keys /usr/share/keyrings/glyndor.gpg</code></p>
 <p>Source: <a href="https://github.com/Glyndor/apt">github.com/Glyndor/apt</a></p>
 EOF

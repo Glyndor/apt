@@ -155,6 +155,67 @@ rc=0; run "$WORK/h" || rc=$?
 check "an attribute-breaking Architectures value is rejected" "1" "$rc"
 check "and no script tag reaches the page" "0" "$(find "$WORK/h" -name index.html 2>/dev/null | wc -l)"
 
+# --- the page must not tell people to install before checking ---------------
+#
+# `dpkg -i` runs the package's maintainer scripts as root. The bootstrap block
+# the page publishes is a manual path around scripts/install-template.sh, so it
+# has to carry the same order: extract, read the fingerprint, only then install.
+
+archive "$WORK/i" "amd64" podup
+rc=0; run "$WORK/i" || rc=$?
+check "the archive builds a page" "0" "$rc"
+P="$WORK/i/index.html"
+extract_at="$(grep -n 'dpkg-deb -x glyndor-archive-keyring.deb' "$P" | cut -d: -f1 | head -1)"
+show_at="$(grep -n 'gpg --show-keys keyring-check' "$P" | cut -d: -f1 | head -1)"
+install_at="$(grep -n 'sudo dpkg -i glyndor-archive-keyring.deb' "$P" | cut -d: -f1 | head -1)"
+check "the page extracts the keyring without installing it" "1" \
+	"$([ -n "$extract_at" ] && echo 1 || echo 0)"
+check "the page reads the fingerprint from the extracted copy" "1" \
+	"$([ -n "$show_at" ] && echo 1 || echo 0)"
+check "the page still shows the install step" "1" \
+	"$([ -n "$install_at" ] && echo 1 || echo 0)"
+check "extraction comes before the fingerprint is read" "1" \
+	"$([ -n "$extract_at" ] && [ -n "$show_at" ] && [ "$extract_at" -lt "$show_at" ] && echo 1 || echo 0)"
+check "the fingerprint is read before dpkg -i runs" "1" \
+	"$([ -n "$show_at" ] && [ -n "$install_at" ] && [ "$show_at" -lt "$install_at" ] && echo 1 || echo 0)"
+# The README is a separate host, so a compromised archive cannot vouch for its
+# own key. Losing that link would turn the check into a self-attestation.
+check "the fingerprint is still compared against an independent channel" "1" \
+	"$(grep -c 'github.com/Glyndor/apt#verify-the-signing-key' "$P")"
+
+# --- the package list must not depend on the machine's collation ------------
+#
+# `sort -u` compares by the locale's collation, and UTF-8 collations ignore
+# punctuation at the primary level: `pod-up` and `podup` are both legal Debian
+# names, and under en_US.UTF-8 they compare EQUAL, so one of them is dropped
+# from the page without a word. The runner's locale is not the user's, so this
+# has to be pinned rather than left to the environment.
+
+check "the package list is sorted under a fixed collation" "1" \
+	"$(grep -c 'LC_ALL=C sort -u' "$BUILD")"
+
+# The static check above catches a removal; this one catches the behaviour. It
+# needs a locale that actually collapses the two names, which not every machine
+# has -- when none does, say so rather than counting a pass nothing verified.
+collapsing_locale=""
+for loc in en_US.UTF-8 en_GB.UTF-8 de_DE.UTF-8 fr_FR.UTF-8; do
+	locale -a 2>/dev/null | grep -qix "${loc/UTF-8/utf8}" || continue
+	[ "$(printf 'pod-up\npodup\n' | LC_ALL="$loc" sort -u | wc -l)" -eq 1 ] || continue
+	collapsing_locale="$loc"; break
+done
+if [ -n "$collapsing_locale" ]; then
+	archive "$WORK/j" "amd64" pod-up podup
+	rc=0; LC_ALL="$collapsing_locale" run "$WORK/j" || rc=$?
+	check "a page still builds under $collapsing_locale" "0" "$rc"
+	# Both <li> land on one line, so count matches, not lines.
+	check "both names survive a collation that treats them as equal" "2" \
+		"$(grep -o '<li><code>sudo apt install pod[a-z-]*</code></li>' \
+			"$WORK/j/index.html" | wc -l | tr -d ' ')"
+else
+	echo "NOTE  no locale here collapses 'pod-up' and 'podup';"
+	echo "      the behavioural half of the collation check did not run"
+fi
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

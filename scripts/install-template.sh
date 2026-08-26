@@ -38,6 +38,10 @@ fail() {
 command -v apt-get >/dev/null 2>&1 \
 	|| fail "no apt-get found. @PRODUCT@ ships as a .deb; on a non-Debian system, build from source (https://github.com/Glyndor/@PRODUCT@)"
 command -v dpkg >/dev/null 2>&1 || fail "no dpkg found"
+# dpkg-deb ships inside the dpkg package, so this guard is redundant on a sane
+# system. It is here so that a stripped-down image fails with a clear message
+# instead of "dpkg-deb: command not found" halfway through the keyring step.
+command -v dpkg-deb >/dev/null 2>&1 || fail "no dpkg-deb found"
 
 workdir=
 installed_gnupg=
@@ -71,20 +75,28 @@ echo "Downloading the archive keyring ..."
 curl -fsSL -o "$workdir/glyndor-archive-keyring.deb" "$KEYRING_URL" \
 	|| fail "could not download $KEYRING_URL"
 
+# Extract WITHOUT installing. `dpkg-deb -x` unpacks the data archive and runs no
+# maintainer script, so nothing from the downloaded package executes until its
+# key has been checked. `dpkg -i` here would run preinst/postinst as root, and
+# those scripts can write the very keyring the check below reads -- with the
+# expected fingerprint alongside an attacker's, which the presence test admits.
+echo "Checking the archive key fingerprint ..."
+mkdir -p "$workdir/extracted"
+dpkg-deb -x "$workdir/glyndor-archive-keyring.deb" "$workdir/extracted" \
+	|| fail "could not extract the keyring package"
+
+# A rotation ships a keyring carrying both the old and the new key, so the test
+# is that the expected fingerprint is present - not that it is the only one.
+# That allowance is deliberate and unchanged; what moved is that it now reads
+# the downloaded payload rather than a file dpkg has already written.
+if ! gpg --show-keys --with-colons "$workdir/extracted$KEYRING_PATH" 2>/dev/null \
+	| awk -F: '/^fpr:/{print $10}' | grep -qx "$GLYNDOR_APT_FPR"; then
+	fail "the downloaded archive key does not carry the expected fingerprint ($GLYNDOR_APT_FPR); nothing was installed"
+fi
+
 echo "Installing the keyring ..."
 dpkg -i "$workdir/glyndor-archive-keyring.deb" >/dev/null \
 	|| fail "could not install the keyring package"
-
-echo "Checking the archive key fingerprint ..."
-# A rotation ships a keyring carrying both the old and the new key, so the test
-# is that the expected fingerprint is present - not that it is the only one.
-if ! gpg --show-keys --with-colons "$KEYRING_PATH" 2>/dev/null \
-	| awk -F: '/^fpr:/{print $10}' | grep -qx "$GLYNDOR_APT_FPR"; then
-	# Leave nothing trusted behind: the key that was just installed is not the
-	# one this script expects, and apt would go on using it.
-	dpkg --purge glyndor-archive-keyring >/dev/null 2>&1 || true
-	fail "the installed archive key does not carry the expected fingerprint ($GLYNDOR_APT_FPR); the keyring package has been removed"
-fi
 
 echo "Installing @PRODUCT@ ..."
 apt-get update -qq
