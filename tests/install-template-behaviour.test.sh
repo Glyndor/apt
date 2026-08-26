@@ -208,6 +208,36 @@ rc=0; run_installer "$DEB" "$SPACED" || rc=$?
 check "and a spaced fingerprint still refuses the wrong key" "1" "$rc"
 check "and nothing was installed" "0" "$(installed)"
 
+# --- a replaced default announces itself ------------------------------------
+#
+# Both overrides exist for forks and both used to be silent. The case that
+# matters is a copied command line where the visible URL is the real one and the
+# substitution sits in the environment, past where a reader looks.
+#
+# Nothing here blocks the override -- that would break the fork it was written
+# for. The assertion is that the screen says what is in use.
+DEB="$(mkdeb spaced2 good no)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "the stock install still succeeds" "0" "$rc"
+
+# There is no un-overridden case to assert here, and pretending otherwise would
+# be a test that cannot pass. This harness serves its fixture over file:// and
+# signs it with a generated key, so KEYRING_URL and GLYNDOR_APT_FPR are BOTH
+# always replaced. The quiet path -- neither overridden -- exists only against
+# the real archive with the real key, which this suite does not reach.
+check "a replaced keyring source is announced" "1" \
+	"$(said 'keyring source:')"
+
+# Both replaced is the combination where nothing traces back to Glyndor's
+# published key, and it gets its own sentence.
+DEB="$(mkdeb spaced3 evil no)"
+FPR_EVIL_REAL="$(GNUPGHOME="$WORK/gnupg-evil" gpg --batch --with-colons --list-keys evil \
+	| awk -F: '/^fpr:/{print $10; exit}')"
+rc=0; run_installer "$DEB" "$FPR_EVIL_REAL" || rc=$?
+check "a keyring and a fingerprint that both differ still installs" "0" "$rc"
+check "and the run says nothing traces back to Glyndor's key" "1" \
+	"$(said 'nothing here is checked against Glyndor')"
+
 # --- a download that does not arrive ----------------------------------------
 rc=0; run_installer "$WORK/absent.deb" "$FPR_GOOD" || rc=$?
 check "a keyring that cannot be downloaded is refused" "1" "$rc"
