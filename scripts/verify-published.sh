@@ -317,7 +317,7 @@ for index in "$WORK"/indices/*_Packages; do
 	declared_packages "$index" >> "$WORK/pool-entries"
 done
 shopt -u nullglob
-sort -u -o "$WORK/pool-entries" "$WORK/pool-entries"
+LC_ALL=C sort -u -o "$WORK/pool-entries" "$WORK/pool-entries"
 
 pool_count="$(wc -l < "$WORK/pool-entries")"
 if [ "$pool_count" -eq 0 ]; then

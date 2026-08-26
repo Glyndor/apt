@@ -57,13 +57,13 @@ index_paths="$(awk '
 	/^SHA256:/          { in_section = 1; next }
 	/^[^[:space:]]/     { in_section = 0 }
 	in_section && NF == 3 { print $3 }
-' "$release" | sort -u)"
+' "$release" | LC_ALL=C sort -u)"
 [ -n "$index_paths" ] \
 	|| { echo "::error::the built Release declares no index files to purge"; exit 1; }
 
 # And the packages those indices point at.
 pool_paths="$(awk '/^Filename:/ { print $2 }' \
-	"$BUILT_DIR"/dists/stable/main/binary-*/Packages | sort -u)"
+	"$BUILT_DIR"/dists/stable/main/binary-*/Packages | LC_ALL=C sort -u)"
 [ -n "$pool_paths" ] \
 	|| { echo "::error::the built indices declare no packages to purge"; exit 1; }
 
@@ -90,7 +90,7 @@ pool_paths="$(awk '/^Filename:/ { print $2 }' \
 		"$ARCHIVE_URL/glyndor-archive-keyring.deb" \
 		"$ARCHIVE_URL/index.html"
 	printf '%s\n' "$pool_paths" | sed "s|^|$ARCHIVE_URL/|"
-} | awk 'NF' | sort -u > "$work/urls-content"
+} | awk 'NF' | LC_ALL=C sort -u > "$work/urls-content"
 
 {
 	printf '%s\n' \
@@ -98,7 +98,7 @@ pool_paths="$(awk '/^Filename:/ { print $2 }' \
 		"$ARCHIVE_URL/dists/stable/Release" \
 		"$ARCHIVE_URL/dists/stable/Release.gpg"
 	printf '%s\n' "$index_paths" | sed "s|^|$ARCHIVE_URL/dists/stable/|"
-} | awk 'NF' | sort -u > "$work/urls-index"
+} | awk 'NF' | LC_ALL=C sort -u > "$work/urls-index"
 
 index_total="$(wc -l < "$work/urls-index")"
 [ "$index_total" -le "$BATCH_SIZE" ] || {

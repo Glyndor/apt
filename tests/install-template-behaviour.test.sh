@@ -184,6 +184,30 @@ check "and it is refused for the fingerprint, not something else" "1" \
 check "and its maintainer script was never given the chance to run" "0" \
 	"$(installed)"
 
+# --- the published fingerprint can be pasted in the form it is published -----
+#
+# gpg prints a fingerprint in groups, and the README publishes it that way. The
+# override documented in the script says nothing about format, so a fork
+# operator copies what is on the page. Before it was normalised, that produced
+# "does not carry the expected fingerprint" -- an error pointing at the key when
+# the fault was the spaces.
+DEB="$(mkdeb spaced good no)"
+SPACED="$(printf '%s' "$FPR_GOOD" | sed 's/\(....\)/\1 /g; s/ $//')"
+rc=0; run_installer "$DEB" "$SPACED" || rc=$?
+check "a fingerprint pasted with gpg's spacing is accepted" "0" "$rc"
+check "and dpkg -i was reached" "1" "$(installed)"
+
+# Lower case too: some tools print fingerprints that way.
+rc=0; run_installer "$DEB" "$(printf '%s' "$FPR_GOOD" | tr 'A-F' 'a-f')" || rc=$?
+check "a lower-case fingerprint is accepted" "0" "$rc"
+
+# Normalising must not make the check lax. A wrong key spelled with spaces is
+# still a wrong key.
+DEB="$(mkdeb spaced-evil evil no)"
+rc=0; run_installer "$DEB" "$SPACED" || rc=$?
+check "and a spaced fingerprint still refuses the wrong key" "1" "$rc"
+check "and nothing was installed" "0" "$(installed)"
+
 # --- a download that does not arrive ----------------------------------------
 rc=0; run_installer "$WORK/absent.deb" "$FPR_GOOD" || rc=$?
 check "a keyring that cannot be downloaded is refused" "1" "$rc"
