@@ -145,11 +145,20 @@ if command -v reprepro >/dev/null 2>&1; then
 	REAL="$WORK/fixture-real.deb"
 	pkg="$WORK/pkgroot"
 	mkdir -p "$pkg/DEBIAN"
-	printf 'Package: testpkg\nVersion: 1.0\nArchitecture: amd64\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' \
+	# Section and Priority are not optional here. reprepro refuses a package
+	# without a section ("No section given for 'testpkg', skipping.") and the
+	# build fails -- a fixture missing them does not resemble what
+	# dpkg-buildpackage produces for a real Glyndor package, so it would be
+	# testing a shape this script never receives.
+	printf 'Package: testpkg\nVersion: 1.0\nArchitecture: amd64\nSection: utils\nPriority: optional\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' \
 		> "$pkg/DEBIAN/control"
 	dpkg-deb --root-owner-group --build "$pkg" "$REAL" >/dev/null 2>&1
 	rc=0; run "$R" "$KEY_A" "$WORK/out6" "$REAL" || rc=$?
 	check "a valid build succeeds end to end" "0" "$rc"
+	# This is the only case that runs the real tool chain, so when it fails the
+	# reason has to reach whoever reads the log. Without this the failure is a
+	# bare exit code and the next step is a round trip through CI.
+	[ "$rc" -eq 0 ] || { echo "        --- build-repo.sh said ---"; sed 's/^/        /' "$WORK/out"; }
 	check "and the signed Release exists" "1" \
 		"$([ -f "$WORK/out6/dists/stable/Release.gpg" ] || \
 		  [ -f "$WORK/out6/dists/stable/InRelease" ] && echo 1 || echo 0)"
