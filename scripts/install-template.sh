@@ -26,6 +26,12 @@ KEYRING_PATH="/usr/share/keyrings/glyndor.gpg"
 # one step that has nothing but the transport behind it; checking what it
 # installed against this constant is what closes that window. Override for a
 # fork with GLYNDOR_APT_FPR.
+#
+# Spaces are stripped and the value is upper-cased before it is compared, so
+# the grouped form gpg prints and the README publishes -- "9ADF 04EA ..." --
+# can be pasted straight in. Without that, a fork operator copying the
+# published fingerprint gets "does not carry the expected fingerprint", which
+# points at the key when the fault is the spaces.
 GLYNDOR_APT_FPR="${GLYNDOR_APT_FPR:-9ADF04EA8C3139CDB67303CFA6705C2EA153F3D6}"
 
 fail() {
@@ -80,6 +86,13 @@ curl -fsSL -o "$workdir/glyndor-archive-keyring.deb" "$KEYRING_URL" \
 # key has been checked. `dpkg -i` here would run preinst/postinst as root, and
 # those scripts can write the very keyring the check below reads -- with the
 # expected fingerprint alongside an attacker's, which the presence test admits.
+# Normalise here rather than where the constant is set: `tr` must not be
+# needed before the guards above have established that this is a Debian system
+# with the tools the installer uses. Reaching for a command ahead of the check
+# that the environment has it is how a "no apt-get found" refusal turns into
+# "tr: command not found".
+GLYNDOR_APT_FPR="$(printf '%s' "$GLYNDOR_APT_FPR" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+
 echo "Checking the archive key fingerprint ..."
 mkdir -p "$workdir/extracted"
 dpkg-deb -x "$workdir/glyndor-archive-keyring.deb" "$workdir/extracted" \
