@@ -25,6 +25,15 @@
 # Key rotation (two-phase, automatic to clients): put both the old and the new
 # armored key blocks in keyring/glyndor-apt-key.asc during the overlap window —
 # `gpg --dearmor` concatenates them so apt trusts both — then drop the old one.
+#
+# PUBLISH THE INCOMING FINGERPRINT FIRST. scripts/install-template.sh accepts a
+# keyring only if EVERY key in it is one the installer was told to expect, so a
+# keyring carrying a fingerprint that is not yet in GLYNDOR_APT_FPR and in the
+# README is refused by every fresh install until it is. The check used to be
+# presence rather than membership, which meant this order did not matter; it
+# also meant a keyring carrying the published key alongside an attacker's was
+# admitted, and the sources.list this same package installs decides where apt
+# fetches from. Ordering the rotation is what that closure costs.
 # Any change to a packaged input yields a strictly higher version that
 # `apt upgrade` delivers, while an unchanged input set keeps the same version
 # (no churn). Requires the script to run inside a git checkout with history
