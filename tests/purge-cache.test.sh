@@ -74,6 +74,12 @@ build_archive() { # $1=product count $2=arch list
 			"pool/main/g/glyndor-archive-keyring/glyndor-archive-keyring_1.0.0_all.deb" \
 			>> "$BUILT/dists/stable/main/binary-$arch/Packages"
 	done
+
+	# One bootstrap installer per product, as build-installers.sh writes them.
+	mkdir -p "$BUILT/install"
+	for ((i = 1; i <= products; i++)); do
+		printf '#!/bin/sh\n' > "$BUILT/install/prod$i"
+	done
 }
 
 # A fake Cloudflare purge endpoint. Appends each request body as one line to
@@ -138,7 +144,7 @@ export CF_API_BASE="http://127.0.0.1:$PORT/client/v4"
 
 # --- one product, two architectures: today's archive ------------------------
 # 5 fixed + 6 index (3 per arch) + 3 pool (1 per arch, plus the keyring, which
-# both indices declare and the list deduplicates) = 14 URLs.
+# both indices declare and the list deduplicates) + 1 installer = 15 URLs.
 #
 # Two requests, not one: content first, then the indices on their own. A
 # partial purge is not degradation for apt but a signature that does not
@@ -150,8 +156,8 @@ build_archive 1 "amd64 arm64"
 
 check "one product on two arches sends content and indices separately" \
 	"2" "$(wc -l < "$REQUESTS")"
-check "one product on two arches purges 14 URLs in total" \
-	"14" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
+check "one product on two arches purges 15 URLs in total" \
+	"15" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
 check "the pool object is deduplicated across the two indices" \
 	"1" "$(jq -s -r '[.[].files[] | select(endswith("_all.deb"))] | length' < "$REQUESTS")"
 check "the per-architecture Release files are purged" \
@@ -170,29 +176,36 @@ check "the last request carries nothing but indices" \
 
 # --- the roster on three architectures: the case that used to fail ----------
 # 5 fixed + 9 index + (7 products + keyring) × 3 arches deduplicated to 22 pool
-# objects = 36 URLs. The old step refused this outright.
+# objects + 7 installers = 43 URLs. The old step refused this outright.
+#
+# Three requests now, not two: content is 34 URLs against a BATCH_SIZE of 30, so
+# it splits, and the indices still go on their own and last.
 start_server ok
 build_archive 7 "amd64 arm64 armhf"
 "$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 \
 	|| { echo "FAIL  the seven-product case exited non-zero"; cat "$WORK/out"; exit 1; }
 
 total="$(jq -rs '[.[].files[]] | length' < "$REQUESTS")"
-check "seven products on three arches needs two requests" \
-	"2" "$(wc -l < "$REQUESTS")"
-check "seven products on three arches purges 36 URLs" \
-	"36" "$total"
+check "seven products on three arches needs three requests" \
+	"3" "$(wc -l < "$REQUESTS")"
+check "seven products on three arches purges 43 URLs" \
+	"43" "$total"
 check "no request exceeds Cloudflare's 30-file limit" \
 	"" "$(jq -rs '[.[] | select((.files | length) > 30)] | length | select(. > 0) | "\(.) oversized"' < "$REQUESTS")"
 check "every URL is sent exactly once" \
 	"$total" "$(jq -rs '[.[].files[]] | unique | length' < "$REQUESTS")"
 
 # --- a failing batch fails the run ------------------------------------------
+#
+# One product, so content is nine URLs and fits in one batch: the second request
+# is the index one, which is the failure this case is about. The seven-product
+# archive above splits content across two batches, and there the second request
+# would be content — a different case, covered below.
 start_server fail-second
-build_archive 7 "amd64 arm64 armhf"
+build_archive 1 "amd64 arm64"
 rc=0
 "$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 || rc=$?
 check "a rejected batch fails the purge" "1" "$rc"
-# The second request is the index one — content fits in a single batch here.
 check "the error names which group and batch was rejected" \
 	"1" "$(grep -c 'failed on index batch 2' "$WORK/out")"
 

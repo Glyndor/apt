@@ -67,6 +67,22 @@ pool_paths="$(awk '/^Filename:/ { print $2 }' \
 [ -n "$pool_paths" ] \
 	|| { echo "::error::the built indices declare no packages to purge"; exit 1; }
 
+# The bootstrap installers. Derived from what was built rather than from
+# PRODUCTS, for the same reason the index list is derived from the Release: a
+# hand-kept list drifts from what is actually served.
+#
+# These were missing, and the omission is the expensive kind. They are the
+# fixed-name mutable files this step exists for -- Cloudflare serves them with
+# `max-age=86400`, so a stale one persists for a day -- and their content is the
+# script a stranger pipes into a root shell. Measured on 2026-08-27: a fix to
+# install-template.sh landed in R2 and the edge kept serving the previous script
+# to `install/podup` while `install/epistle`, less trafficked and so uncached,
+# served the new one. Every step of the publish reported success.
+installer_paths="$(find "$BUILT_DIR/install" -maxdepth 1 -type f -printf 'install/%f\n' \
+	2>/dev/null | LC_ALL=C sort -u)"
+[ -n "$installer_paths" ] \
+	|| { echo "::error::no bootstrap installer was built; there is nothing to purge and every product's install line is stale"; exit 1; }
+
 # Split into content and indices, and purge the indices LAST.
 #
 # A partial purge is not degradation for apt, it is a signature that does not
@@ -90,6 +106,7 @@ pool_paths="$(awk '/^Filename:/ { print $2 }' \
 		"$ARCHIVE_URL/glyndor-archive-keyring.deb" \
 		"$ARCHIVE_URL/index.html"
 	printf '%s\n' "$pool_paths" | sed "s|^|$ARCHIVE_URL/|"
+	printf '%s\n' "$installer_paths" | sed "s|^|$ARCHIVE_URL/|"
 } | awk 'NF' | LC_ALL=C sort -u > "$work/urls-content"
 
 {
