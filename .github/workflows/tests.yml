@@ -42,6 +42,7 @@ jobs:
         && ./tests/build-installers.test.sh
         && ./tests/install-template.test.sh
         && ./tests/install-template-behaviour.test.sh
+        && ./tests/architectures-agree.test.sh
         && ./tests/readme-bootstrap.test.sh
         && ./tests/publish-workflow.test.sh
         && ./tests/health-check-workflow.test.sh
