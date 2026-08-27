@@ -48,8 +48,20 @@ for arch in $ARCHES; do
 done
 ARCH_LIST="${ARCHES// /, }"
 
-# One <li> per installable package. The keyring is excluded: it is the bootstrap
-# the block above already installs with dpkg, not something to apt-install.
+# One <li> per installable package, offering the bootstrap installer rather than
+# `apt install`. Only the script brings unattended-upgrades onto the machine and
+# switches it on: the keyring carries the allowlist entry, but an allowlist does
+# nothing where unattended upgrades are not running, so a page that stopped at
+# `apt install` left a machine that looked complete and quietly stopped taking
+# security fixes. README.md says the same thing; the two are read by the same
+# person and must not disagree.
+#
+# The installer path is /install/<product>, generated from PRODUCTS, while this
+# list comes from the built index. They agree because a product's package
+# carries the product's name, which is what build-installers.sh is given.
+#
+# The keyring is excluded: it is the bootstrap the manual block below installs
+# with dpkg, not something to offer an installer for.
 #
 # Package names come from each .deb's control field, so they are
 # attacker-influenced in principle even though verify-debs.sh binds every one to
@@ -64,7 +76,7 @@ while IFS= read -r pkg; do
 			continue
 			;;
 	esac
-	PACKAGE_ITEMS="$PACKAGE_ITEMS<li><code>sudo apt install $pkg</code></li>"
+	PACKAGE_ITEMS="$PACKAGE_ITEMS<li><code>curl -fsSL https://apt.glyndor.net/install/$pkg | sh</code></li>"
 done <<EOF_PKGS
 $(awk '/^Package:/ { print $2 }' "$OUT_DIR"/dists/stable/main/binary-*/Packages \
 	| grep -vx 'glyndor-archive-keyring' | LC_ALL=C sort -u)
@@ -77,10 +89,15 @@ cat > "$OUT_DIR/index.html" <<EOF
 <meta charset="utf-8">
 <title>Glyndor apt repository</title>
 <h1>Glyndor apt repository</h1>
-<p>Set up on Debian/Ubuntu ($ARCH_LIST). Download the keyring and read its
-fingerprint <em>before</em> installing it -- <code>dpkg -i</code> runs the
-package's maintainer scripts as root, so a package that has not been checked
-yet must not be handed to it:</p>
+<p>Debian/Ubuntu ($ARCH_LIST). One line per package:</p>
+<ul>$PACKAGE_ITEMS</ul>
+<p>The script adds this archive, checks the archive key's fingerprint before
+anything runs as root, installs the package, and switches on automatic security
+upgrades.</p>
+<h2>Or set it up by hand</h2>
+<p>Read the keyring's fingerprint <em>before</em> installing it --
+<code>dpkg -i</code> runs the package's maintainer scripts as root, so a package
+that has not been checked yet must not be handed to it:</p>
 <pre>curl -fsSLO https://apt.glyndor.net/glyndor-archive-keyring.deb
 dpkg-deb -x glyndor-archive-keyring.deb keyring-check
 gpg --show-keys keyring-check/usr/share/keyrings/glyndor.gpg</pre>
@@ -89,9 +106,9 @@ it. Compare the fingerprint it prints against the one published in the
 <a href="https://github.com/Glyndor/apt#verify-the-signing-key">repository README</a>
 -- an independent channel, so a page served from a compromised archive cannot
 vouch for its own key. Only if the two match:</p>
-<pre>sudo dpkg -i glyndor-archive-keyring.deb
-sudo apt update</pre>
-<p>Then install any of the packages this archive serves:</p>
-<ul>$PACKAGE_ITEMS</ul>
+<pre>sudo dpkg -i glyndor-archive-keyring.deb</pre>
+<p>Do not stop there and install the package with apt: that skips
+unattended-upgrades, which only the script sets up. Run the one-line command
+above instead.</p>
 <p>Source: <a href="https://github.com/Glyndor/apt">github.com/Glyndor/apt</a></p>
 EOF
