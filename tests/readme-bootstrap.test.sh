@@ -60,12 +60,26 @@ check "the fingerprint comes before dpkg -i" "1" \
 # The installer takes the fingerprint from the environment and falls back to a
 # baked-in default; the default is the value that ships, so that is the one to
 # compare against.
-script_fpr="$(grep -o 'GLYNDOR_APT_FPR:-[0-9A-F]\{40\}' scripts/install-template.sh \
-	| head -1 | sed 's/.*:-//')"
-readme_fpr="$(grep -oE '[0-9A-F]{4}( {1,2}[0-9A-F]{4}){9}' "$README" \
-	| head -1 | tr -d ' ')"
-check "the README fingerprint matches the one the installer enforces" \
-	"$script_fpr" "$readme_fpr"
+# EVERY fingerprint the installer accepts has to be published here, not just the
+# first. Since apt#141 the installer admits a keyring only if every key in it is
+# one it was told to expect, so during a rotation GLYNDOR_APT_FPR carries two --
+# and a reader checking a keyring that ships both needs both values from this
+# page. Comparing head -1 against head -1 would pass a rotation in which the
+# incoming fingerprint was never published, which is the exact state that makes
+# fresh installs refuse the new keyring.
+script_fprs="$(grep -oE 'GLYNDOR_APT_FPR:-[0-9A-F,]+' scripts/install-template.sh \
+	| head -1 | sed 's/.*:-//' | tr ',' '\n' | grep -v '^$' | LC_ALL=C sort)"
+readme_fprs="$(grep -oE '[0-9A-F]{4}( {1,2}[0-9A-F]{4}){9}' "$README" \
+	| tr -d ' ' | LC_ALL=C sort -u)"
+
+check "the installer's default names at least one fingerprint" "1" \
+	"$([ -n "$script_fprs" ] && echo 1 || echo 0)"
+
+# Set difference, not equality: the README may publish a fingerprint the
+# installer's default does not yet name -- that is phase one of a rotation, and
+# publishing first is what the order requires. The reverse is the failure.
+unpublished="$(comm -23 <(printf '%s\n' "$script_fprs") <(printf '%s\n' "$readme_fprs"))"
+check "every fingerprint the installer accepts is published here" "" "$unpublished"
 
 # The fingerprint carries two spaces between the fifth and sixth groups, which
 # is how `gpg --show-keys` prints it. Markdown collapses runs of whitespace
