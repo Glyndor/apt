@@ -33,6 +33,13 @@ check() { # <description> <expected> <actual>
 
 line_of() { grep -n -- "$1" "$README" | head -1 | cut -d: -f1; }
 
+once() { grep -c -- "$1" "$README"; }
+for lit in 'dpkg-deb -x glyndor-archive-keyring.deb' \
+	'sudo dpkg -i glyndor-archive-keyring.deb'; do
+	check "'$lit' appears exactly once, so the ordering checks cannot pick the wrong copy" \
+		"1" "$(once "$lit")"
+done
+
 extract_at="$(line_of 'dpkg-deb -x glyndor-archive-keyring.deb')"
 fpr_at="$(line_of '9ADF 04EA 8C31 39CD B673  03CF A670 5C2E A153 F3D6')"
 install_at="$(line_of 'sudo dpkg -i glyndor-archive-keyring.deb')"
@@ -55,9 +62,32 @@ check "the fingerprint comes before dpkg -i" "1" \
 # compare against.
 script_fpr="$(grep -o 'GLYNDOR_APT_FPR:-[0-9A-F]\{40\}' scripts/install-template.sh \
 	| head -1 | sed 's/.*:-//')"
-readme_fpr="$(grep -o '[0-9A-F ]\{50,\}' "$README" | head -1 | tr -d ' ')"
+readme_fpr="$(grep -oE '[0-9A-F]{4}( {1,2}[0-9A-F]{4}){9}' "$README" \
+	| head -1 | tr -d ' ')"
 check "the README fingerprint matches the one the installer enforces" \
 	"$script_fpr" "$readme_fpr"
+
+# The fingerprint carries two spaces between the fifth and sixth groups, which
+# is how `gpg --show-keys` prints it. Markdown collapses runs of whitespace
+# everywhere except inside a fenced block, so publishing it as prose or in a
+# table renders a value that does not match what the reader's own gpg printed,
+# and they conclude the key is wrong. Measured: 2 spaces fenced, 1 either other
+# way. Nothing else in the file catches this -- the checks above read the raw
+# bytes, where all three spellings look identical.
+# Track the fence state rather than counting one marker's parity: markdown has
+# two fence spellings and a ``` does not close a ~~~. Counting backticks alone
+# called a ~~~-fenced fingerprint unfenced -- measured as a false positive,
+# 2 spaces surviving in the browser while the check failed.
+inside="$(awk -v n="$fpr_at" '
+	NR >= n { exit }
+	{
+		if (open == "") { if (/^```/) open = "b"; else if (/^~~~/) open = "t" }
+		else if (open == "b" && /^```/) open = ""
+		else if (open == "t" && /^~~~/) open = ""
+	}
+	END { print (open == "") ? 0 : 1 }' "$README")"
+check "the fingerprint sits inside a fenced block, so its two spaces survive" "1" \
+	"$inside"
 
 # Anchors are generated from heading text: lowercased, spaces to hyphens.
 # Derive them rather than grepping for the literal string, so a heading that
