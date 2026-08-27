@@ -79,9 +79,15 @@ P="$WORK/a/index.html"
 check "the architectures come from the Release" "1" \
 	"$(grep -c 'Debian/Ubuntu (amd64, arm64)' "$P")"
 check "one install entry per product" "1" \
-	"$(grep -o '<li><code>sudo apt install podup</code></li>' "$P" | wc -l)"
-check "the keyring is not offered as an apt install" "0" \
-	"$(grep -c 'apt install glyndor-archive-keyring' "$P")"
+	"$(grep -o '<li><code>curl -fsSL https://apt.glyndor.net/install/podup | sh</code></li>' "$P" | wc -l)"
+check "the keyring is not offered as a product install" "0" \
+	"$(grep -c 'install/glyndor-archive-keyring' "$P")"
+# The page and README.md are read by the same person. README.md tells them not
+# to install with apt, because only the script brings unattended-upgrades onto
+# the machine; a page that still offered `apt install` would contradict it in
+# the more visible of the two places. This is what keeps them from drifting.
+check "the page does not offer apt install anywhere" "0" \
+	"$(grep -c 'apt install' "$P")"
 check "the bootstrap block is still there" "1" \
 	"$(grep -c 'dpkg -i glyndor-archive-keyring.deb' "$P")"
 
@@ -94,9 +100,9 @@ check "a third architecture appears without a code change" "1" \
 # The list is emitted on one line, so count occurrences rather than lines --
 # grep -c would answer 1 however many products there are.
 check "every product gets an entry" "4" \
-	"$(grep -o '<li><code>sudo apt install' "$WORK/b/index.html" | wc -l)"
+	"$(grep -o '<li><code>curl -fsSL https://apt.glyndor.net/install/' "$WORK/b/index.html" | wc -l)"
 check "and each appears once despite three indices declaring it" "1" \
-	"$(grep -o 'sudo apt install helmly<' "$WORK/b/index.html" | wc -l)"
+	"$(grep -o 'install/helmly | sh<' "$WORK/b/index.html" | wc -l)"
 
 # --- the strings reach a browser --------------------------------------------
 
@@ -108,7 +114,7 @@ check "it is skipped with a warning" "1" \
 check "and NO script tag reaches the page" "0" \
 	"$(grep -c '<script' "$WORK/c/index.html")"
 check "while the legitimate package still renders" "1" \
-	"$(grep -o 'sudo apt install podup<' "$WORK/c/index.html" | wc -l)"
+	"$(grep -o 'install/podup | sh<' "$WORK/c/index.html" | wc -l)"
 
 archive "$WORK/d" "amd64" 'pod"up onload=x' podup
 rc=0; run "$WORK/d" || rc=$?
@@ -209,7 +215,7 @@ if [ -n "$collapsing_locale" ]; then
 	check "a page still builds under $collapsing_locale" "0" "$rc"
 	# Both <li> land on one line, so count matches, not lines.
 	check "both names survive a collation that treats them as equal" "2" \
-		"$(grep -o '<li><code>sudo apt install pod[a-z-]*</code></li>' \
+		"$(grep -o '<li><code>curl -fsSL [^<]*install/pod[a-z-]* | sh</code></li>' \
 			"$WORK/j/index.html" | wc -l | tr -d ' ')"
 else
 	echo "NOTE  no locale here collapses 'pod-up' and 'podup';"
