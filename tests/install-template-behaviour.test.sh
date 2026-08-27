@@ -277,6 +277,34 @@ check "a download that is not a .deb is refused" "1" "$rc"
 check "and says extraction failed" "1" "$(said 'could not extract')"
 check "and nothing was installed" "0" "$(installed)"
 
+# --- an oversized download is refused ---------------------------------------
+#
+# The keyring is about 2 KB and stays kilobytes carrying both keys through a
+# rotation. A server answering that request with an endless body used to be
+# bounded by the disk alone, and this runs as root: /tmp filling up takes the
+# machine with it, before any fingerprint is compared. curl's --max-filesize
+# refuses it mid-transfer.
+#
+# A VALID .deb, oversized. A blob of zeroes would be refused by `dpkg-deb -x`
+# whether or not the cap exists, so the test would pass with the cap removed --
+# measured, it did. The fixture has to be invalid in the one respect under test
+# and correct in every other, or it proves nothing.
+#
+# Incompressible padding, so the built package really exceeds the 8 MB cap
+# rather than compressing back under it.
+big="$WORK/pkg-big"
+rm -rf "$big"; mkdir -p "$big/DEBIAN" "$big/usr/share/keyrings" "$big/usr/share/doc"
+printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' \
+	> "$big/DEBIAN/control"
+export_ring good "$big/usr/share/keyrings/glyndor.gpg"
+head -c $((9 * 1024 * 1024)) /dev/urandom > "$big/usr/share/doc/padding"
+dpkg-deb -Znone --root-owner-group --build "$big" "$WORK/huge.deb" >/dev/null 2>&1
+
+rc=0; run_installer "$WORK/huge.deb" "$FPR_GOOD" || rc=$?
+check "a download larger than the cap is refused" "1" "$rc"
+check "and it is refused at the download, not later" "1" "$(said 'could not download')"
+check "and nothing was installed" "0" "$(installed)"
+
 # --- a .deb carrying no keyring at all --------------------------------------
 #
 # `gpg --show-keys` on a missing file yields nothing, and an empty fingerprint

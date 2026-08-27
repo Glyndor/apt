@@ -113,8 +113,20 @@ if [ "$url_overridden" = yes ] || [ "$fpr_overridden" = yes ]; then
 fi
 
 echo "Downloading the archive keyring ..."
-curl -fsSL -o "$workdir/glyndor-archive-keyring.deb" "$KEYRING_URL" \
-	|| fail "could not download $KEYRING_URL"
+# Bounded, and redirects kept on https.
+#
+# The keyring is ~2 KB and stays kilobytes even carrying both keys through a
+# rotation, so 8 MB is four thousand times the real size and still refuses a
+# server that answers a 2 KB request with an endless body. Without it the only
+# limit is the disk: this runs as root, and /tmp filling up takes the machine
+# with it, before any fingerprint is ever compared.
+#
+# --proto-redir=https keeps -L from being talked down to http:// by a redirect.
+# The fingerprint check would still refuse whatever arrived, but there is no
+# reason to fetch a trust anchor over a downgraded connection to find out.
+curl -fsSL --proto-redir =https --max-filesize $((8 * 1024 * 1024)) \
+	-o "$workdir/glyndor-archive-keyring.deb" "$KEYRING_URL" \
+	|| fail "could not download $KEYRING_URL (over 8 MB, or the transfer failed)"
 
 # Extract WITHOUT installing. `dpkg-deb -x` unpacks the data archive and runs no
 # maintainer script, so nothing from the downloaded package executes until its
