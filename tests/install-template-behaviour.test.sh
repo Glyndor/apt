@@ -66,6 +66,9 @@ export_ring() { # $1=uid $2=output file  (binary keyring, as the package ships)
 }
 
 FPR_GOOD="$(mkkey good)"
+# The incoming key of a rotation: legitimate, and published alongside the old
+# one during the overlap.
+FPR_NEW="$(mkkey new)"
 # Needed for the keyring it creates, not for the value.
 mkkey evil >/dev/null
 
@@ -155,16 +158,39 @@ check "and the message names the expected fingerprint" "1" "$(said "$FPR_GOOD")"
 check "and says nothing was installed" "1" "$(said 'nothing was installed')"
 check "and dpkg -i was never reached" "0" "$(installed)"
 
-# --- a rotation keyring is accepted -----------------------------------------
+# --- a rotation keyring is accepted, an enriched one is not -----------------
 #
 # standards/releases mandates a two-phase rotation that ships the old and the
-# new key together, so the test is presence, not uniqueness. Narrowing this to
-# "exactly one key" would break every rotation, and it has been suggested more
-# than once -- this case is what makes the decision visible.
-DEB="$(mkdeb rotation "good evil" no)"
-rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
-check "a keyring carrying the expected key among others is accepted" "0" "$rc"
+# new key together, so a keyring carrying two keys must still install. What it
+# must NOT do is install a keyring carrying a key nobody published.
+#
+# The installer used to test for presence: the published fingerprint had to be
+# in there, and anything alongside it came too. That admitted a keyring holding
+# the real key AND an attacker's, which apt then trusted equally -- and the
+# sources.list the same package installs decides where apt fetches from. The
+# published fingerprint could not catch it, because the published fingerprint
+# was present. Measured before the change: such a package reached `dpkg -i`.
+#
+# So both fingerprints go in during an overlap, and every key in the keyring
+# must be one of them.
+DEB="$(mkdeb rotation "good new" no)"
+rc=0; run_installer "$DEB" "$FPR_GOOD,$FPR_NEW" || rc=$?
+check "a rotation keyring carrying both published keys is accepted" "0" "$rc"
 check "and dpkg -i was reached" "1" "$(installed)"
+
+# Phase two: the old key is dropped and only the new one ships. Still accepted,
+# because it is still a published fingerprint.
+DEB="$(mkdeb rotated "new" no)"
+rc=0; run_installer "$DEB" "$FPR_GOOD,$FPR_NEW" || rc=$?
+check "and so is one carrying only the incoming key" "0" "$rc"
+
+# The attack the presence test admitted. One published fingerprint, a keyring
+# carrying it plus a key that was never published.
+DEB="$(mkdeb enriched "good evil" no)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a keyring carrying an unpublished key alongside is refused" "1" "$rc"
+check "and the message names the key that was not expected" "1" "$(said 'was not told to expect')"
+check "and dpkg -i was never reached" "0" "$(installed)"
 
 # --- the exploit ------------------------------------------------------------
 #
@@ -179,8 +205,8 @@ check "and dpkg -i was reached" "1" "$(installed)"
 DEB="$(mkdeb hostile evil yes)"
 rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
 check "a package whose postinst would forge the keyring is refused" "1" "$rc"
-check "and it is refused for the fingerprint, not something else" "1" \
-	"$(said 'does not carry the expected fingerprint')"
+check "and it is refused for the key, not something else" "1" \
+	"$(said 'was not told to expect')"
 check "and its maintainer script was never given the chance to run" "0" \
 	"$(installed)"
 

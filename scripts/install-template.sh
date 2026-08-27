@@ -126,21 +126,41 @@ curl -fsSL -o "$workdir/glyndor-archive-keyring.deb" "$KEYRING_URL" \
 # with the tools the installer uses. Reaching for a command ahead of the check
 # that the environment has it is how a "no apt-get found" refusal turns into
 # "tr: command not found".
-GLYNDOR_APT_FPR="$(printf '%s' "$GLYNDOR_APT_FPR" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+# One fingerprint per line, spaces stripped and upper-cased, so the grouped form
+# gpg prints can be pasted in and several can be given separated by commas.
+GLYNDOR_APT_FPR="$(printf '%s' "$GLYNDOR_APT_FPR" \
+	| tr ',' '\n' | tr -d '[:blank:]' | tr '[:lower:]' '[:upper:]' | grep -v '^$')"
 
 echo "Checking the archive key fingerprint ..."
 mkdir -p "$workdir/extracted"
 dpkg-deb -x "$workdir/glyndor-archive-keyring.deb" "$workdir/extracted" \
 	|| fail "could not extract the keyring package"
 
-# A rotation ships a keyring carrying both the old and the new key, so the test
-# is that the expected fingerprint is present - not that it is the only one.
-# That allowance is deliberate and unchanged; what moved is that it now reads
-# the downloaded payload rather than a file dpkg has already written.
-if ! gpg --show-keys --with-colons "$workdir/extracted$KEYRING_PATH" 2>/dev/null \
-	| awk -F: '/^fpr:/{print $10}' | grep -qx "$GLYNDOR_APT_FPR"; then
-	fail "the downloaded archive key does not carry the expected fingerprint ($GLYNDOR_APT_FPR); nothing was installed"
-fi
+# EVERY key in the keyring must be one this installer was told to expect, not
+# just one of them. The presence test this replaces admitted a keyring that
+# carried the published key alongside an attacker's: apt then trusted both, and
+# the sources.list the same package installs decides where it fetches from. That
+# is what an attacker who can serve this .deb needs, and the published
+# fingerprint does not stop it, because the published fingerprint is right there.
+#
+# A rotation still works: during the overlap the keyring carries the old key and
+# the new one, so GLYNDOR_APT_FPR carries both. The order matters now -- publish
+# both fingerprints BEFORE publishing the keyring that carries both, or clients
+# refuse the new keyring until the second one is out.
+#
+# Only primary fingerprints are compared. `--with-colons` emits an `fpr:` line
+# per subkey as well, and a subkey's fingerprint is not something anyone
+# publishes; taking the first `fpr:` after each `pub:` is what isolates them.
+keyring_fprs="$(gpg --show-keys --with-colons "$workdir/extracted$KEYRING_PATH" 2>/dev/null \
+	| awk -F: '/^pub:/{want=1;next} /^fpr:/{if(want){print $10;want=0}}')"
+
+[ -n "$keyring_fprs" ] \
+	|| fail "the downloaded package carries no archive key at all; nothing was installed"
+
+for fpr in $keyring_fprs; do
+	printf '%s\n' "$GLYNDOR_APT_FPR" | grep -qxF "$fpr" || fail \
+		"the downloaded keyring carries a key this installer was not told to expect ($fpr); nothing was installed"
+done
 
 echo "Installing the keyring ..."
 dpkg -i "$workdir/glyndor-archive-keyring.deb" >/dev/null \
