@@ -6,6 +6,11 @@ name: Publish apt repository
 # Runs once a day and on demand. A new product release is picked up at the
 # next scheduled build (or a manual run), so no product needs a write credential
 # on this repository to trigger a refresh.
+#
+# Schedule and on demand, no push or pull_request. This workflow asks whether
+# the published archive should be rebuilt from each product's latest release,
+# not whether code in this repository changed, so ordinary code events are not
+# what triggers it.
 
 on:
   workflow_dispatch:

@@ -9,6 +9,10 @@ name: PR hygiene
 # gate existed: the work was already on main via squash-merge, the branch was
 # recreated as -v2, and the second merge landed as a commit with zero files
 # changed. CI was happy with that, because a commit with no diff is valid git.
+#
+# Pull request only. empty-diff asks whether the pull request's diff carries
+# any work, against its base ref. A push to main has no base ref to diff
+# against, so the check has nothing to answer there.
 
 on:
   pull_request:
