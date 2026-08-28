@@ -35,8 +35,14 @@ updates:
     # `Glyndor/.github` reference survives for the pattern to match. The
     # group matched nothing and its companion exclusion excluded nothing --
     # a config claiming coverage it does not have.
+    #
+    # The group is named for what it matches. `patterns: ["*"]` selects every
+    # dependency in the ecosystem, so the name says that and nothing more. It
+    # was `github-owned` for a week, and that was true only by accident: every
+    # non-local `uses:` here happens to be an actions/* today, and the first
+    # one that is not would have landed in a group whose name said otherwise.
     groups:
-      github-owned:
+      actions:
         patterns: ["*"]
     # Dependabot infers a prefix from the commit history when this is absent,
     # and the inference has been unstable across repositories (build(deps):
