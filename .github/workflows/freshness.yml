@@ -17,6 +17,10 @@ name: Freshness
 # Separate from the test suite on purpose. These fail because something did not
 # happen elsewhere, never because this pull request is wrong, and reading them
 # in the same file as the tests invites treating them as flakes.
+#
+# Pull request and push to main, deliberately no schedule. A repository that
+# goes quiet stops checking its own freshness, and nothing automated writes
+# this repository's git, so a still repo is the failure mode this catches.
 
 on:
   pull_request:

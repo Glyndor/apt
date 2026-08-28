@@ -14,6 +14,10 @@ name: Health check
 # is treated as stale if the signed Release is older than 48h — twice the daily
 # publish cadence, so one delayed or skipped cron never false-alarms, yet loud
 # well before the 14-day Valid-Until would lock clients out.
+#
+# Schedule and on demand, no push or pull_request. This check asks whether the
+# served archive at apt.glyndor.net is still healthy, not whether the code in
+# this repository changed, so ordinary code events are not what triggers it.
 
 on:
   schedule:
