@@ -47,9 +47,18 @@ squash-merge back. Releases are tagged directly off `main`.
 Run the suite before pushing:
 
 ```sh
-for t in tests/*.test.sh; do "./$t" || echo "FAILED: $t"; done
-shellcheck scripts/*.sh tests/*.sh
+fail=0
+for t in tests/*.test.sh; do "./$t" || { echo "FAILED: $t"; fail=1; }; done
+shellcheck scripts/*.sh tests/*.sh || fail=1
+[ "$fail" -eq 0 ] && echo "all green" || echo "SOMETHING FAILED"
 ```
+
+The `fail` flag is not decoration. The loop runs every test instead of stopping
+at the first red one, which is what you want locally, but it means the loop ends
+on `echo` and reports success no matter how many scripts failed. Without the
+flag the status you glance at disagrees with the output you scrolled past. CI
+never had that problem: its `test-command` joins these same scripts with `&&`,
+so it stops at the first failure and the job goes red.
 
 Two rules matter more than coverage:
 
