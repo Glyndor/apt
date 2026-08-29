@@ -49,4 +49,9 @@ jobs:
         && ./tests/locale-pinned.test.sh
         && ./tests/check-test-coverage.test.sh
         && ./tests/ci-runs-every-test.test.sh
-      apt-packages: python3-cryptography reprepro
+        && ./tests/lint-workflow-shell.test.sh
+      # shellcheck: tests/lint-workflow-shell.test.sh plants a violation and
+      # requires the linter to report it, so it needs the linter. The gate
+      # itself runs in the shellcheck job against the pinned binary; this one
+      # asserts behaviour, which does not turn on the exact version.
+      apt-packages: python3-cryptography reprepro shellcheck

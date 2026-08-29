@@ -111,6 +111,24 @@ jobs:
           set -euo pipefail
           xargs -0 -r shellcheck --severity="$SEVERITY" < "$RUNNER_TEMP/shell-files"
 
+      # The collection above finds files by extension and by shebang, so it
+      # never sees the shell embedded in `run:` blocks -- several hundred lines
+      # per repository, and the lines that sign, publish and gate. This lints
+      # those too, from here rather than from the test suite, because the
+      # shellcheck installed above is pinned by version and sha256 while a test
+      # job's would be whatever the runner image ships that week.
+      #
+      # Skipped where the script is absent so a consumer that has not adopted it
+      # is not broken by bumping its pin.
+      - name: Lint the shell embedded in workflows
+        run: |
+          set -euo pipefail
+          if [ -x ./scripts/lint-workflow-shell.sh ]; then
+            ./scripts/lint-workflow-shell.sh "$SEVERITY"
+          else
+            echo "no scripts/lint-workflow-shell.sh in this repository; skipping"
+          fi
+
       # A script invoked as `./path` needs the executable bit recorded IN GIT.
       # `chmod +x` in a working tree is local state; the mode git stores is what
       # reaches the runner, and when it disagrees the job dies with exit 126 and
