@@ -50,6 +50,10 @@ jobs:
         && ./tests/check-test-coverage.test.sh
         && ./tests/ci-runs-every-test.test.sh
         && ./tests/lint-workflow-shell.test.sh
+        && ./tests/reusable-line-limit.test.sh
+        && ./tests/reusable-shell-ci.test.sh
+        && ./tests/reusable-empty-diff.test.sh
+        && ./tests/reusable-dco.test.sh
       # shellcheck: tests/lint-workflow-shell.test.sh plants a violation and
       # requires the linter to report it, so it needs the linter. The gate
       # itself runs in the shellcheck job against the pinned binary; this one
