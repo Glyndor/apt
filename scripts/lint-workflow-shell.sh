@@ -6,6 +6,13 @@
 # live inside workflows. That shell is not less load-bearing for being
 # embedded: it is the shell that signs, publishes and gates.
 #
+# Both forms are covered: a `run: |` block and a single-line `run: cmd`. The
+# single-line form was skipped when this was written, and the check said so on
+# every run rather than closing it; the seven such steps across the three
+# channel repositories turned out to be plain invocations with nothing the
+# linter could say about them, so this closes a hole that was cheap rather
+# than urgent.
+#
 # A finding is reported against the workflow and the line the `run:` block
 # starts on, not against the temporary file, so the error is navigable.
 #
@@ -38,7 +45,6 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 blocks=0
-inline=0
 failed=0
 
 for wf in "$workflows"/*.yml "$workflows"/*.yaml; do
@@ -66,10 +72,30 @@ for wf in "$workflows"/*.yml "$workflows"/*.yaml; do
 			print substr($0, body + 1) > out
 			next
 		}
+		# A single-line `run: cmd` is shell too, and skipping it was a hole
+		# this check announced ("N single-line run: step(s) not linted")
+		# rather than closed. Each becomes its own one-line block, so a
+		# finding still lands on the right workflow line.
+		/^[[:space:]]*run:[[:space:]]*[^|>[:space:]]/ {
+			close_block()
+			cmd = $0
+			sub(/^[[:space:]]*run:[[:space:]]*/, "", cmd)
+			# A YAML scalar may be quoted; the shell inside is the same.
+			if (cmd ~ /^".*"$/ || cmd ~ /^'"'"'.*'"'"'$/) {
+				cmd = substr(cmd, 2, length(cmd) - 2)
+			}
+			# NR-1, not NR. The reader adds (body line - 1) to the recorded
+			# line, which is right for a block whose body starts on the line
+			# after `run:`. Here the command IS the `run:` line, so the
+			# recorded line has to be one earlier for the sum to land on it.
+			one = sprintf("%s/%s@%d.sh", dir, tag, NR - 1)
+			print "#!/usr/bin/env bash" > one
+			print cmd > one
+			close(one)
+			next
+		}
 		END { close_block() }
 	' "$wf"
-
-	inline=$((inline + $(grep -cE '^[[:space:]]*run:[[:space:]]*[^|>[:space:]]' "$wf" || true)))
 done
 
 for block in "$work"/*.sh; do
@@ -110,4 +136,4 @@ if [ "$failed" -ne 0 ]; then
 	exit 1
 fi
 
-echo "$blocks embedded \`run:\` block(s) are clean at severity $severity ($inline single-line run: step(s) not linted)."
+echo "$blocks embedded \`run:\` block(s) are clean at severity $severity."
