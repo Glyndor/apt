@@ -23,10 +23,11 @@ before `dpkg -i`, so nothing ran as root.
 
 Swap `podup` for any package below.
 
-| Package | What it is |
-| --- | --- |
-| [`podup`](https://github.com/Glyndor/podup) | Docker-compose translator and runner for rootless Podman |
-| [`epistle`](https://github.com/Glyndor/epistle) | Self-hosted headless mail server: SMTP, IMAP |
+| Package | What it is | In the archive |
+| --- | --- | --- |
+| [`podup`](https://github.com/Glyndor/podup) | Docker-compose translator and runner for rootless Podman | served |
+| [`epistle`](https://github.com/Glyndor/epistle) | Self-hosted headless mail server: SMTP, IMAP | served |
+| [`helmly-agent`](https://github.com/Glyndor/helmly-agent) | Hardened server agent for the Glyndor panel: signed commands over WireGuard and mTLS | not packaged |
 
 ```bash
 apt list '?origin(Glyndor)'   # everything currently served
