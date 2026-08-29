@@ -34,6 +34,17 @@ KEYRING_PATH="/usr/share/keyrings/glyndor.gpg"
 # points at the key when the fault is the spaces.
 GLYNDOR_APT_FPR="${GLYNDOR_APT_FPR:-9ADF04EA8C3139CDB67303CFA6705C2EA153F3D6}"
 
+# Where the automatic-upgrade settings are written. Overridable so the tests can
+# exercise the block for real instead of against a copy of it, which is how the
+# block came to have no test at all: it writes as root into /etc, so a suite
+# that is not root could only skip it.
+#
+# This one carries none of the risk the two overrides above carry. They decide
+# what is trusted; this only decides where two config files land, and anyone who
+# can set it can already run anything. It is still worth naming rather than
+# leaving as an undocumented seam.
+APT_CONF_D="${APT_CONF_D:-/etc/apt/apt.conf.d}"
+
 # Both overrides above exist for forks and both are silent, which is the part
 # worth changing. The attack they enable is not "someone controls your shell" --
 # anyone who does needs no override. It is a copied command line:
@@ -209,23 +220,43 @@ apt-get install -y @PRODUCT@ || fail "apt could not install @PRODUCT@"
 # Debian ships neither the package nor the `20auto-upgrades` switch that turns
 # it on, so on a fresh Debian the allowlist entry alone does nothing. Ubuntu
 # server ships both.
-if dpkg -s unattended-upgrades >/dev/null 2>&1; then
-	# Already there, so it is configured the way this operator wants it. The
-	# keyring's allowlist entry is appended to their list rather than replacing
-	# it, so Glyndor packages are already covered by whatever schedule they
-	# chose. Nothing here to change, and changing it would be presumptuous.
-	echo "unattended-upgrades is already installed; leaving its settings alone."
-	if [ ! -f /etc/apt/apt.conf.d/20auto-upgrades ]; then
-		echo "  note: it is installed but not switched on. To enable it:"
-		echo "        sudo dpkg-reconfigure -plow unattended-upgrades"
-	fi
+# The question this asks is "is the switch off", not "is the package absent".
+#
+# It used to ask the second one, with `dpkg -s unattended-upgrades`, and that
+# worked only while no product on this archive pulled the package in. It stopped
+# being a safe proxy the moment one did: `apt-get install @PRODUCT@` above runs
+# twelve lines before this test, and this script passes no
+# `--no-install-recommends`, so a product that merely *recommends*
+# unattended-upgrades installs it too. The test would then be true on a machine
+# that had never seen the package, the else branch below would become
+# unreachable, and the installer would print "leaving its settings alone" and
+# exit 0 having switched nothing on. Reported from Glyndor/podup, whose
+# `debian/control` on develop now reads `Depends: … unattended-upgrades`.
+#
+# The consequence was not only the missing switch. `52glyndor-safety` below, the
+# file that stops an unattended upgrade rebooting a server on its own, is
+# written in the same branch and would have gone with it.
+#
+# What this costs, stated because it is a real change and not a pure fix: an
+# operator who installed unattended-upgrades and deliberately left it switched
+# off now gets it switched on. File absence cannot distinguish "never chose"
+# from "chose no". That case is accepted here because the README promises this
+# script switches automatic security upgrades on, and because the settings below
+# live in their own file precisely so one `rm` undoes them.
+if [ -f "$APT_CONF_D"/20auto-upgrades ]; then
+	# The switch is already on, so this machine's schedule is the operator's.
+	# The keyring's allowlist entry is appended to their list rather than
+	# replacing it, so Glyndor packages are already covered by whatever they
+	# chose. Nothing to change, and changing it would be presumptuous.
+	echo "automatic upgrades are already switched on; leaving the settings alone."
 else
 	echo "Setting up automatic security upgrades ..."
+	# Installs the package when it is absent, and succeeds trivially when
+	# something already pulled it in, which is the case that used to be
+	# mistaken for "the operator configured this".
 	if apt-get install -y -qq unattended-upgrades; then
-		# Only written because this script is what installed the package, so
-		# there is no prior configuration to override.
-		if [ ! -f /etc/apt/apt.conf.d/20auto-upgrades ]; then
-			cat > /etc/apt/apt.conf.d/20auto-upgrades <<'CONF'
+		if [ ! -f "$APT_CONF_D"/20auto-upgrades ]; then
+			cat > "$APT_CONF_D"/20auto-upgrades <<'CONF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 CONF
@@ -233,10 +264,12 @@ CONF
 		# Conservative for a server that answers on the public internet. Written
 		# in its own file rather than by editing Debian's 50unattended-upgrades,
 		# so an operator can drop it with one rm and dpkg never fights over it.
-		cat > /etc/apt/apt.conf.d/52glyndor-safety <<'CONF'
-// Written by the Glyndor installer, and only because it is what brought
-// unattended-upgrades onto this machine. If you already ran unattended
-// upgrades, this file was not created and your settings were left untouched.
+		cat > "$APT_CONF_D"/52glyndor-safety <<'CONF'
+// Written by the Glyndor installer, because it found automatic upgrades
+// switched off and switched them on. If `20auto-upgrades` had already been
+// there, this file would not exist and your settings would have been left
+// alone. Delete it to drop these three settings; nothing here rewrites
+// Debian's own 50unattended-upgrades, so dpkg never fights over it.
 //
 // Never reboot on its own. A service dropping at 06:00 because a kernel landed
 // is worse than the delay of a planned reboot, and the operator is the one who
