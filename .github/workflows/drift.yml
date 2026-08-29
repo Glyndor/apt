@@ -1,0 +1,44 @@
+name: Drift
+
+# Compares this repository's copies of the shared reusables against the copies
+# its sibling channels carry. The comparison itself lives in
+# scripts/check-reusable-drift.sh; this file only decides when it runs.
+#
+# NOT on pull_request, and that is the whole design of this file.
+#
+# A change to a reusable has to land in three repositories, and they cannot
+# land at the same instant. On pull_request this check would go red on the
+# first repository's pull request because the other two still carry the old
+# copy, and red on theirs because the first one now carries the new one. Every
+# such change would deadlock: three pull requests, none mergeable until the
+# others merge.
+#
+# On push to main instead, the first merge reports drift, which is true and
+# is the reminder to carry the change across. The schedule then keeps
+# reporting until it is carried, so a half-applied change cannot go quiet.
+# Drift is not urgent within hours, so daily is enough.
+on:
+  schedule:
+    - cron: "41 9 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drift-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    name: reusable drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare the reusable copies against the sibling channels
+        run: ./scripts/check-reusable-drift.sh
