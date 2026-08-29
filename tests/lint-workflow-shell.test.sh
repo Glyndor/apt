@@ -87,6 +87,47 @@ check "a tree with no run: blocks fails rather than reporting success" "1" "$rc"
 check "and says the extractor found nothing" "1" \
 	"$(printf '%s' "$out" | grep -q 'found no' && echo 1 || echo 0)"
 
+# --- a single-line `run:` is shell too -----------------------------------
+#
+# This form was skipped when the script was written, and the check reported how
+# many it was skipping rather than reading them. The cases below are what makes
+# that closed rather than merely announced.
+
+cat >"$work/.github/workflows/oneline.yml" <<'YML'
+name: oneline
+on: [push]
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - name: a single-line run with a violation
+        run: rm -rf $UNQUOTED/*
+YML
+
+out="$(cd "$work" && ./scripts/lint-workflow-shell.sh style 2>&1)"
+rc=$?
+check "a violation in a single-line run: fails" "1" "$rc"
+check "and reports it on that line of the workflow" "1" \
+	"$(printf '%s' "$out" | grep -q 'file=.github/workflows/oneline.yml,line=8' && echo 1 || echo 0)"
+
+# A quoted scalar is the same shell with YAML quoting around it, and unwrapping
+# it wrongly would either miss the finding or report on the quotes.
+cat >"$work/.github/workflows/oneline.yml" <<'YML'
+name: oneline
+on: [push]
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - name: a quoted single-line run that is correct shell
+        run: "echo hello"
+YML
+
+out="$(cd "$work" && ./scripts/lint-workflow-shell.sh style 2>&1)"
+rc=$?
+check "a quoted single-line run: is unwrapped and passes" "0" "$rc"
+rm -f "$work/.github/workflows/oneline.yml"
+
 # --- a GitHub expression is not a finding --------------------------------
 
 cat >"$work/.github/workflows/expressions.yml" <<'YML'
