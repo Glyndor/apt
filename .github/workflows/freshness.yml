@@ -23,6 +23,25 @@ name: Freshness
 # this repository's git, so a still repo is the failure mode this catches.
 
 on:
+  # A watcher with no schedule only watches while somebody is already looking.
+  # Until this was added, these checks fired on pull_request and push and
+  # nothing else, and apt writes nothing to its own git, so a publish that
+  # stopped would have gone unreported until a human next visited the
+  # repository. The freshness thresholds below are measured in days; a watcher
+  # that runs only when a person happens to push cannot honour a one-day one.
+  #
+  # Twice a day rather than daily, because the tightest threshold declared
+  # below is one day and a daily run leaves no margin: a single skipped firing
+  # (GitHub drops scheduled runs under load, and delays them by up to an hour
+  # routinely) would put the check past its own limit before it ever ran.
+  #
+  # 08:13 and 20:13 rather than on the hour: GitHub queues everyone's :00 and
+  # :30 crons together, and the other schedules in this repository already sit
+  # there. The morning run is deliberately after the daily publish and update
+  # windows, so a successful run of the workflow it watches is already on
+  # record by the time it looks.
+  schedule:
+    - cron: "13 8,20 * * *"
   pull_request:
   push:
     branches: [main]
