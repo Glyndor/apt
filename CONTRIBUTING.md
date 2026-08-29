@@ -16,7 +16,7 @@ rebuilt from scratch on every run.
 
 Nothing automated writes to this repository's git. `publish.yml` uploads to R2;
 it never commits. That is why this repository can require pull requests and
-status checks, and why `homebrew-tap` and `scoop-bucket` cannot — their
+status checks, and why `homebrew-tap` and `scoop-bucket` cannot. Their
 `update.yml` commits straight to `main`.
 
 ## Branch flow
@@ -34,7 +34,7 @@ squash-merge back. Releases are tagged directly off `main`.
 
 - **An issue first.** Labels are the tracking system here; there is no board.
   Apply `type:`, `prio:`, `effort:`, `status:` and `area:` where they fit.
-- **Sign every commit off** — `git commit -s`. The `dco` check is required and
+- **Sign every commit off** with `git commit -s`. The `dco` check is required and
   it is the only thing standing behind that attestation.
 - **Commits are signed**, GPG or SSH. `required_signatures` is enforced on
   `main`, and rebase-merge is disabled because GitHub re-creates rebased commits
@@ -63,13 +63,13 @@ so it stops at the first failure and the job goes red.
 Two rules matter more than coverage:
 
 **Every script in `scripts/` needs a test.** `scripts/check-test-coverage.sh`
-fails when one does not, itself included — it lives in `scripts/`, so deleting
+fails when one does not, itself included: it lives in `scripts/`, so deleting
 its test makes it report itself.
 
 **A test you have not watched fail is not a test.** Before claiming a check
 works, delete or invert the control it covers, run it, and confirm it goes red
 for the reason it names. Three ways that goes wrong are written up in
-`standards/testing` — a sabotage that changes nothing, one that changes
+`standards/testing`: a sabotage that changes nothing, one that changes
 something the test does not look at, and one where the red comes from
 somewhere else entirely. All three were hit here in a single day.
 
@@ -78,7 +78,7 @@ under `set -euo pipefail`, so almost any mistake exits non-zero and a bare
 non-zero assertion is satisfied by the failure you did not mean.
 
 New test files must be added to `test-command` in `.github/workflows/tests.yml`.
-`tests/ci-runs-every-test.test.sh` fails when one is not — an unregistered test
+`tests/ci-runs-every-test.test.sh` fails when one is not. An unregistered test
 sits in `tests/`, passes by hand, and reads as coverage while CI never runs it.
 That happened here.
 
@@ -100,7 +100,7 @@ as a copy taken from a named `Glyndor/.github` tag. Nothing is pulled remotely.
 
 **Job ids are load-bearing.** A required status check is named
 `<caller job id> / <inner job name>`, so renaming a job renames its check and
-creates a phantom the ruleset still requires — which blocks every pull request
+creates a phantom the ruleset still requires, which blocks every pull request
 with no explanation. Move jobs between files freely; renaming one is a ruleset
 change.
 
