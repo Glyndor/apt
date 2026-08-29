@@ -53,15 +53,22 @@ WORKFLOW="$HERE/.github/workflows/reusable-empty-diff.yml"
 step_script "$WORKFLOW" "Fail when the pull request changes nothing" > "$WORK/step.sh"
 
 # A clone, so `origin/<base>` resolves the way it does on a runner.
+# -b main on both, rather than relying on init.defaultBranch. Without it the
+# bare repository's HEAD points at whatever the runner's git defaults to,
+# which need not be the branch that gets pushed, and `git clone` then prints
+# "remote HEAD refers to nonexistent ref, unable to checkout" and leaves an
+# empty working tree. The tests still ran and two of them passed for the
+# wrong reason. That is the shape of a test measuring the machine's
+# configuration instead of the code, and it passed locally for exactly that
+# reason: this machine sets init.defaultBranch to main and the runner does not.
 upstream="$WORK/up"
-git init -q --bare "$upstream"
+git init -q --bare -b main "$upstream"
 seed="$WORK/seed"
-git init -q "$seed"
+git init -q -b main "$seed"
 git -C "$seed" config user.email t@example.invalid
 git -C "$seed" config user.name t
 echo one > "$seed/f"
 git -C "$seed" add -A && git -C "$seed" commit -qm seed
-git -C "$seed" branch -M main
 git -C "$seed" remote add origin "$upstream"
 git -C "$seed" push -q origin main
 
@@ -69,6 +76,12 @@ repo="$WORK/r"
 git clone -q "$upstream" "$repo"
 git -C "$repo" config user.email t@example.invalid
 git -C "$repo" config user.name t
+
+# The clone must have checked something out. Without this, a clone that
+# silently produced an empty tree would let the cases below pass or fail for
+# reasons that have nothing to do with the gate under test.
+check "the fixture clone checked out the base branch" "main" \
+	"$(git -C "$repo" rev-parse --abbrev-ref HEAD)"
 
 run_step() { # $1=BASE value
 	( cd "$repo" && BASE="$1" bash "$WORK/step.sh" 2>&1 )
@@ -83,7 +96,7 @@ check "and says the reusable needs a pull_request trigger" "1" \
 
 # --- a branch identical to its base --------------------------------------
 
-git -C "$repo" checkout -q -b empty
+git -C "$repo" checkout -q -b empty origin/main
 out="$(run_step main)"; rc=$?
 check "a branch with no changes against its base fails" "1" "$rc"
 check "and names the base it compared against" "1" \
