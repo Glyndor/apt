@@ -14,3 +14,18 @@ permissions:
 jobs:
   line-limit:
     uses: ./.github/workflows/reusable-line-limit.yml
+    with:
+      # The reusable's default extension list has no `yml`, so the workflows --
+      # by some way the longest files here -- were never counted. Its counter
+      # was always ready for them: the awk that strips comments already treats
+      # `.yml` as a hash-comment language. Only the list of extensions to open
+      # left them out.
+      #
+      # Passed from the caller rather than changed in the reusable's default,
+      # so this repository's choice stays visible in this repository's own file
+      # and the reusable stays a recognisable copy of the shared one.
+      #
+      # Nothing needed splitting to turn this on. Counted the way the check
+      # counts -- comments and blank lines dropped -- the longest YAML in the
+      # three channel repositories is 183 lines against a soft limit of 300.
+      extensions: "rs go ts tsx js jsx mjs cjs py sh astro vue svelte yml yaml"
