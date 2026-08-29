@@ -166,6 +166,23 @@ dpkg-deb -x "$workdir/glyndor-archive-keyring.deb" "$workdir/extracted" \
 keyring_fprs="$(gpg --show-keys --with-colons "$workdir/extracted$KEYRING_PATH" 2>/dev/null \
 	| awk -F: '/^pub:/{want=1;next} /^fpr:/{if(want){print $10;want=0}}')"
 
+# Do not remove this guard on the grounds that `set -e` covers it. It does not,
+# and the reason is the interpreter rather than the logic.
+#
+# This is the only script here with a `#!/bin/sh` line, because it is fetched
+# and piped into `sh`; every other script in this repository is bash and runs
+# with `set -euo pipefail`. `pipefail` is not POSIX. It reached dash in 0.5.12,
+# released in 2023, and this archive serves distributions older than that, so
+# the option cannot be set here.
+#
+# Without it a pipeline exits with the status of its LAST command. In the
+# assignment above, a gpg that fails writes nothing to stdout, its stderr is
+# discarded, awk then reads empty input and exits 0, and the pipeline exits 0.
+# `set -e` sees success. `keyring_fprs` is empty, the `for` loop below iterates
+# zero times, every comparison it would have made is skipped, and the script
+# walks into `dpkg -i` having verified nothing.
+#
+# This line is what turns that into a refusal.
 [ -n "$keyring_fprs" ] \
 	|| fail "the downloaded package carries no archive key at all; nothing was installed"
 
