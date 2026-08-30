@@ -326,6 +326,110 @@ rc=0; run_installer "$WORK/empty.deb" "$FPR_GOOD" || rc=$?
 check "a package shipping no keyring is refused" "1" "$rc"
 check "and nothing was installed" "0" "$(installed)"
 
+# --- what it puts on the screen ---------------------------------------------
+#
+# The installer styles its output, and every one of these is a way that breaks
+# silently: it still exits 0, the package still installs, and the damage is in
+# somebody else's log file or on a terminal that cannot render what was sent.
+#
+# `run_installer` uses `env -i`, so it runs with no locale and no terminal --
+# which is one of the cases below, not a neutral baseline. This variant takes
+# extra environment so the others can be reached, and a pty so `[ -t 1 ]` is
+# true, since colour is suppressed off a terminal and every colour assertion
+# would otherwise pass without exercising anything.
+run_tty() { # <env assignments...> -- output in $WORK/tty
+	rm -f "$WORK/marker"; mkdir -p "$WORK/apt.conf.d"
+	sed 's/@PRODUCT@/testpkg/g' "$TEMPLATE" > "$WORK/install.sh"
+	printf '#!/bin/sh\necho "testpkg version v9.9.9"\n' > "$BIN/testpkg"
+	chmod +x "$BIN/testpkg"
+	script -qec "env -i PATH='$BIN:$PATH' HOME='$WORK' \
+		DPKG_MARKER='$WORK/marker' KEYRING_URL='file://$DEB_GOOD' \
+		GLYNDOR_APT_FPR='$FPR_GOOD' APT_CONF_D='$WORK/apt.conf.d' \
+		$* /bin/sh '$WORK/install.sh'" /dev/null >"$WORK/tty" 2>&1 || true
+}
+# grep -c always prints a count, and exits 1 when that count is zero. Adding
+# `|| echo 0` therefore prints a SECOND line on the case this is here to check,
+# and the comparison sees "0\n0" against "0" and fails. Let the count stand.
+esc_count() { grep -c "$(printf '\033')" "$WORK/$1"; true; }
+
+DEB_GOOD="$(mkdeb good good no)"
+
+# The control. Everything below asserts an ABSENCE of escapes, and an absence
+# proves nothing unless the same fixture can produce a presence -- a typo in
+# the pty invocation would make all four "pass" while running nothing.
+run_tty "TERM=xterm-256color LANG=en_US.UTF-8"
+check "on a terminal it does emit colour, so the checks below can fail" "1" \
+	"$([ "$(esc_count tty)" -gt 0 ] && echo 1 || echo 0)"
+# Match the spaced rendering, not the raw fingerprint: the fork warning higher
+# up prints the raw form too, so a raw match would pass with the line under
+# test deleted.
+check "and the fingerprint is on screen, not folded into the tick" "1" \
+	"$(grep -c "$(printf '%s' "$FPR_GOOD" | cut -c1-8 | sed -E 's/(.{4})/\1 /;s/ $//')" "$WORK/tty")"
+
+# NO_COLOR is a promise about every tool on the machine, not a preference.
+run_tty "TERM=xterm-256color LANG=en_US.UTF-8 NO_COLOR=1"
+check "NO_COLOR suppresses every escape sequence" "0" "$(esc_count tty)"
+
+# TERM=dumb is what emacs shells and some CI runners report.
+run_tty "TERM=dumb LANG=en_US.UTF-8"
+check "TERM=dumb suppresses every escape sequence" "0" "$(esc_count tty)"
+
+# Redirected output is the case that corrupts somebody else's file. This one
+# uses the plain runner, which already has no terminal.
+rc=0; run_installer "$DEB_GOOD" "$FPR_GOOD" || rc=$?
+check "a successful install off a terminal exits 0" "0" "$rc"
+check "and writes no escape sequences into the redirected output" "0" \
+	"$(esc_count out)"
+
+# A non-UTF-8 locale is the default in a bare container, not an edge case. The
+# glyphs are multi-byte, so the test is for bytes above ASCII rather than for
+# the character: that is what a terminal in a C locale receives and cannot draw.
+run_tty "TERM=xterm-256color LC_ALL=C LANG=C"
+# Count bytes with the high bit set rather than "non-printable characters".
+# The pty adds a carriage return to every line, so a character-class test
+# reports the harness rather than the installer -- measured, 17 lines of it.
+# High-bit bytes are precisely the multi-byte sequences a C-locale terminal
+# cannot draw, and CR and ESC do not have that bit.
+check "a C locale gets ASCII glyphs, no multi-byte characters" "0" \
+	"$(LC_ALL=C tr -dc '\200-\377' < "$WORK/tty" | wc -c | tr -d ' ')"
+
+# apt's output is captured so the ordinary install is readable. Captured is one
+# keystroke from swallowed, and the failure case is where that output IS the
+# diagnosis -- so assert both halves: absent when it worked, present when it
+# did not.
+saved_apt="$(cat "$BIN/apt-get")"
+
+# The stub has to SAY something for this to mean anything. It exits 0 silently,
+# so grepping a successful run for apt's chatter answered zero whether the
+# output was captured or not -- sabotaged the capture and the check stayed
+# green, which is how this was found. A stub that prints is what turns the
+# assertion into one that can fail.
+cat > "$BIN/apt-get" <<'APTSTUB'
+#!/bin/sh
+echo "Reading package lists..."
+echo "Building dependency tree..."
+exit 0
+APTSTUB
+chmod +x "$BIN/apt-get"
+rc=0; run_installer "$DEB_GOOD" "$FPR_GOOD" || rc=$?
+check "an install whose apt is chatty still succeeds" "0" "$rc"
+check "and apt's chatter stays out of the output" "0" \
+	"$(grep -c 'Reading package lists' "$WORK/out"; true)"
+
+cat > "$BIN/apt-get" <<'APTSTUB'
+#!/bin/sh
+case "$*" in
+	*install*) echo "E: fixture-apt-failure" >&2; exit 100 ;;
+esac
+exit 0
+APTSTUB
+chmod +x "$BIN/apt-get"
+rc=0; run_installer "$DEB_GOOD" "$FPR_GOOD" || rc=$?
+check "an apt failure fails the install" "1" "$rc"
+check "and apt's captured output is shown, since it is the diagnosis" "1" \
+	"$(grep -c 'E: fixture-apt-failure' "$WORK/out")"
+printf '%s' "$saved_apt" > "$BIN/apt-get"; chmod +x "$BIN/apt-get"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

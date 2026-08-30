@@ -48,6 +48,37 @@ extract_block() {
 	awk '/^if \[ -f "\$APT_CONF_D"\/20auto-upgrades \]/,/^fi$/' "$SCRIPT"
 }
 
+# The block calls step() and doing(), which the installer defines near the top.
+# Running the block without them does not error out loudly -- `sh` reports
+# "not found" and carries on -- so the block would write the right files while
+# saying nothing, and the assertions about what it says would fail with no clue
+# why. Extract the definitions and prepend them.
+extract_output_layer() {
+	awk '/^# --- output ---/,/^# --- end output ---/' "$SCRIPT"
+}
+
+output_layer="$(extract_output_layer)"
+# Emptiness only catches a missing OPENING marker. Drop the closing one and awk
+# runs to end of file: the extract is not empty, it is the rest of the script,
+# and the upgrades block would then be defined twice and run twice. So check
+# what the extract contains at both ends -- it has to define the functions the
+# block calls, and it has to have stopped before the block itself.
+case "$output_layer" in
+	*"step()"*) : ;;
+	*)
+		echo "FAIL  the output layer in $SCRIPT does not define step()" >&2
+		echo "      its opening marker moved; the block would run without it" >&2
+		exit 1
+		;;
+esac
+case "$output_layer" in
+	*'20auto-upgrades'*)
+		echo "FAIL  the output layer extract ran past its closing marker" >&2
+		echo "      it swallowed the upgrades block, which would then run twice" >&2
+		exit 1
+		;;
+esac
+
 block="$(extract_block)"
 if [ -z "$block" ]; then
 	echo "FAIL  could not find the automatic-upgrades block in $SCRIPT" >&2
@@ -60,7 +91,7 @@ fi
 # template placeholder is filled in.
 prepare() { # $1 = sandbox
 	mkdir -p "$1/apt.conf.d"
-	extract_block \
+	{ extract_output_layer; extract_block; } \
 		| sed 's|apt-get install -y -qq unattended-upgrades|true|' \
 		| sed 's|@PRODUCT@|testproduct|g' \
 		> "$1/block.sh"
@@ -84,7 +115,7 @@ check "with the switch absent, 20auto-upgrades is written" "1" \
 check "and 52glyndor-safety is written with it" "1" \
 	"$([ -f "$s/apt.conf.d/52glyndor-safety" ] && echo 1 || echo 0)"
 check "and it says what it did" "1" \
-	"$(printf '%s' "$out" | grep -q 'security upgrades apply automatically' && echo 1 || echo 0)"
+	"$(printf '%s' "$out" | grep -q 'no automatic reboot' && echo 1 || echo 0)"
 
 # The reboot setting is the reason 52glyndor-safety exists. Asserting the file
 # is present would pass on an empty file.
@@ -104,7 +135,7 @@ check "with the switch already on, the operator's file is left alone" "set by th
 check "and no safety file is dropped on top of their settings" "0" \
 	"$([ -f "$s/apt.conf.d/52glyndor-safety" ] && echo 1 || echo 0)"
 check "and it says it left things alone" "1" \
-	"$(printf '%s' "$out" | grep -q 'leaving the settings alone' && echo 1 || echo 0)"
+	"$(printf '%s' "$out" | grep -q 'already on, left alone' && echo 1 || echo 0)"
 
 # --- the decision must not depend on whether the package is installed -----
 #
