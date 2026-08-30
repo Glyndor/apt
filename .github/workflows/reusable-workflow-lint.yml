@@ -49,9 +49,23 @@ jobs:
         with:
           persist-credentials: false
 
+      # `stable` rather than a number, and this is the one pin in this file that
+      # is deliberately absent.
+      #
+      # This Go compiles nothing of ours. It exists to build actionlint, and
+      # what has to be reproducible there is the tool, which is pinned by
+      # ACTIONLINT_VERSION and keyed into the cache by it. The compiler that
+      # assembles it is not part of that claim.
+      #
+      # A number here has no update path. Dependabot's github-actions ecosystem
+      # does not touch a tool version written inside a workflow, so it moves
+      # only when somebody remembers, and nothing turns red when it stops being
+      # supported: Go keeps the last two releases, so a frozen number silently
+      # becomes an unsupported compiler while the job stays green. It sat at
+      # 1.26 with 1.27 out, which is how this was noticed.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26"
+          go-version: stable
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: actionlint-cache
