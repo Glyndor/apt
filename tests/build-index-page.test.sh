@@ -19,11 +19,40 @@
 
 set -euo pipefail
 
+# This file runs under `set -e`, so a `grep` that finds nothing kills it where
+# it stands. That is usually right, and it makes a truncated run look like a
+# small one: on 2026-08-29 an edit removed content one grep looked for, the run
+# died at that line, and the summary read "1 failed" while seven later
+# assertions had never been reached. Nothing in the output said so.
+#
+# Two wrong shapes were tried before this one, and both are worth naming because
+# each looks correct. Putting the guard at the END of the file cannot work: the
+# end is exactly what a dying script never reaches. Counting `^check` lines in
+# the source and comparing does not work either, because assertions inside a
+# loop run more often than they appear, so the count is not a total and a
+# comparison against it stays quiet for any death past the first few cases.
+#
+# A sentinel does work, because it asks the only question that has an exact
+# answer: did control reach the last line.
+reached_end=0
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD="$HERE/scripts/build-index-page.sh"
 WORK="$(mktemp -d)"
 
-cleanup() { rm -rf "$WORK"; }
+# One handler, not two. A second `trap ... EXIT` replaces the first rather than
+# adding to it, and that is exactly how the first version of this guard came to
+# do nothing: it was registered above and then silently dropped by the cleanup
+# trap twenty lines later. Both jobs live here.
+cleanup() {
+	rm -rf "$WORK"
+	if [ "$reached_end" -eq 0 ]; then
+		echo >&2
+		echo "INCOMPLETE  the run stopped before the end of this file." >&2
+		echo "            A command failed under set -e, so any counts printed" >&2
+		echo "            above describe a fraction of the assertions here." >&2
+	fi
+}
 trap cleanup EXIT
 
 pass=0
@@ -88,8 +117,6 @@ check "the keyring is not offered as a product install" "0" \
 # the more visible of the two places. This is what keeps them from drifting.
 check "the page does not offer apt install anywhere" "0" \
 	"$(grep -c 'apt install' "$P")"
-check "the bootstrap block is still there" "1" \
-	"$(grep -c 'dpkg -i glyndor-archive-keyring.deb' "$P")"
 
 # --- it follows the index rather than a hardcoded list ----------------------
 
@@ -171,19 +198,6 @@ archive "$WORK/i" "amd64" podup
 rc=0; run "$WORK/i" || rc=$?
 check "the archive builds a page" "0" "$rc"
 P="$WORK/i/index.html"
-extract_at="$(grep -n 'dpkg-deb -x glyndor-archive-keyring.deb' "$P" | cut -d: -f1 | head -1)"
-show_at="$(grep -n 'gpg --show-keys keyring-check' "$P" | cut -d: -f1 | head -1)"
-install_at="$(grep -n 'sudo dpkg -i glyndor-archive-keyring.deb' "$P" | cut -d: -f1 | head -1)"
-check "the page extracts the keyring without installing it" "1" \
-	"$([ -n "$extract_at" ] && echo 1 || echo 0)"
-check "the page reads the fingerprint from the extracted copy" "1" \
-	"$([ -n "$show_at" ] && echo 1 || echo 0)"
-check "the page still shows the install step" "1" \
-	"$([ -n "$install_at" ] && echo 1 || echo 0)"
-check "extraction comes before the fingerprint is read" "1" \
-	"$([ -n "$extract_at" ] && [ -n "$show_at" ] && [ "$extract_at" -lt "$show_at" ] && echo 1 || echo 0)"
-check "the fingerprint is read before dpkg -i runs" "1" \
-	"$([ -n "$show_at" ] && [ -n "$install_at" ] && [ "$show_at" -lt "$install_at" ] && echo 1 || echo 0)"
 # The README is a separate host, so a compromised archive cannot vouch for its
 # own key. Losing that link would turn the check into a self-attestation.
 check "the fingerprint is still compared against an independent channel" "1" \
@@ -221,6 +235,8 @@ else
 	echo "NOTE  no locale here collapses 'pod-up' and 'podup';"
 	echo "      the behavioural half of the collation check did not run"
 fi
+
+reached_end=1
 
 echo
 echo "$pass passed, $fail failed"

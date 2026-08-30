@@ -49,9 +49,10 @@ done
 ARCH_LIST="${ARCHES// /, }"
 
 # One <li> per installable package, offering the bootstrap installer rather than
-# `apt install`. Only the script brings unattended-upgrades onto the machine and
-# switches it on: the keyring carries the allowlist entry, but an allowlist does
-# nothing where unattended upgrades are not running, so a page that stopped at
+# `apt install`. The keyring carries the allowlist entry, so an `apt install`
+# gets Glyndor packages onto the unattended-upgrades allowlist, but an allowlist
+# does nothing where unattended upgrades are not switched on, and the switch
+# (`20auto-upgrades`) is written by the installer alone. A page that stopped at
 # `apt install` left a machine that looked complete and quietly stopped taking
 # security fixes. README.md says the same thing; the two are read by the same
 # person and must not disagree.
@@ -94,21 +95,10 @@ cat > "$OUT_DIR/index.html" <<EOF
 <p>The script adds this archive, checks the archive key's fingerprint before
 anything runs as root, installs the package, and switches on automatic security
 upgrades.</p>
-<h2>Or set it up by hand</h2>
-<p>Read the keyring's fingerprint <em>before</em> installing it --
-<code>dpkg -i</code> runs the package's maintainer scripts as root, so a package
-that has not been checked yet must not be handed to it:</p>
-<pre>curl -fsSLO https://apt.glyndor.net/glyndor-archive-keyring.deb
-dpkg-deb -x glyndor-archive-keyring.deb keyring-check
-gpg --show-keys keyring-check/usr/share/keyrings/glyndor.gpg</pre>
-<p><code>dpkg-deb -x</code> unpacks the package without running anything from
-it. Compare the fingerprint it prints against the one published in the
-<a href="https://github.com/Glyndor/apt#verify-the-signing-key">repository README</a>
--- an independent channel, so a page served from a compromised archive cannot
-vouch for its own key. Only if the two match:</p>
-<pre>sudo dpkg -i glyndor-archive-keyring.deb</pre>
-<p>Do not stop there and install the package with apt: that skips
-unattended-upgrades, which only the script sets up. Run the one-line command
-above instead.</p>
+<p>To check the archive key by hand before trusting it, or to verify a copy
+already installed, see
+<a href="https://github.com/Glyndor/apt#verify-the-signing-key">the repository
+README</a>. The fingerprint is published there and not here on purpose: a page
+served from this archive cannot vouch for its own key.</p>
 <p>Source: <a href="https://github.com/Glyndor/apt">github.com/Glyndor/apt</a></p>
 EOF
