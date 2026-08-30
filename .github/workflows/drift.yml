@@ -17,11 +17,39 @@ name: Drift
 # is the reminder to carry the change across. The schedule then keeps
 # reporting until it is carried, so a half-applied change cannot go quiet.
 # Drift is not urgent within hours, so daily is enough.
+# Schedule and a manual button, and deliberately NOT `push: main`. Removing
+# that trigger is what fixes two defects at once, and both are worth naming
+# because re-adding it brings them back and neither is visible from the code.
+#
+# A reusable change lands in three repositories one merge at a time, and cannot
+# land in all three at once. On `push: main` each merge fired this check while
+# the siblings still carried the old copy, so it went red for a state that
+# lasted 24 seconds. Measured 2026-08-30: apt merged at 03:22:40 and its run at
+# 03:22:43 was red and correct; the tap the same twelve seconds later; the
+# bucket, merging last, was green. Nothing then fired the first two again, so
+# their commits wore a failure describing a condition that was already over,
+# and clearing it needed `gh run rerun` by hand. A `workflow_dispatch` does not
+# clear it: that adds a run beside the old one and the commit keeps the cross.
+#
+# The second defect is that this check reads its siblings from
+# raw.githubusercontent.com, which is a CDN. In the minutes after a merge it
+# serves the previous file, through `Cache-Control: no-cache`, so the check
+# reports drift where there is none. Measured the same night: git agreed across
+# all three while the CDN still served the pre-merge copy, and it caught up
+# about eight minutes later.
+#
+# Running only on a schedule avoids both rather than handling either. By 09:41
+# every merge of the previous day has landed and the CDN has long propagated.
+# The window still exists; nothing reaches it.
+#
+# What this gives up: applying a change to one repository and forgetting the
+# others is reported the next morning rather than instantly. That is the same
+# trade the freshness watchers already make with `max-age-days: 3`, and drift
+# between copies is a slow fault — it harms nobody today, it harms the day
+# somebody fixes a bug in one copy and not the others.
 on:
   schedule:
     - cron: "41 9 * * *"
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
