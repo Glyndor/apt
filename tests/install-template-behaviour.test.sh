@@ -397,7 +397,42 @@ check "a C locale gets ASCII glyphs, no multi-byte characters" "0" \
 # keystroke from swallowed, and the failure case is where that output IS the
 # diagnosis -- so assert both halves: absent when it worked, present when it
 # did not.
+# apt names the unsatisfiable dependency in a block it prints BEFORE the final
+# E: line, and -qq suppresses that block while leaving the E: line. Shipped that
+# way for an hour and it cost a real diagnosis: a machine whose podman was older
+# than the Depends asks for got
+#
+#     E: Unable to correct problems, you have held broken packages.
+#
+# and nothing saying which package or which version. Capturing the output is
+# what keeps the ordinary run quiet, so -qq buys nothing and only removes this.
+#
+# The stub HONOURS -qq rather than ignoring it. A stub that always printed the
+# block would pass with -qq restored, which is the mutation this exists to
+# catch -- the assertion has to be able to see the flag to be about the flag.
 saved_apt="$(cat "$BIN/apt-get")"
+cat > "$BIN/apt-get" <<'APTSTUB'
+#!/bin/sh
+case "$*" in
+	*install*)
+		case "$*" in
+			*-qq*) ;;
+			*) echo "The following packages have unmet dependencies:" >&2
+			   echo " testpkg : Depends: podman (>= 5.0) but 4.9.3 is to be installed" >&2 ;;
+		esac
+		echo "E: Unable to correct problems, you have held broken packages." >&2
+		exit 100
+		;;
+esac
+exit 0
+APTSTUB
+chmod +x "$BIN/apt-get"
+rc=0; run_installer "$DEB_GOOD" "$FPR_GOOD" || rc=$?
+check "an unsatisfiable dependency fails the install" "1" "$rc"
+check "and the output names the dependency, not just that something broke" "1" \
+	"$(grep -c 'Depends: podman' "$WORK/out")"
+printf '%s' "$saved_apt" > "$BIN/apt-get"; chmod +x "$BIN/apt-get"
+
 
 # The stub has to SAY something for this to mean anything. It exits 0 silently,
 # so grepping a successful run for apt's chatter answered zero whether the
