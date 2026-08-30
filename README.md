@@ -13,7 +13,7 @@
 ## Install
 
 ```bash
-curl -fsSL https://apt.glyndor.net/install/podup | sh
+curl -fsSL https://apt.glyndor.net/install/podup | sudo sh
 ```
 
 It adds the archive, installs the signing key after checking its fingerprint,
