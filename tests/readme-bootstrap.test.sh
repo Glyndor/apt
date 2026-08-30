@@ -131,6 +131,20 @@ check "the install command is found where it is published" "1" \
 check "every published install command runs the script as root" "" \
 	"$(printf '%s\n' "$install_cmds" | grep -v ' | sudo sh$' || true)"
 
+# The check above matches on the archive host, so it saw four of the five
+# places that told a reader how to run this and missed the fifth: the Usage
+# line said `./install.sh`, a form documented nowhere, for the same reason the
+# root check used to. A pattern anchored on one spelling finds the copies that
+# share it and reports a clean sweep.
+#
+# So look for the other spelling directly. `install.sh` appears legitimately in
+# prose about the file, which is why this matches an INVOCATION -- the script
+# named as something to run -- rather than the name on its own.
+stale_invocations="$(grep -nE '(\./|sh )install\.sh' \
+	"$README" scripts/install-template.sh scripts/build-index-page.sh || true)"
+check "nothing tells a reader to run a downloaded install.sh" "" \
+	"$stale_invocations"
+
 # Anchors are generated from heading text: lowercased, spaces to hyphens.
 # Derive them rather than grepping for the literal string, so a heading that
 # renders to the right anchor by another spelling still counts.

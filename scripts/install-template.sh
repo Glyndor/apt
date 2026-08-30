@@ -1,7 +1,7 @@
 #!/bin/sh
 # Set up the Glyndor apt repository and install @PRODUCT@.
 #
-# Usage: ./install.sh
+# Usage: curl -fsSL https://apt.glyndor.net/install/@PRODUCT@ | sudo sh
 #
 # Generated from scripts/install-template.sh in Glyndor/apt. Do not edit the
 # published copy - edit the template.
@@ -11,12 +11,20 @@
 # machine current. A binary dropped somewhere by hand stays on the version it
 # was installed at until somebody remembers it.
 #
-# Installing through apt also brings in whatever @PRODUCT@ recommends, because
-# apt installs Recommends by default. This sentence used to name podman and
-# podup specifically: true of epistle, which was the only product generated
+# Installing through apt also brings in what @PRODUCT@ declares it needs, and
+# apt installs Recommends as well as Depends by default.
+#
+# This sentence has been wrong twice, in opposite directions, so it is written
+# to survive being read for a product it was not written about. It first named
+# podman and podup specifically: true of epistle, the only product generated
 # from this template at the time, and false the moment the template rendered
-# for anything else - podup recommends podman alone, so its own installer would
-# have claimed that installing podup brings podup in.
+# for anything else. The correction then said podup recommends podman alone,
+# which stopped being true when podup moved both podman and unattended-upgrades
+# to Depends, and stayed on the page for a while after that.
+#
+# The template is shared, so nothing here can name a product's dependencies and
+# stay true. What holds for every product is the mechanism, which is the only
+# thing this says now.
 set -eu
 
 KEYRING_URL="${KEYRING_URL:-https://apt.glyndor.net/glyndor-archive-keyring.deb}"
