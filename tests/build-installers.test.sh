@@ -74,12 +74,28 @@ check "no placeholder survives in the output" "0" "$(grep -c '@PRODUCT@' "$WORK/
 check "the product name is substituted" "1" "$(grep -c 'apt-get install -y podup' "$WORK/out/podup" || true)"
 
 # The bug this file was written for: a sentence true of one product rendered
-# for every product. podup recommends podman alone, so an installer telling a
-# podup user that installing podup also brings podup in is the tell.
+# for every product. The template said installing podup brings podman and podup
+# in -- true of epistle, which was the only product generated from it then.
 check "no installer names another product's dependencies" "0" \
 	"$(grep -c 'brings podman and podup' "$WORK/out/podup" || true)"
-check "the recommends sentence is written per product" "1" \
-	"$(grep -c 'whatever podup recommends' "$WORK/out/podup" || true)"
+
+# The replacement went stale too, in the other direction: it said podup
+# recommends podman alone, and podup declares Depends on podman AND
+# unattended-upgrades. Two wrong sentences in a row is what says the shape is
+# wrong rather than the wording -- a shared template rendered with a flat sed
+# cannot name any product's dependencies and stay true for the rest.
+#
+# So assert the sentence is about the MECHANISM, and separately that it names
+# no dependency. The second is what the first two versions would have failed.
+check "the dependency sentence is rendered for this product" "1" \
+	"$(grep -c 'what podup declares it needs' "$WORK/out/podup" || true)"
+# Scoped to the claim itself, which is the two lines up to the blank comment
+# that follows. The paragraph below it recounts why the sentence was wrong
+# twice and names the dependencies to do so -- that is history about podup and
+# is true whichever product this renders for, so it is not what this forbids.
+check "and it names no specific dependency" "0" \
+	"$(grep -A1 'declares it needs' "$WORK/out/epistle" \
+		| grep -cE 'podman|unattended-upgrades' || true)"
 
 # --- fail-closed 1: the template lost its placeholder -------------------------
 
