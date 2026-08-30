@@ -285,9 +285,18 @@ step "Keyring installed"
 # DEBIAN_FRONTEND matters specifically because the output is hidden. Without
 # it, a package whose maintainer script asks debconf a question waits for an
 # answer behind a screen showing nothing, which reads as a hang.
+# Deliberately not -qq on the install. Capturing the output is what keeps the
+# ordinary run quiet, so -qq buys nothing there and costs the whole diagnosis
+# here: it suppresses the "unmet dependencies" block, leaving only
+#
+#     E: Unable to correct problems, you have held broken packages.
+#
+# which does not name the dependency that was not satisfiable. Measured on a
+# machine whose podman was older than the Depends asks for -- the line that says
+# WHICH package and WHICH version is the line -qq removes.
 doing "installing @PRODUCT@"
 if ! apt_log="$(DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>&1 \
-	&& DEBIAN_FRONTEND=noninteractive apt-get install -y -qq @PRODUCT@ 2>&1)"; then
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y @PRODUCT@ 2>&1)"; then
 	# Clear the in-progress line before apt's own output lands, or the two
 	# collide on one row and the first thing a reader sees is a sentence
 	# spliced out of two programs.

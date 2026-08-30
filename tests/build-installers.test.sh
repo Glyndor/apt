@@ -71,7 +71,7 @@ check "podup installer exists" "1" "$([ -f "$WORK/out/podup" ] && echo 1 || echo
 check "epistle installer exists" "1" "$([ -f "$WORK/out/epistle" ] && echo 1 || echo 0)"
 check "installers are executable" "1" "$([ -x "$WORK/out/podup" ] && echo 1 || echo 0)"
 check "no placeholder survives in the output" "0" "$(grep -c '@PRODUCT@' "$WORK/out/podup" || true)"
-check "the product name is substituted" "1" "$(grep -c 'apt-get install -y -qq podup' "$WORK/out/podup" || true)"
+check "the product name is substituted" "1" "$(grep -c 'apt-get install -y podup' "$WORK/out/podup" || true)"
 
 # The bug this file was written for: a sentence true of one product rendered
 # for every product. podup recommends podman alone, so an installer telling a
