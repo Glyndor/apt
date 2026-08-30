@@ -68,10 +68,67 @@ fpr_overridden=no
 [ "$(printf '%s' "$GLYNDOR_APT_FPR" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')" \
 	= "$DEFAULT_FPR" ] || fpr_overridden=yes
 
+# --- output ------------------------------------------------------------------
+#
+# This runs under `curl ... | sudo sh`, so stdout is the user's terminal even
+# though stdin is a pipe. That makes styled output safe here, but only after
+# three separate opt-outs, and every one of them is somebody real:
+#
+#   [ -t 1 ]        redirected to a file, or read by another program. Escape
+#                   sequences written there are not decoration, they are
+#                   corruption of text somebody greps later.
+#   NO_COLOR        the convention a user sets once for every tool on a machine.
+#   TERM=dumb       what emacs shells and some CI runners report.
+#
+if [ -t 1 ] && [ -z "${NO_COLOR-}" ] && [ "${TERM-}" != dumb ]; then
+	ESC="$(printf '\033')"
+	DIM="${ESC}[2m"; BOLD="${ESC}[1m"; GREEN="${ESC}[32m"
+	RED="${ESC}[31m"; OFF="${ESC}[0m"; CLR="${ESC}[2K"
+else
+	DIM=""; BOLD=""; GREEN=""; RED=""; OFF=""; CLR=""
+fi
+
+# The glyphs are U+2714 and U+2716. On a machine whose locale is not UTF-8 those
+# bytes render as mojibake, so the test is on the charset rather than on the
+# terminal -- it is the locale that decides whether the glyph arrives intact,
+# and a Docker image with no locales set is the common case, not an exotic one.
+case "${LC_ALL:-${LC_CTYPE:-${LANG-}}}" in
+	*UTF-8*|*utf8*|*UTF8*) TICK="✔"; CROSS="✖"; DOT="·" ;;
+	*)                     TICK="+"; CROSS="!"; DOT="-" ;;
+esac
+
+# %b is what expands the colour variables: POSIX printf does not interpret
+# escapes inside %s, and `echo -e` is not portable to dash, which is the shell
+# that actually runs this on Debian and Ubuntu.
+#
+# A step with no value prints no padding and no empty colour pair. Trailing
+# whitespace and a bare reset are invisible on a terminal and are exactly what
+# somebody diffing two install logs sees as a change that is not there.
+step() {
+	[ -n "$CLR" ] && printf '\r%b' "$CLR"
+	if [ -n "${2-}" ]; then
+		printf '  %b%s%b %-32s%b%s%b\n' "$GREEN" "$TICK" "$OFF" "$1" "$DIM" "$2" "$OFF"
+	else
+		printf '  %b%s%b %s\n' "$GREEN" "$TICK" "$OFF" "$1"
+	fi
+}
+
+# Only on a terminal, and deliberately not a spinner: this line is overwritten
+# by the next step(), so anything that survives into a log file would be a
+# half-finished sentence claiming work that may not have happened.
+doing() { [ -n "$CLR" ] || return 0; printf '  %b%s %s%b' "$DIM" "$DOT" "$1" "$OFF"; }
+
+note() { printf '      %b%s%b\n' "$DIM" "$1" "$OFF"; }
+
+banner() { printf '\n  %b%s%b %s %b%s%b\n\n' "$BOLD" "Glyndor" "$OFF" "$DOT" "$BOLD" "$1" "$OFF"; }
+closing() { printf '\n  %b%s%b %s %b%s%b\n\n' "$BOLD" "$1" "$OFF" "$DOT" "$DIM" "$2" "$OFF"; }
+
 fail() {
-	echo "error: $1" >&2
+	[ -n "$CLR" ] && printf '\r%b' "$CLR"
+	printf '  %b%s%b %s\n' "$RED" "$CROSS" "$OFF" "error: $1" >&2
 	exit 1
 }
+# --- end output --------------------------------------------------------------
 
 [ "$(id -u)" -eq 0 ] || fail "run this as root: curl -fsSL https://apt.glyndor.net/install/@PRODUCT@ | sudo sh"
 
@@ -91,7 +148,7 @@ installed_gnupg=
 cleanup() {
 	[ -n "$workdir" ] && rm -rf "$workdir"
 	if [ -n "$installed_gnupg" ]; then
-		echo "Removing the gnupg this script installed ..."
+		note "removing the gnupg this script installed"
 		apt-get purge -y -qq --auto-remove gnupg >/dev/null 2>&1 || true
 	fi
 	return 0
@@ -103,7 +160,7 @@ trap cleanup EXIT
 # fingerprint read and nothing else, so it goes back out again afterwards -
 # purged with --auto-remove, and only when it was absent to begin with.
 if ! command -v gpg >/dev/null 2>&1; then
-	echo "Installing gnupg (needed to check the archive key) ..."
+	doing "installing gnupg, needed to check the archive key"
 	apt-get update -qq
 	apt-get install -y -qq gnupg || fail "could not install gnupg"
 	installed_gnupg=yes
@@ -123,7 +180,8 @@ if [ "$url_overridden" = yes ] || [ "$fpr_overridden" = yes ]; then
 	fi
 fi
 
-echo "Downloading the archive keyring ..."
+banner "@PRODUCT@"
+doing "downloading the archive keyring"
 # Bounded, and redirects kept on https.
 #
 # The keyring is ~2 KB and stays kilobytes even carrying both keys through a
@@ -154,7 +212,8 @@ curl -fsSL --proto-redir =https --max-filesize $((8 * 1024 * 1024)) \
 GLYNDOR_APT_FPR="$(printf '%s' "$GLYNDOR_APT_FPR" \
 	| tr ',' '\n' | tr -d '[:blank:]' | tr '[:lower:]' '[:upper:]' | grep -v '^$')"
 
-echo "Checking the archive key fingerprint ..."
+step "Archive keyring downloaded"
+doing "checking the archive key fingerprint"
 mkdir -p "$workdir/extracted"
 dpkg-deb -x "$workdir/glyndor-archive-keyring.deb" "$workdir/extracted" \
 	|| fail "could not extract the keyring package"
@@ -202,13 +261,49 @@ for fpr in $keyring_fprs; do
 		"the downloaded keyring carries a key this installer was not told to expect ($fpr); nothing was installed"
 done
 
-echo "Installing the keyring ..."
+# The fingerprint is printed rather than folded into the tick above. It is the
+# one line of this output that a reader is asked to act on -- comparing it
+# against README.md is what distinguishes this archive from one impersonating
+# it -- and a check nobody can see is a check nobody performs.
+step "Key fingerprint verified"
+printf '%s\n' "$GLYNDOR_APT_FPR" | while IFS= read -r f; do
+	[ -n "$f" ] || continue
+	note "$(printf '%s' "$f" | sed -E 's/(.{4})/\1 /g; s/ $//; s/^(([0-9A-F]{4} ){5})/\1 /')"
+done
+doing "installing the keyring"
 dpkg -i "$workdir/glyndor-archive-keyring.deb" >/dev/null \
 	|| fail "could not install the keyring package"
 
-echo "Installing @PRODUCT@ ..."
-apt-get update -qq
-apt-get install -y @PRODUCT@ || fail "apt could not install @PRODUCT@"
+step "Keyring installed"
+
+# apt's own output is the bulk of what this script used to put on screen, and
+# almost none of it is about @PRODUCT@: the dependency solver, the autoremove
+# hint, and one `N:` line per unrelated file some other vendor left in
+# sources.list.d. It is captured and shown only if apt fails, where it is the
+# whole diagnosis.
+#
+# DEBIAN_FRONTEND matters specifically because the output is hidden. Without
+# it, a package whose maintainer script asks debconf a question waits for an
+# answer behind a screen showing nothing, which reads as a hang.
+doing "installing @PRODUCT@"
+if ! apt_log="$(DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>&1 \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y -qq @PRODUCT@ 2>&1)"; then
+	# Clear the in-progress line before apt's own output lands, or the two
+	# collide on one row and the first thing a reader sees is a sentence
+	# spliced out of two programs.
+	[ -n "$CLR" ] && printf '\r%b' "$CLR"
+	printf '%s\n' "$apt_log" >&2
+	fail "apt could not install @PRODUCT@"
+fi
+
+# Run the installed binary rather than asking dpkg what version it recorded.
+# dpkg answers from its database, so it would report a version for a package
+# that unpacked but cannot start; this is the one step that proves what landed
+# actually runs. Its last field is the version, and an empty result is left
+# empty rather than guessed -- a blank column is honest, an invented one is not.
+version_line="$(@PRODUCT@ --version 2>/dev/null || true)"
+version="${version_line##* }"
+step "@PRODUCT@ installed" "$version"
 
 # Automatic upgrades.
 #
@@ -248,9 +343,9 @@ if [ -f "$APT_CONF_D"/20auto-upgrades ]; then
 	# The keyring's allowlist entry is appended to their list rather than
 	# replacing it, so Glyndor packages are already covered by whatever they
 	# chose. Nothing to change, and changing it would be presumptuous.
-	echo "automatic upgrades are already switched on; leaving the settings alone."
+	step "Automatic security upgrades" "already on, left alone"
 else
-	echo "Setting up automatic security upgrades ..."
+	doing "switching on automatic security upgrades"
 	# Installs the package when it is absent, and succeeds trivially when
 	# something already pulled it in, which is the case that used to be
 	# mistaken for "the operator configured this".
@@ -285,14 +380,13 @@ Unattended-Upgrade::MinimalSteps "true";
 Unattended-Upgrade::Remove-Unused-Dependencies "false";
 Unattended-Upgrade::Remove-Unused-Kernel-Packages "false";
 CONF
-		echo "  done: security upgrades apply automatically, without rebooting."
+		step "Automatic security upgrades" "on, no automatic reboot"
 	else
-		echo "  warning: could not install unattended-upgrades." >&2
-		echo "  @PRODUCT@ will not receive security fixes on its own. Install it later with:" >&2
-		echo "        sudo apt install unattended-upgrades" >&2
+		printf '  %b%s%b %-32s%b%s%b\n' "$RED" "$CROSS" "$OFF" \
+			"Automatic security upgrades" "$DIM" "could not be switched on" "$OFF" >&2
+		note "@PRODUCT@ will not receive security fixes on its own" >&2
+		note "sudo apt install unattended-upgrades" >&2
 	fi
 fi
 
-echo
-echo "Installed: $(@PRODUCT@ --version)"
-echo "Upgrades and archive-key renewals both arrive through apt."
+closing "@PRODUCT@ $version" "upgrades and archive-key renewals both arrive through apt"
