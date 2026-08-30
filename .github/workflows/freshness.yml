@@ -72,3 +72,31 @@ jobs:
     with:
       workflow: health-check.yml
       max-age-days: 1
+
+  # The watcher watches itself, and this is the last link rather than a joke.
+  #
+  # These checks exist to catch a scheduled workflow that stopped firing. Until
+  # 2026-08-29 this file had no schedule of its own, so it ran only when somebody
+  # pushed; that is fixed. What the fix leaves is one level up: it now has a
+  # cron, and nothing watches whether that cron keeps firing. Its silence would
+  # read exactly like the silence it exists to break.
+  #
+  # Deliberately not added in the same change as the schedule.
+  # reusable-schedule-freshness fails when no successful scheduled run exists
+  # for the workflow it names, and on the day the cron landed there was none, so
+  # this would have opened red for a reason that is not a fault. There are now
+  # two on record, measured before adding it.
+  #
+  # Two days rather than one, because the cron runs twice daily and GitHub is
+  # late: measured on the first two firings, the 20:13Z slot ran at 22:39Z and
+  # the 08:13Z slot at 13:48Z, so delays of two to five and a half hours are
+  # ordinary. A one-day threshold on a twice-daily job would sit close enough to
+  # its own limit to trip on lateness rather than on failure.
+  freshness-itself:
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/reusable-schedule-freshness.yml
+    with:
+      workflow: freshness.yml
+      max-age-days: 2
