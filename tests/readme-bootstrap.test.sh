@@ -103,6 +103,34 @@ inside="$(awk -v n="$fpr_at" '
 check "the fingerprint sits inside a fenced block, so its two spaces survive" "1" \
 	"$inside"
 
+# The install command is the other thing a reader copies out of this file, and
+# until now nothing compared it against the places that publish the same line.
+# Three files emit it -- this README, the generator that builds the page on
+# apt.glyndor.net, and the installer, which prints it when it is run without
+# root. They drifted: the README and the generator said `| sh`, which cannot
+# work, while the installer's own header said `| sudo sh`. The signal was a
+# user running the documented command and getting an error.
+#
+# Check every occurrence rather than the first. A README that publishes the
+# right command in the install section and a stale one further down still hands
+# somebody a line that fails, and comparing one site against one site would
+# call that agreement.
+install_cmds="$(grep -ohE 'apt\.glyndor\.net/install/[^ ]+ \| (sudo )?sh' \
+	"$README" scripts/build-index-page.sh scripts/install-template.sh)"
+
+# Guard the extraction before reading its verdict. If the pattern stops
+# matching -- a renamed host, a reflowed line -- the difference below is empty
+# against empty and the check reports success while inspecting nothing, which
+# is the failure mode this whole file exists to prevent. Four is what ships:
+# one in the README, one in the generator, two in the installer.
+check "the install command is found where it is published" "1" \
+	"$([ "$(printf '%s\n' "$install_cmds" | grep -c .)" -ge 4 ] && echo 1 || echo 0)"
+
+# `| sh` and `| sudo sh` are distinct strings, so this names the offenders
+# rather than counting them -- a failure prints the exact line to fix.
+check "every published install command runs the script as root" "" \
+	"$(printf '%s\n' "$install_cmds" | grep -v ' | sudo sh$' || true)"
+
 # Anchors are generated from heading text: lowercased, spaces to hyphens.
 # Derive them rather than grepping for the literal string, so a heading that
 # renders to the right anchor by another spelling still counts.

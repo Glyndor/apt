@@ -77,7 +77,7 @@ while IFS= read -r pkg; do
 			continue
 			;;
 	esac
-	PACKAGE_ITEMS="$PACKAGE_ITEMS<li><code>curl -fsSL https://apt.glyndor.net/install/$pkg | sh</code></li>"
+	PACKAGE_ITEMS="$PACKAGE_ITEMS<li><code>curl -fsSL https://apt.glyndor.net/install/$pkg | sudo sh</code></li>"
 done <<EOF_PKGS
 $(awk '/^Package:/ { print $2 }' "$OUT_DIR"/dists/stable/main/binary-*/Packages \
 	| grep -vx 'glyndor-archive-keyring' | LC_ALL=C sort -u)

@@ -73,7 +73,7 @@ fail() {
 	exit 1
 }
 
-[ "$(id -u)" -eq 0 ] || fail "run this as root (sudo sh install.sh)"
+[ "$(id -u)" -eq 0 ] || fail "run this as root: curl -fsSL https://apt.glyndor.net/install/@PRODUCT@ | sudo sh"
 
 command -v apt-get >/dev/null 2>&1 \
 	|| fail "no apt-get found. @PRODUCT@ ships as a .deb; on a non-Debian system, build from source (https://github.com/Glyndor/@PRODUCT@)"
