@@ -136,6 +136,50 @@ fail() {
 	printf '  %b%s%b %s\n' "$RED" "$CROSS" "$OFF" "error: $1" >&2
 	exit 1
 }
+# Whether unattended-upgrades would actually touch THIS archive, which is a
+# different question from whether it runs at all. Printing "already on" from the
+# switch alone said the second and implied the first (#194).
+#
+# Read through `apt-config dump` rather than by opening files. The entry may
+# come from any file in apt.conf.d, and this is apt parsing its own
+# configuration instead of us reproducing its precedence rules.
+#
+# Three ways to be excluded, and checking one of them is exactly how a check
+# reports success while the machine sits frozen:
+#
+#   Allowed-Origins     what our keyring writes
+#   Origins-Pattern     a second, equally valid list -- the unattended-upgrades
+#                       README says one OR the other, so a check that knows only
+#                       the spelling we ship is right on every machine we
+#                       configured and wrong on the operator's
+#   Package-Blacklist   origin allowed, package vetoed by name
+#
+# Unknown stays distinguishable from broken: if apt-config cannot be read there
+# is nothing to report, and inventing a warning there would train people to
+# ignore the one that matters.
+archive_upgrade_state() { # prints: allowed | no-origin | blacklisted | unknown
+	_dump="$(apt-config dump 2>/dev/null)" || { echo unknown; return 0; }
+	[ -n "$_dump" ] || { echo unknown; return 0; }
+
+	# Match the origin name rather than the exact entry. Ours is
+	# "Glyndor:stable"; an operator may equally have written
+	# "origin=Glyndor" or "o=Glyndor,a=stable" in the other list, and all
+	# three mean this archive is covered.
+	printf '%s\n' "$_dump" \
+		| grep -E '^Unattended-Upgrade::(Allowed-Origins|Origins-Pattern)::' \
+		| grep -q 'Glyndor' || { echo no-origin; return 0; }
+
+	# Blacklist entries are regular expressions, so this catches the plain
+	# spelling and not every pattern that could match. A miss here leaves the
+	# message as it is today rather than making it wrong, which is the right
+	# direction to be incomplete in.
+	printf '%s\n' "$_dump" \
+		| grep -E '^Unattended-Upgrade::Package-Blacklist::' \
+		| grep -q '"@PRODUCT@"' && { echo blacklisted; return 0; }
+
+	echo allowed
+}
+
 # --- end output --------------------------------------------------------------
 
 [ "$(id -u)" -eq 0 ] || fail "run this as root: curl -fsSL https://apt.glyndor.net/install/@PRODUCT@ | sudo sh"
@@ -355,12 +399,27 @@ step "@PRODUCT@ installed" "$version"
 # from "chose no". That case is accepted here because the README promises this
 # script switches automatic security upgrades on, and because the settings below
 # live in their own file precisely so one `rm` undoes them.
+# --- automatic upgrades ------------------------------------------------------
+#
+# Delimited because tests/unattended-upgrades.test.sh runs this section in
+# isolation. It used to end at the first `fi`, which stopped being the end of it
+# when the step moved out of the branches and below the case.
+
+# Empty means the failure branch below already said its piece in red; the
+# script runs under `set -u`, so this cannot be left undeclared.
+upgrade_switch=""
+
 if [ -f "$APT_CONF_D"/20auto-upgrades ]; then
 	# The switch is already on, so this machine's schedule is the operator's.
-	# The keyring's allowlist entry is appended to their list rather than
-	# replacing it, so Glyndor packages are already covered by whatever they
-	# chose. Nothing to change, and changing it would be presumptuous.
-	step "Automatic security upgrades" "already on, left alone"
+	# Nothing to change, and changing it would be presumptuous.
+	#
+	# This used to add that the keyring's allowlist entry is appended to their
+	# list rather than replacing it, so Glyndor packages are covered by
+	# whatever they chose -- true of the file we ship, and an assumption, not
+	# a check. It is a conffile precisely so it can be opted out of, and an
+	# operator who emptied it keeps their empty version through every
+	# reinstall. Now asked instead of assumed.
+	upgrade_switch=kept
 else
 	doing "switching on automatic security upgrades"
 	# Installs the package when it is absent, and succeeds trivially when
@@ -397,7 +456,7 @@ Unattended-Upgrade::MinimalSteps "true";
 Unattended-Upgrade::Remove-Unused-Dependencies "false";
 Unattended-Upgrade::Remove-Unused-Kernel-Packages "false";
 CONF
-		step "Automatic security upgrades" "on, no automatic reboot"
+		upgrade_switch=enabled
 	else
 		printf '  %b%s%b %-32s%b%s%b\n' "$RED" "$CROSS" "$OFF" \
 			"Automatic security upgrades" "$DIM" "could not be switched on" "$OFF" >&2
@@ -405,5 +464,47 @@ CONF
 		note "sudo apt install unattended-upgrades" >&2
 	fi
 fi
+
+# One line for two facts: unattended-upgrades runs, and it is allowed to touch
+# this archive. Both have to hold for the sentence a reader takes away from it
+# -- that @PRODUCT@ stays current on its own -- to be true.
+if [ -n "$upgrade_switch" ]; then
+	# `kept` is a switch the operator had already set, `enabled` is one this
+	# script turned on. The two say different things and only the first has
+	# something to leave alone.
+	case "$(archive_upgrade_state)" in
+		allowed)
+			if [ "$upgrade_switch" = kept ]; then
+				step "Automatic security upgrades" "already on, left alone"
+			else
+				step "Automatic security upgrades" "on, no automatic reboot"
+			fi
+			;;
+		no-origin)
+			# The keyring was installed moments ago and ships this entry, so
+			# reaching here means it was opted out of rather than missing.
+			# Say what is true and what to do, and do not undo their choice.
+			printf '  %b%s%b %-32s%b%s%b\n' "$RED" "$CROSS" "$OFF" \
+				"Automatic security upgrades" "$DIM" \
+				"on, but not for this archive" "$OFF" >&2
+			note "unattended-upgrades runs, and nothing allows apt.glyndor.net" >&2
+			note "so @PRODUCT@ will not be upgraded on its own" >&2
+			note "restore it with: dpkg --force-confmiss -i the keyring .deb" >&2
+			;;
+		blacklisted)
+			printf '  %b%s%b %-32s%b%s%b\n' "$RED" "$CROSS" "$OFF" \
+				"Automatic security upgrades" "$DIM" \
+				"on, but @PRODUCT@ is blacklisted" "$OFF" >&2
+			note "Unattended-Upgrade::Package-Blacklist names @PRODUCT@" >&2
+			note "so @PRODUCT@ will not be upgraded on its own" >&2
+			;;
+		*)
+			# apt-config could not be read. Claim only the half that was
+			# checked rather than warning about something unmeasured.
+			step "Automatic security upgrades" "on"
+			;;
+	esac
+fi
+# --- end automatic upgrades --------------------------------------------------
 
 closing "@PRODUCT@ $version" "upgrades and archive-key renewals both arrive through apt"

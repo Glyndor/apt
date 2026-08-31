@@ -44,8 +44,12 @@ check() { # <description> <expected> <actual>
 # Cut the block out of the shipped script by its own markers, so this cannot
 # drift from what ships. A copy pasted in here would keep passing after the
 # original changed, which is the failure this whole file exists to catch.
+# Between markers rather than from the `if` to the first `fi`. The step moved
+# out of the branches and below a case when #194 made it report what it had
+# actually checked, so the first `fi` stopped being the end of the section and
+# the extract fell silent while still writing the right files.
 extract_block() {
-	awk '/^if \[ -f "\$APT_CONF_D"\/20auto-upgrades \]/,/^fi$/' "$SCRIPT"
+	awk '/^# --- automatic upgrades ---/,/^# --- end automatic upgrades ---/' "$SCRIPT"
 }
 
 # The block calls step() and doing(), which the installer defines near the top.
@@ -85,6 +89,27 @@ if [ -z "$block" ]; then
 	echo "      its opening marker changed; this test is now measuring nothing" >&2
 	exit 1
 fi
+# Emptiness only catches a missing OPENING marker; drop the closing one and awk
+# runs to end of file, so the extract is not empty, it is the rest of the
+# script. Same failure the output layer's guard was widened for.
+#
+# The sentinel is the function DEFINITION, not its name: the block calls
+# archive_upgrade_state, so matching the bare name fired on a correct extract.
+case "$block" in
+	*'archive_upgrade_state() {'*)
+		echo "FAIL  the automatic-upgrades extract ran past its closing marker" >&2
+		echo "      it swallowed the rest of the script" >&2
+		exit 1
+		;;
+esac
+case "$block" in
+	*'upgrade_switch'*) : ;;
+	*)
+		echo "FAIL  the automatic-upgrades extract does not set upgrade_switch" >&2
+		echo "      its markers moved; the block below would report nothing" >&2
+		exit 1
+		;;
+esac
 
 # Prepare a runnable copy: the config directory moves into the sandbox, the
 # package install is stubbed to succeed without touching the machine, and the
@@ -100,7 +125,26 @@ prepare() { # $1 = sandbox
 # APT_CONF_D is the script's own override, so the block runs unmodified in the
 # part that matters. Only the package install is stubbed, because this test is
 # about what gets written and not about apt.
-run_block() { ( cd "$1" && APT_CONF_D="$1/apt.conf.d" sh block.sh 2>&1 ); }
+# $2 is what the stubbed `apt-config dump` prints. Without a stub the check
+# answers "unknown" -- honest, but it means the path #194 added is never
+# exercised and every assertion below would pass with the check deleted.
+run_block() { # $1=sandbox  $2=apt-config dump output
+	mkdir -p "$1/bin"
+	{
+		echo '#!/bin/sh'
+		echo "cat <<'DUMP'"
+		printf '%s\n' "${2-}"
+		echo 'DUMP'
+	} > "$1/bin/apt-config"
+	chmod +x "$1/bin/apt-config"
+	( cd "$1" && PATH="$1/bin:$PATH" APT_CONF_D="$1/apt.conf.d" sh block.sh 2>&1 )
+}
+
+ALLOWED='Unattended-Upgrade::Allowed-Origins:: "Glyndor:stable";'
+PATTERN='Unattended-Upgrade::Origins-Pattern:: "origin=Glyndor";'
+BLACKLIST='Unattended-Upgrade::Allowed-Origins:: "Glyndor:stable";
+Unattended-Upgrade::Package-Blacklist:: "testproduct";'
+
 
 # --- the switch is absent: both files must be written ---------------------
 #
@@ -109,7 +153,7 @@ run_block() { ( cd "$1" && APT_CONF_D="$1/apt.conf.d" sh block.sh 2>&1 ); }
 
 s="$WORK/absent"
 prepare "$s"
-out="$(run_block "$s")"
+out="$(run_block "$s" "$ALLOWED")"
 check "with the switch absent, 20auto-upgrades is written" "1" \
 	"$([ -f "$s/apt.conf.d/20auto-upgrades" ] && echo 1 || echo 0)"
 check "and 52glyndor-safety is written with it" "1" \
@@ -129,7 +173,7 @@ check "and switches the periodic upgrade on" "1" \
 s="$WORK/present"
 prepare "$s"
 printf 'set by the operator\n' > "$s/apt.conf.d/20auto-upgrades"
-out="$(run_block "$s")"
+out="$(run_block "$s" "$ALLOWED")"
 check "with the switch already on, the operator's file is left alone" "set by the operator" \
 	"$(cat "$s/apt.conf.d/20auto-upgrades")"
 check "and no safety file is dropped on top of their settings" "0" \
@@ -164,6 +208,66 @@ done
 
 check "the block asks about the switch, not about the package" "0" \
 	"$(printf '%s' "$block" | grep -c 'dpkg -s')"
+
+# --- is this archive actually allowed? (#194) --------------------------------
+#
+# Everything above asserts that the switch is written. None of it says whether
+# unattended-upgrades would touch THIS archive, which is the sentence a reader
+# takes away from "already on, left alone".
+
+s="$WORK/allowed"; prepare "$s"
+printf 'set by the operator' > "$s/apt.conf.d/20auto-upgrades"
+out="$(run_block "$s" "$ALLOWED")"
+check "with the archive allowed, it says the settings were left alone" "1" \
+	"$(printf '%s' "$out" | grep -q 'already on, left alone' && echo 1 || echo 0)"
+check "and warns about nothing" "0" \
+	"$(printf '%s' "$out" | grep -c 'not for this archive')"
+
+# The second spelling. The unattended-upgrades README says Allowed-Origins OR
+# Origins-Pattern, so a check that knows only the one our keyring writes is
+# right on every machine we configured and wrong on the operator's -- and wrong
+# in the loud direction, telling someone who is covered that they are not.
+s="$WORK/pattern"; prepare "$s"
+printf 'set by the operator' > "$s/apt.conf.d/20auto-upgrades"
+out="$(run_block "$s" "$PATTERN")"
+check "Origins-Pattern counts as allowed, not just Allowed-Origins" "1" \
+	"$(printf '%s' "$out" | grep -q 'already on, left alone' && echo 1 || echo 0)"
+
+# The case this exists for: switch on, allowlist opted out. The file is a
+# conffile so an operator who emptied it keeps their empty version through
+# every reinstall, and the old message called that "already on, left alone".
+s="$WORK/noorigin"; prepare "$s"
+printf 'set by the operator' > "$s/apt.conf.d/20auto-upgrades"
+out="$(run_block "$s" 'Unattended-Upgrade::Allowed-Origins:: "Debian:bookworm-security";')"
+check "with the switch on but the archive not allowed, it says so" "1" \
+	"$(printf '%s' "$out" | grep -q 'not for this archive' && echo 1 || echo 0)"
+check "and does not claim things were left in order" "0" \
+	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
+check "and says what it means for the product" "1" \
+	"$(printf '%s' "$out" | grep -q 'will not be upgraded on its own' && echo 1 || echo 0)"
+
+# Origin allowed, package vetoed. A third way to be frozen that reading the
+# allowlist alone reports as healthy.
+s="$WORK/blacklist"; prepare "$s"
+printf 'set by the operator' > "$s/apt.conf.d/20auto-upgrades"
+out="$(run_block "$s" "$BLACKLIST")"
+check "a blacklisted product is reported even with the origin allowed" "1" \
+	"$(printf '%s' "$out" | grep -q 'is blacklisted' && echo 1 || echo 0)"
+check "and it does not claim things were left in order" "0" \
+	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
+
+# Unknown must stay distinguishable from broken. An apt-config that cannot be
+# read is not evidence of a problem, and warning there would train people to
+# ignore the warning that means something.
+s="$WORK/unknown"; prepare "$s"
+printf 'set by the operator' > "$s/apt.conf.d/20auto-upgrades"
+mkdir -p "$s/bin"
+printf '#!/bin/sh\nexit 1\n' > "$s/bin/apt-config"; chmod +x "$s/bin/apt-config"
+out="$( cd "$s" && PATH="$s/bin:$PATH" APT_CONF_D="$s/apt.conf.d" sh block.sh 2>&1 )"
+check "an unreadable apt-config warns about nothing" "0" \
+	"$(printf '%s' "$out" | grep -c 'not for this archive')"
+check "and claims only the half it checked" "1" \
+	"$(printf '%s' "$out" | grep -qE 'Automatic security upgrades +on$' && echo 1 || echo 0)"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
