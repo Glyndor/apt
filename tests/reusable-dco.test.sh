@@ -114,5 +114,91 @@ lower="$(git -C "$repo" rev-parse HEAD)"
 out="$(run_step "$bad" "$lower")"; rc=$?
 check "a lowercase signed-off-by trailer is accepted" "0" "$rc"
 
+# ===========================================================================
+# Detect evil merges
+# ===========================================================================
+#
+# A merge commit's tree must equal the clean merge of its two parents. The
+# step had no test: it is the check that catches content smuggled into a
+# hand-edited merge, which is the one shape of change that never appears as
+# its own reviewed, signed commit.
+step_script "$WORKFLOW" "Detect evil merges" > "$WORK/merges.sh"
+check "the evil-merge step was extracted from the workflow" "1" \
+	"$(grep -c 'merge-tree' "$WORK/merges.sh" | awk '{print ($1>0)}')"
+
+mrepo="$WORK/m"
+git init -q -b main "$mrepo"
+git -C "$mrepo" config user.email t@example.invalid
+git -C "$mrepo" config user.name t
+mcommit() { # $1=file $2=content $3=message -> sha
+	printf '%s\n' "$2" > "$mrepo/$1"
+	git -C "$mrepo" add -A
+	git -C "$mrepo" commit -qm "$3" -s
+	git -C "$mrepo" rev-parse HEAD
+}
+run_merges() { # $1=base $2=head
+	( cd "$mrepo" && BASE_SHA="$1" HEAD_SHA="$2" bash "$WORK/merges.sh" 2>&1 )
+}
+
+mbase="$(mcommit a one "base")"
+
+# --- a clean two-parent merge passes -------------------------------------
+git -C "$mrepo" checkout -q -b topic
+mcommit b two "topic work" >/dev/null
+git -C "$mrepo" checkout -q main
+mcommit c three "main work" >/dev/null
+git -C "$mrepo" merge -q --no-ff --no-edit topic
+clean="$(git -C "$mrepo" rev-parse HEAD)"
+out="$(run_merges "$mbase" "$clean")"; rc=$?
+check "a clean two-parent merge passes" "0" "$rc"
+
+# --- a merge whose tree carries content in neither parent fails ----------
+git -C "$mrepo" checkout -q -b topic2 "$mbase"
+mcommit d four "more topic work" >/dev/null
+git -C "$mrepo" checkout -q main
+git -C "$mrepo" merge -q --no-ff --no-edit topic2
+printf 'smuggled\n' > "$mrepo/e"
+git -C "$mrepo" add -A
+git -C "$mrepo" commit -q --amend --no-edit
+evil="$(git -C "$mrepo" rev-parse HEAD)"
+out="$(run_merges "$clean" "$evil")"; rc=$?
+check "a merge carrying content present in neither parent fails" "1" "$rc"
+check "and it is refused as a tree mismatch, not something else" "1" \
+	"$(printf '%s' "$out" | grep -q 'does not match the clean merge of its parents' && echo 1 || echo 0)"
+check "and the merge commit is named" "1" \
+	"$(printf '%s' "$out" | grep -q "$evil" && echo 1 || echo 0)"
+check "and it is the only merge reported" "1" "$(printf '%s' "$out" | grep -c '::error')"
+
+# --- an octopus merge is rejected rather than assumed safe ---------------
+git -C "$mrepo" checkout -q -b octo1 "$evil"; mcommit f1 x "octo one" >/dev/null
+git -C "$mrepo" checkout -q -b octo2 "$evil"; mcommit f2 y "octo two" >/dev/null
+git -C "$mrepo" checkout -q main
+git -C "$mrepo" merge -q --no-ff --no-edit octo1 octo2
+octo="$(git -C "$mrepo" rev-parse HEAD)"
+out="$(run_merges "$evil" "$octo")"; rc=$?
+check "an octopus merge fails" "1" "$rc"
+check "and it is refused for its parent count, not its tree" "1" \
+	"$(printf '%s' "$out" | grep -q 'octopus merge is rejected' && echo 1 || echo 0)"
+
+# --- a hand-resolved conflict fails closed -------------------------------
+git -C "$mrepo" checkout -q -b conflict "$octo"
+mcommit a left "left edit" >/dev/null
+git -C "$mrepo" checkout -q main
+mcommit a right "right edit" >/dev/null
+git -C "$mrepo" merge -q --no-ff --no-edit conflict >/dev/null 2>&1 || true
+printf 'resolved\n' > "$mrepo/a"
+git -C "$mrepo" add -A
+git -C "$mrepo" -c core.editor=true commit -q --no-edit
+resolved="$(git -C "$mrepo" rev-parse HEAD)"
+out="$(run_merges "$octo" "$resolved")"; rc=$?
+check "a hand-resolved conflicting merge fails closed" "1" "$rc"
+check "and says it could not be automatically verified" "1" \
+	"$(printf '%s' "$out" | grep -q 'cannot be automatically verified' && echo 1 || echo 0)"
+
+# --- a range with no merge commit passes -------------------------------
+lin="$(mcommit g z "linear")"
+rc=0; run_merges "$resolved" "$lin" >/dev/null || rc=$?
+check "a range with no merge commit passes" "0" "$rc"
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
