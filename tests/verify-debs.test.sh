@@ -132,9 +132,14 @@ d="$WORK/case1"; mkdir -p "$d"
 deb="$(make_deb good podup)"; cp "$deb" "$d/"; sign "$d/good.deb"
 assert 0 "valid signature is admitted" -- "$VERIFY" "$d" "$WORK/key.b64"
 
-# --- Case 2: a missing .sig is rejected. ---
+# --- Case 2: a missing .sig is rejected, and for that reason. Without the
+#            needle this case stayed green with the existence check deleted:
+#            the verifier then failed to open the .sig and reported it as a
+#            tampered release, which is the wrong diagnosis for an operator
+#            whose product simply forgot to attach the signature. ---
 d="$WORK/case2"; mkdir -p "$d"; cp "$WORK/good.deb" "$d/"
-assert 1 "missing signature is rejected" -- "$VERIFY" "$d" "$WORK/key.b64"
+assert_error 1 "no signature" "missing signature is rejected as missing, not as tampered" \
+	-- "$VERIFY" "$d" "$WORK/key.b64"
 
 # --- Case 3: a tampered .deb is rejected. ---
 d="$WORK/case3"; mkdir -p "$d"; cp "$WORK/good.deb" "$d/good.deb"; cp "$d/../case1/good.deb.sig" "$d/good.deb.sig"
@@ -167,9 +172,16 @@ assert 1 "unreadable package control is rejected" -- "$VERIFY" "$d" "$WORK/key.b
 #            lets any product sign a .deb, so a product's identity must also
 #            be bound to the product it claims to be, not just checked for a
 #            valid signature. ---
+#            The fixture is valid in every respect except the one under test:
+#            its filename carries the expected prefix, so only the control
+#            field can be what refuses it, and the needle names that field.
+#            The earlier fixture was named mismatch.deb, which the filename
+#            check also refused with the same first words, so this case
+#            stayed green with the control-field check deleted. ---
 d="$WORK/case8"; mkdir -p "$d"
-deb="$(make_deb mismatch podup)"; cp "$deb" "$d/"; sign "$d/mismatch.deb"
-assert_error 1 "package name mismatch" "control Package mismatching expected_package is rejected" \
+deb="$(make_deb otherproduct_1.0_amd64 podup)"; cp "$deb" "$d/"; sign "$d/otherproduct_1.0_amd64.deb"
+assert_error 1 "declares 'podup', expected 'otherproduct'" \
+	"control Package mismatching expected_package is rejected for the control field" \
 	-- "$VERIFY" "$d" "$WORK/key.b64" otherproduct
 
 # --- Case 9: a .deb whose control Package matches expected_package but whose
