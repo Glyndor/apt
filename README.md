@@ -104,7 +104,8 @@ sudo dpkg -i glyndor-archive-keyring.deb
 
 ---
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). The tests are the specification.
+See [CONTRIBUTING.md](CONTRIBUTING.md). The tests are the specification;
+the [threat model](docs/threat-model.md) says what they specify against.
 
 [MIT](LICENSE). Report a problem via the
 [Security](https://github.com/Glyndor/apt/security) tab.
