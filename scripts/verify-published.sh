@@ -69,14 +69,16 @@ DIST_PATH="dists/stable"
 MAX_INDEX_BYTES=$((64 * 1024 * 1024))
 # A bound on how many files the index may declare, for the same reason: the
 # signed body is authentic, but authenticity is not a size limit.
-MAX_ENTRIES=200
+# Overridable from the environment so the suite can exercise the cap on a
+# small archive; production never sets it and gets the default.
+MAX_ENTRIES="${VERIFY_PUBLISHED_MAX_ENTRIES:-200}"
 # A package is a real binary, so it gets its own, larger per-object cap — kept
 # in step with the per-.deb cap publish.yml enforces on the way in.
 MAX_POOL_OBJECT_BYTES=$((300 * 1024 * 1024))
 # And a budget for the whole pool. The archive is latest-only, so this grows
 # with the number of products rather than with time; blowing through it means
 # the check needs redesigning, which should be an error and not a slow publish.
-MAX_POOL_BYTES=$((2 * 1024 * 1024 * 1024))
+MAX_POOL_BYTES="${VERIFY_PUBLISHED_MAX_POOL_BYTES:-$((2 * 1024 * 1024 * 1024))}"
 
 case "$ATTEMPTS" in '' | *[!0-9]*) echo "::error::attempts must be a positive integer, got '$ATTEMPTS'" >&2; exit 1 ;; esac
 case "$DELAY" in '' | *[!0-9]*) echo "::error::delay must be a non-negative integer, got '$DELAY'" >&2; exit 1 ;; esac

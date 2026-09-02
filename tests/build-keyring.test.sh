@@ -266,5 +266,41 @@ fi
 # --- Result ------------------------------------------------------------------
 
 echo
+# --- A keyring with no public key is refused, not packaged --------------------
+# `gpg --dearmor` accepts any armoured packet, and a file that dearmors cleanly
+# but carries no public key (a detached signature block is the smallest such
+# file) reaches the packaging step with nothing in it. Packaged, it installs
+# cleanly, verifies nothing, and every fresh install refuses it on the
+# fingerprint check. The build must stop here; the line existed in the script
+# and not as a test. A zero-byte file is not the fixture: dearmor refuses that
+# on its own before the check is reached.
+
+NOKEY="$WORK/nokey"
+cp -r "$REPO" "$NOKEY"
+export GNUPGHOME="$WORK/gnupg-nokey"; mkdir -p "$GNUPGHOME"; chmod 700 "$GNUPGHOME"
+gpg --batch --quiet --passphrase '' --quick-generate-key 'nokey <nokey@example.invalid>' ed25519 sign never 2>/dev/null
+printf 'payload\n' > "$WORK/payload"
+rm -f "$NOKEY/keyring/glyndor-apt-key.asc"
+gpg --batch --quiet --armor --detach-sign --output "$NOKEY/keyring/glyndor-apt-key.asc" "$WORK/payload"
+unset GNUPGHOME
+git -C "$NOKEY" add -A
+git -C "$NOKEY" -c user.name=test -c user.email=test@example.invalid commit -qm "no key"
+mkdir -p "$WORK/nokey-out"
+if out="$("$NOKEY/scripts/build-keyring.sh" "$WORK/nokey-out" 2>&1)"; then
+	no "an armoured file carrying no public key refuses to build"
+else
+	ok "an armoured file carrying no public key refuses to build"
+fi
+if printf '%s' "$out" | grep -q 'keyring contains no usable key'; then
+	ok "and it is refused for the missing key, not something else"
+else
+	no "and it is refused for the missing key, not something else ($(printf '%s' "$out" | tail -n 1))"
+fi
+if [ ! -e "$WORK/nokey-out/glyndor-archive-keyring.deb" ]; then
+	ok "and no package was written"
+else
+	no "and no package was written"
+fi
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
