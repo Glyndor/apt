@@ -7,11 +7,20 @@
 # newest Dependabot-authored pull request as the last time the integration
 # spoke, and failing when that signal is too old or absent.
 #
-# The step depends on GH_TOKEN, REPO, and MAX_AGE_DAYS from the environment;
-# the only network call is `gh api ... --jq ...`, paginated over three pages.
-# A fake `gh` on PATH records each URL it was called with and serves a per-call
-# canned response, so the cases below exercise the real shell with a
+# The step depends on GH_TOKEN, REPO, MAX_AGE_DAYS and WORKFLOWS_DIR from the
+# environment. Two network calls exist: `gh api ... --jq ...`, paginated over
+# three pages, and `git ls-remote --tags` against each pinned action's upstream,
+# asked only once the newest pull request is over the limit. A fake `gh` on
+# PATH records each URL it was called with and serves a per-call canned
+# response; a fake `git` serves canned tag lists per repository and records
+# that it was asked. The cases below exercise the real shell with a
 # deterministic API rather than mocking the workflow itself.
+#
+# Silence is only an alarm when there was something to say: over the limit
+# with every pin at its newest upstream tag passes. The default fixture below
+# therefore pins one action BEHIND upstream, so the pre-existing "too old
+# fails" cases keep meaning what they meant, and the cases at the end vary the
+# fixture.
 #
 # Requires: python3, GNU date (for `date -u -d`).
 set -uo pipefail
@@ -77,9 +86,63 @@ STUB
 	chmod +x "$WORK/bin/gh"
 }
 
+# Fake `git`. `ls-remote --tags --refs https://github.com/<owner>/<repo> ...`
+# prints the file "$STUB_TAGS_DIR/<owner>__<repo>" (refs/tags lines, one per
+# tag) and records the repository asked in STUB_GIT_LOG; an absent file is an
+# unreadable upstream (exit 128, nothing printed), which is what a network
+# failure or a renamed repository looks like. Anything else falls through to
+# the real git, which the step never calls.
+write_git_stub() {
+	cat > "$WORK/bin/git" <<'STUB'
+#!/usr/bin/env bash
+if [ "$1" = "ls-remote" ]; then
+	repo=""
+	for a in "$@"; do case "$a" in https://github.com/*) repo="${a#https://github.com/}" ;; esac; done
+	printf '%s\0' "$repo" >> "${STUB_GIT_LOG:?}"
+	f="${STUB_TAGS_DIR:?}/${repo//\//__}"
+	[ -f "$f" ] || exit 128
+	cat "$f"
+	exit 0
+fi
+exec /usr/bin/git "$@"
+STUB
+	chmod +x "$WORK/bin/git"
+}
+
+# A workflows directory pinning the given actions. Each argument is
+# "owner/repo vX.Y.Z"; the SHA is a placeholder, the step never resolves it.
+fixture() { # $1=dir  $2..=pins
+	local dir="$1"; shift
+	rm -rf "$dir"; mkdir -p "$dir"
+	{
+		echo "jobs:"
+		echo "  t:"
+		echo "    steps:"
+		for pin in "$@"; do
+			echo "      - uses: ${pin% *}@0000000000000000000000000000000000000000 # ${pin#* }"
+		done
+	} > "$dir/ci.yml"
+}
+
+# Upstream serves these tags for a repository.
+upstream() { # $1=owner/repo  $2..=tags
+	local repo="$1"; shift
+	mkdir -p "$WORK/tags"
+	printf '' > "$WORK/tags/${repo//\//__}"
+	for t in "$@"; do
+		echo "0000000000000000000000000000000000000000	refs/tags/$t" >> "$WORK/tags/${repo//\//__}"
+	done
+}
+
 WORKFLOW="$HERE/.github/workflows/reusable-dependabot-freshness.yml"
 step_script "$WORKFLOW" "Check the newest Dependabot pull request" > "$WORK/step.sh"
 write_stub
+write_git_stub
+
+# The default fixture: one pin behind upstream, so an over-the-limit silence is
+# the alarm it used to be. Cases that want every pin current build their own.
+fixture "$WORK/wf" "actions/checkout v7.0.0"
+upstream actions/checkout v7.0.0 v7.0.1
 
 REPO="owner/repo"
 MAX_AGE_DAYS=10
@@ -92,14 +155,18 @@ ago() { date -u -d "$1 days ago" +%Y-%m-%dT%H:%M:%SZ; }
 
 # Run the step with the stub on PATH. Combined stdout+stderr in `out`, exit
 # code in `rc`. The stub log is reset per call so each case starts at index 1.
-run_step() { # $1=MAX_AGE_DAYS  $2=responses file
-	local max="$1" resp="$2"
-	rm -f "$WORK/gh.log"
+run_step() { # $1=MAX_AGE_DAYS  $2=responses file  [$3=workflows dir]
+	local max="$1" resp="$2" wf="${3:-$WORK/wf}"
+	rm -f "$WORK/gh.log" "$WORK/git.log"
 	STUB_LOG="$WORK/gh.log" STUB_RESPONSES="$resp" \
+	STUB_GIT_LOG="$WORK/git.log" STUB_TAGS_DIR="$WORK/tags" \
 	PATH="$WORK/bin:$PATH" \
-	GH_TOKEN=dummy REPO="$REPO" MAX_AGE_DAYS="$max" \
+	GH_TOKEN=dummy REPO="$REPO" MAX_AGE_DAYS="$max" WORKFLOWS_DIR="$wf" \
 	bash "$WORK/step.sh" 2>&1
 }
+
+# How many repositories the step asked upstream about.
+git_calls() { grep -cz . "$WORK/git.log" 2>/dev/null || echo 0; }
 
 # Count how many times the stub was called: number of NUL-terminated records
 # in the log.
@@ -181,6 +248,61 @@ check "a failing gh api call fails the step" "1" \
 	"$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
 check "and does not report it as Dependabot never having run" "0" \
 	"$(printf '%s' "$out" | grep -c 'No Dependabot pull request')"
+
+# --- silence is only an alarm when there was something to say --------------
+#
+# Measured 2026-09-01 across the three channels: twelve days of silence with
+# every pin already at its newest upstream tag. That is a live Dependabot with
+# nothing to do, and a gate that reddens for it teaches people to merge over
+# red. Over the limit with every pin current passes and says why; over the
+# limit with a pin behind stays the failure it was.
+
+printf '%s\n' "$(ago 11)" > "$WORK/old.resp"
+
+fixture "$WORK/wf-current" "actions/checkout v7.0.1" "actions/cache v6.1.0"
+upstream actions/checkout v7.0.0 v7.0.1
+upstream actions/cache v6.0.0 v6.1.0
+out="$(run_step "$MAX_AGE_DAYS" "$WORK/old.resp" "$WORK/wf-current")"; rc=$?
+check "over the limit with every pin at its newest tag passes" "0" "$rc"
+check "and says the silence has nothing to say, with the pin count" "1" \
+	"$(printf '%s' "$out" | grep -q 'every one of the 2 pinned action(s) is at its newest upstream tag' && echo 1 || echo 0)"
+check "and it asked upstream about both pins" "2" "$(git_calls | tr -d ' ')"
+
+out="$(run_step "$MAX_AGE_DAYS" "$WORK/old.resp")"; rc=$?
+check "over the limit with a pin behind fails" "1" "$rc"
+check "and names the pin and the tag upstream has" "1" \
+	"$(printf '%s' "$out" | grep -q 'actions/checkout pinned as v7.0.0, upstream has v7.0.1' && echo 1 || echo 0)"
+check "and says it is not because there was nothing to bump" "1" \
+	"$(printf '%s' "$out" | grep -q 'not because there was nothing to bump' && echo 1 || echo 0)"
+
+# A newer tag that is not the exact-semver shape (a major alias, a pre-release)
+# must not count as "upstream has more": the step compares exact versions only.
+fixture "$WORK/wf-alias" "actions/checkout v7.0.1"
+upstream actions/checkout v7.0.1 v7 v8.0.0-rc.1
+rc=0; run_step "$MAX_AGE_DAYS" "$WORK/old.resp" "$WORK/wf-alias" >/dev/null || rc=$?
+check "a major alias or pre-release tag upstream does not count as behind" "0" "$rc"
+
+# "Cannot read it" is a failure, never a skip.
+fixture "$WORK/wf-unreadable" "actions/checkout v7.0.1" "example/vanished v1.0.0"
+upstream actions/checkout v7.0.1
+out="$(run_step "$MAX_AGE_DAYS" "$WORK/old.resp" "$WORK/wf-unreadable")"; rc=$?
+check "an upstream that cannot be read fails rather than passing as current" "1" "$rc"
+check "and names the pin it could not read" "1" \
+	"$(printf '%s' "$out" | grep -q 'example/vanished pinned as v1.0.0: could not read upstream tags' && echo 1 || echo 0)"
+
+# A pin whose comment is not an exact version cannot be compared, so it fails.
+fixture "$WORK/wf-vague" "actions/checkout v7"
+rc=0; out="$(run_step "$MAX_AGE_DAYS" "$WORK/old.resp" "$WORK/wf-vague")" || rc=$?
+check "a pin commented with a major alias fails as unreadable" "1" "$rc"
+check "and says the version is not exact" "1" \
+	"$(printf '%s' "$out" | grep -q 'not an exact version' && echo 1 || echo 0)"
+
+# Within the limit nothing upstream is asked at all: the comparison is the
+# tie-breaker for silence, not a second gate.
+printf '%s\n' "$(ago 1)" > "$WORK/recent.resp"
+rc=0; run_step "$MAX_AGE_DAYS" "$WORK/recent.resp" "$WORK/wf-unreadable" >/dev/null || rc=$?
+check "within the limit passes without asking upstream, even with an unreadable pin" "0" "$rc"
+check "and made no git call" "0" "$(git_calls | tr -d ' ')"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
