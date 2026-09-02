@@ -245,5 +245,15 @@ assert_error 1 "no .deb files to verify" \
 	-- "$VERIFY" "$d" "$WORK/key.b64"
 
 echo
+# --- Case 14: a trust file that carries no key is refused as such. -------------
+#             A comment-only file parses cleanly and yields zero keys; without
+#             this check the loop below it would verify against nothing and
+#             report every package as tampered, which sends the operator to
+#             chase a signature instead of the trust file. ---
+d="$WORK/case14"; mkdir -p "$d"; cp "$WORK/good.deb" "$d/"; cp "$WORK/case1/good.deb.sig" "$d/"
+printf '# no keys here\n\n' > "$WORK/key-none.b64"
+assert_error 1 "has no keys" "a trust file with no key is refused for having no key" \
+	-- "$VERIFY" "$d" "$WORK/key-none.b64"
+
 echo "passed $pass, failed $fail"
 [ "$fail" -eq 0 ]

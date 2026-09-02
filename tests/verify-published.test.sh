@@ -324,6 +324,18 @@ sed -i "s|Filename: $PODUP_POOL/podup_1.12.0_amd64.deb|Filename: pool/../../etc/
 write_release "$TRUSTED_KEY"
 assert_error 1 "not a plain relative path" "a traversal path in a verified index is rejected" -- run
 
+# --- The caps: bounded work, not just bounded objects ------------------------
+# The two caps are the only thing keeping a hostile or runaway index from
+# turning this gate into an unbounded download. They are exercised here by
+# lowering them below what the fixture declares, because an archive large
+# enough to trip the defaults is not a fixture anybody should build.
+build_archive
+assert_error 1 "over the 3 cap" "an index declaring more files than the entry cap is rejected" -- \
+	env VERIFY_PUBLISHED_MAX_ENTRIES=3 "$VERIFY" "$BASE" "$TRUSTED_ASC" 1 0
+assert_error 1 "bytes of packages, over the 1 cap" "indices declaring more package bytes than the pool cap are rejected" -- \
+	env VERIFY_PUBLISHED_MAX_POOL_BYTES=1 "$VERIFY" "$BASE" "$TRUSTED_ASC" 1 0
+assert 0 "the caps at their defaults accept the same archive" -- run
+
 # --- Result ------------------------------------------------------------------
 
 echo
