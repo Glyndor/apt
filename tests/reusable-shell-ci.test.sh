@@ -130,5 +130,54 @@ d="$(new)"
 printf 'plain text\n' > "$d/notes.txt"
 check "a tree with no shell collects nothing" "0" "$(collected "$d")"
 
+# ===========================================================================
+# Scripts invoked by path must be executable in git
+# ===========================================================================
+#
+# The mode that travels is git's, not the disk's. A script committed at
+# 100644 dies on the runner with exit 126, and because the suite chains with
+# `&&` the failure reads as "the tests fail". The step catches that before
+# the push; it had no test of its own.
+step_script "$WORKFLOW" "Scripts invoked by path must be executable" > "$WORK/exec.sh"
+check "the exec-bit step was extracted from the workflow" "1" \
+	"$(grep -c '100755' "$WORK/exec.sh" | awk '{print ($1>0)}')"
+
+xrepo() { # -> a git repo whose workflow invokes ./scripts/x.sh, x.sh tracked at $1
+	rm -rf "$WORK/x"; mkdir -p "$WORK/x/.github/workflows" "$WORK/x/scripts"
+	git init -q "$WORK/x"
+	git -C "$WORK/x" config user.email t@example.invalid
+	git -C "$WORK/x" config user.name t
+	printf 'jobs:\n  t:\n    steps:\n      - run: ./scripts/x.sh\n' > "$WORK/x/.github/workflows/w.yml"
+	printf '#!/bin/sh\ntrue\n' > "$WORK/x/scripts/x.sh"
+	git -C "$WORK/x" add -A
+	[ "$1" = "100755" ] && git -C "$WORK/x" update-index --chmod=+x scripts/x.sh
+	git -C "$WORK/x" commit -qm fixture
+	printf '%s' "$WORK/x"
+}
+run_exec() { ( cd "$1" && bash "$WORK/exec.sh" 2>&1 ); }
+
+d="$(xrepo 100644)"
+out="$(run_exec "$d")"; rc=$?
+check "a script invoked as ./path and tracked at 100644 fails" "1" "$rc"
+check "and it is refused for the mode, with the fix" "1" \
+	"$(printf '%s' "$out" | grep -q 'git update-index --chmod=+x scripts/x.sh' && echo 1 || echo 0)"
+
+d="$(xrepo 100755)"
+out="$(run_exec "$d")"; rc=$?
+check "the same script tracked at 100755 passes" "0" "$rc"
+check "and was actually checked, not skipped" "1" \
+	"$(printf '%s' "$out" | grep -q 'Every script invoked by path is executable' && echo 1 || echo 0)"
+
+d="$(xrepo 100755)"; git -C "$d" rm -q --cached scripts/x.sh; git -C "$d" commit -qm untrack
+out="$(run_exec "$d")"; rc=$?
+check "an untracked script is noted and skipped rather than failed" "0" "$rc"
+check "and the note says so" "1" "$(printf '%s' "$out" | grep -q 'is not tracked; skipping' && echo 1 || echo 0)"
+
+d="$(xrepo 100644)"; printf 'jobs:\n  t:\n    steps:\n      - run: bash scripts/x.sh\n' > "$d/.github/workflows/w.yml"
+out="$(run_exec "$d")"; rc=$?
+check "a script invoked through an interpreter is not held to the rule" "0" "$rc"
+check "and the step says there was nothing to check" "1" \
+	"$(printf '%s' "$out" | grep -q 'nothing to check' && echo 1 || echo 0)"
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

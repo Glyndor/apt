@@ -59,8 +59,11 @@ jobs:
         && ./tests/check-reusable-drift.test.sh
         && ./tests/reusable-dependabot-freshness.test.sh
         && ./tests/reusable-schedule-freshness.test.sh
+        && ./tests/reusable-workflow-lint.test.sh
       # shellcheck: tests/lint-workflow-shell.test.sh plants a violation and
       # requires the linter to report it, so it needs the linter. The gate
       # itself runs in the shellcheck job against the pinned binary; this one
       # asserts behaviour, which does not turn on the exact version.
-      apt-packages: python3-cryptography reprepro shellcheck
+      # python3-yaml: the tooling-isolation step tests/reusable-workflow-lint.test.sh
+      # executes imports it, exactly as the workflow-lint job installs it.
+      apt-packages: python3-cryptography reprepro shellcheck python3-yaml
