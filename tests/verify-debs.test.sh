@@ -255,5 +255,13 @@ printf '# no keys here\n\n' > "$WORK/key-none.b64"
 assert_error 1 "has no keys" "a trust file with no key is refused for having no key" \
 	-- "$VERIFY" "$d" "$WORK/key-none.b64"
 
+# --- Case 15: a trust file that does not exist is refused as missing. ----------
+#             Without the existence check the read loop below it dies under
+#             set -e with a bash error, or reaches the no-keys refusal, and
+#             either sends the operator to look at the wrong thing. ---
+d="$WORK/case15"; mkdir -p "$d"; cp "$WORK/good.deb" "$d/"; cp "$WORK/case1/good.deb.sig" "$d/"
+assert_error 1 "not found" "a trust file that does not exist is refused as missing" \
+	-- "$VERIFY" "$d" "$WORK/does-not-exist.b64"
+
 echo "passed $pass, failed $fail"
 [ "$fail" -eq 0 ]
