@@ -65,6 +65,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # Measured over the last ten runs: 31 to 50 seconds end to end. The job
+    # downloads from GitHub, syncs to R2 and purges Cloudflare, and any of the
+    # three can stall; unbounded, a stall holds the concurrency group for six
+    # hours and the freshness watchers would be the first to say so. Fifteen
+    # minutes is well above an honest run with a larger roster and far below
+    # that.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

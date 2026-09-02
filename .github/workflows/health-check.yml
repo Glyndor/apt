@@ -35,6 +35,11 @@ jobs:
   check:
     name: Check published archive
     runs-on: ubuntu-latest
+    # Measured over the last six runs: 8 to 15 seconds. Every step here is a
+    # fetch from the edge, and a fetch that never returns would otherwise sit
+    # for six hours reporting nothing while the archive it watches goes stale.
+    # Ten minutes covers the bounded retries with room to spare.
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
