@@ -24,9 +24,15 @@ name: Freshness
 # happen elsewhere, never because this pull request is wrong, and reading them
 # in the same file as the tests invites treating them as flakes.
 #
-# Pull request and push to main, deliberately no schedule. A repository that
+# Pull request, push to main, and a schedule of its own. A repository that
 # goes quiet stops checking its own freshness, and nothing automated writes
-# this repository's git, so a still repo is the failure mode this catches.
+# this repository's git, so a still repo is the failure mode this catches
+# and the cron below is what makes it visible without a person pushing.
+#
+# No job in this file may be promoted to a required check. A required check
+# has to be one every author can satisfy by fixing their own change, and
+# none of these can: they go red when a cron elsewhere stopped firing, which
+# would block every pull request until somebody repaired the other thing.
 
 on:
   # A watcher with no schedule only watches while somebody is already looking.
