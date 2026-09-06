@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/build-index-page.sh — the page served at the archive root.
+# Tests for scripts/build-index-page.sh, the page served at the archive root.
 #
 # It is the only part of the archive that reaches a browser, and the package
 # names it embeds come from each `.deb`'s control field. `publish.yml` states
@@ -172,7 +172,7 @@ check "a missing archive fails rather than writing a page" "1" "$rc"
 # --- the architectures line also reaches a browser --------------------------
 # Symmetric to the package-name check above: Architectures is interpolated
 # into the served HTML on the "Set up on Debian/Ubuntu (...)" line, and the
-# bytes come from the signed Release — same threat model. A signed
+# bytes come from the signed Release, same threat model. A signed
 # `Architectures: <script>alert("xss")</script>` would land in the page
 # without this check. The audit (`auditoria-tests-canales.md`, Hallazgo 3)
 # demonstrated the injection manually; the cases below pin the fix.

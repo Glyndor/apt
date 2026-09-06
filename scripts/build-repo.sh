@@ -3,7 +3,7 @@
 # Build the signed Glyndor apt repository into a directory ready to publish to
 # Cloudflare R2 (apt.glyndor.net). The repository is rebuilt fresh on every run from
 # the current release of each product, so it always carries exactly the latest
-# version of every package — Glyndor ships no old-version support.
+# version of every package; Glyndor ships no old-version support.
 #
 # Requires: reprepro, gpg.
 # Reads the armored private signing key from $GLYNDOR_APT_GPG_PRIVATE_KEY.
@@ -39,7 +39,7 @@ chmod 700 "$GNUPGHOME"
 cleanup() { gpgconf --kill all 2>/dev/null || true; rm -rf "$GNUPGHOME"; }
 trap cleanup EXIT
 
-# Import the signing key. Don't swallow import errors — if the secret is
+# Import the signing key. Don't swallow import errors: if the secret is
 # malformed the failure must be diagnosable, not silent.
 printf '%s' "$GLYNDOR_APT_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
 
@@ -52,7 +52,7 @@ unset GLYNDOR_APT_GPG_PRIVATE_KEY
 # old + new pasted in during a rotation), the first-fingerprint pick below would
 # sign with whichever imported first, not necessarily the intended active key.
 # `grep -c` exits 1 on zero matches, which pipefail would turn into a silent
-# death inside the substitution — guard it so the count (0) reaches the
+# death inside the substitution, so guard it and let the count (0) reach the
 # diagnostic below instead.
 SEC_COUNT="$(gpg --batch --with-colons --list-secret-keys | { grep -c '^sec:' || true; })"
 [ "$SEC_COUNT" -eq 1 ] || { echo "::error::expected exactly one secret key in GLYNDOR_APT_GPG_PRIVATE_KEY, found $SEC_COUNT" >&2; exit 1; }

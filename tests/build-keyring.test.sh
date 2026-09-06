@@ -4,7 +4,7 @@
 #
 # The one that matters is reproducibility. The package's version encodes the
 # date the signing key changed, so its pool filename is stable across rebuilds
-# while its bytes were not — and publish.yml syncs pool/ with --size-only and
+# while its bytes were not, and publish.yml syncs pool/ with --size-only and
 # serves it immutable for a year. A rebuild that landed on the same size was
 # therefore never uploaded, while reprepro had already written the NEW hash into
 # the signed index, so the archive served a package its own index rejected.
@@ -12,7 +12,7 @@
 #
 # The build reads git history to derive its version, so the cases below run
 # against a throwaway repository built here rather than against this checkout.
-# That keeps the suite hermetic — CI clones shallow (fetch-depth defaults to 1),
+# That keeps the suite hermetic: CI clones shallow (fetch-depth defaults to 1),
 # and a test that only passes on a full clone is a test that fails for a reason
 # having nothing to do with the code.
 #
@@ -93,7 +93,7 @@ fi
 # Tracking only the key meant a change to the sources list reached clients'
 # machines only if someone also remembered to bump keyring/version by hand.
 # When they forgot, apt saw a version it already had and never delivered the
-# new configuration — and nothing caught it, because the published archive
+# new configuration, and nothing caught it, because the published archive
 # stays perfectly self-consistent while being wrong.
 
 before_version="$(dpkg-deb --field "$first" Version)"

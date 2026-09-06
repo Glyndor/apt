@@ -13,8 +13,8 @@
 # keyring/version plus the date the packaged inputs last changed, not the
 # filename, so the published asset URL is stable).
 #
-# The version suffix tracks EVERY file this package installs — the key and the
-# sources list — not just the key. Tracking only the key meant that editing
+# The version suffix tracks EVERY file this package installs, the key and the
+# sources list, not just the key. Tracking only the key meant that editing
 # keyring/glyndor.sources changed what clients would install while the version
 # stood still, so apt saw the version it already had and never delivered it: a
 # configuration change lost in silence, which is the one failure this package
@@ -23,8 +23,8 @@
 # no tracking, being the base version itself.
 #
 # Key rotation (two-phase, automatic to clients): put both the old and the new
-# armored key blocks in keyring/glyndor-apt-key.asc during the overlap window —
-# `gpg --dearmor` concatenates them so apt trusts both — then drop the old one.
+# armored key blocks in keyring/glyndor-apt-key.asc during the overlap window
+# (`gpg --dearmor` concatenates them so apt trusts both), then drop the old one.
 #
 # PUBLISH THE INCOMING FINGERPRINT FIRST. scripts/install-template.sh accepts a
 # keyring only if EVERY key in it is one the installer was told to expect, so a
@@ -64,7 +64,7 @@ PKG_EPOCH="$(git -C "$HERE" log -1 --format=%ct \
 	-- "${PACKAGED_INPUTS[@]}" 2>/dev/null || true)"
 # Fail closed if that date can't be derived. A bare version would not bump when
 # the key or the sources list changed, so apt upgrade would silently fail to
-# deliver it — the opposite of the guarantee this package exists to provide. The
+# deliver it, the opposite of the guarantee this package exists to provide. The
 # build must run inside a full checkout (CI uses fetch-depth: 0).
 if [ -z "$PKG_DATE" ] || [ -z "$PKG_EPOCH" ]; then
 	echo "::error::no git history for the packaged inputs (${PACKAGED_INPUTS[*]}); cannot derive an upgrade-safe version (run inside a full git checkout)" >&2
@@ -72,7 +72,7 @@ if [ -z "$PKG_DATE" ] || [ -z "$PKG_EPOCH" ]; then
 fi
 # The suffix is +pkg, not +key: it tracks the packaged inputs, and a name that
 # says "key" would be a claim the code stopped honouring. Checked with
-# `dpkg --compare-versions` before the rename — 1.0.0+pkg<date> sorts strictly
+# `dpkg --compare-versions` before the rename: 1.0.0+pkg<date> sorts strictly
 # above the 1.0.0+key<date> already published, so no installed client is
 # stranded on a version apt would refuse to upgrade.
 VERSION="${BASE_VERSION}+pkg${PKG_DATE}"
@@ -186,7 +186,7 @@ EOF
 #
 # That is not cosmetic here. The version encodes when the packaged inputs last
 # changed, so the pool filename stays the same across rebuilds while the bytes
-# do not — and the publish syncs pool/ with --size-only. When a rebuild happened
+# do not, and the publish syncs pool/ with --size-only. When a rebuild happened
 # to land on the same size, the upload was skipped while reprepro had already
 # put the NEW hash in the signed index, so the archive served a package its own
 # index rejected. Making the build a pure function of the inputs is what earns

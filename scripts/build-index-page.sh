@@ -3,7 +3,7 @@
 # Write the landing page served at the archive root.
 #
 # Split out of build-repo.sh so it can be tested: the rest of that script needs
-# gpg and reprepro, this needs neither — it reads the index reprepro has already
+# gpg and reprepro, this needs neither: it reads the index reprepro has already
 # written and produces HTML. It is also the only part of the archive that
 # reaches a browser, and the package names it embeds come from each .deb's
 # control field, which publish.yml calls attacker-influenced because whoever can
@@ -21,7 +21,7 @@ OUT_DIR="${1:-}"
 # FIFTH place the architecture list lives, missing from the four the product
 # context tracks, and the only one a user reads. Derive both from the index
 # reprepro has just written, the same discipline as the Cloudflare purge list
-# (#48) — a hand-written list drifts from what is actually served, silently and
+# (#48), because a hand-written list drifts from what is actually served, silently and
 # in both directions.
 release="$OUT_DIR/dists/stable/Release"
 [ -r "$release" ] \
@@ -32,7 +32,7 @@ ARCHES="$(awk '/^Architectures:/ { $1 = ""; sub(/^ +/, ""); print; exit }' \
 [ -n "$ARCHES" ] \
 	|| { echo "the built Release declares no architectures" >&2; exit 1; }
 # The Architectures value is interpolated into the served HTML on the line
-# below — same threat model as the package-name check further down: bytes
+# below, same threat model as the package-name check further down: bytes
 # signed by the archive key that reach a browser. Valid architectures are
 # space-separated lowercase alphanumeric tokens (amd64, arm64, armhf, all,
 # source, …); reject anything else before it can become HTML. Validate each
@@ -67,7 +67,7 @@ ARCH_LIST="${ARCHES// /, }"
 # Package names come from each .deb's control field, so they are
 # attacker-influenced in principle even though verify-debs.sh binds every one to
 # the product that released it. A Debian package name cannot contain an HTML
-# metacharacter, but check the charset rather than trust that — this string is
+# metacharacter, but check the charset rather than trust that, because this string is
 # served to browsers.
 PACKAGE_ITEMS=""
 while IFS= read -r pkg; do

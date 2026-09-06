@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Before submitting, please search existing issues to avoid duplicates.
-        **Security issue? Do NOT file it here** — use the Security tab → "Report a vulnerability" instead.
+        **Security issue? Do NOT file it here.** Use the Security tab → "Report a vulnerability" instead.
   - type: input
     id: component
     attributes:

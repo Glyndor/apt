@@ -94,7 +94,7 @@ installer_paths="$(find "$BUILT_DIR/install" -maxdepth 1 -type f -printf 'instal
 # The asymmetry is what makes this safe. Pool files carry their version in the
 # name (podup_3.8.0_amd64.deb), so purging the new one never touches the old;
 # indices are fixed URLs whose contents change. Purging content first and
-# failing before the indices leaves old indices pointing at old files — the
+# failing before the indices leaves old indices pointing at old files, and the
 # archive simply stays on the previous version, consistent. Purging indices
 # first and failing leaves a new InRelease over stale Packages, which breaks.
 #
