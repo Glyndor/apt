@@ -183,6 +183,81 @@ check "and says the Date could not be read" "1" \
 check "and quotes the value it could not read" "1" \
 	"$(said 'not a date at all')"
 
+# --- the advertised installers ----------------------------------------------
+#
+# The landing page tells people to run `curl -fsSL $BASE_URL/install/<product>
+# | sudo sh`, and until this step existed nothing asked for that path. The
+# cases below serve the tree over file://, the same way the archive cases do,
+# so no network is touched.
+
+INSTALL="$WORK/install-step.sh"
+step_script "Advertised installers reachable" > "$INSTALL"
+check "the installer step was extracted from the workflow" "1" \
+	"$(grep -c 'the installer the landing page advertises is unreachable' "$INSTALL")"
+
+# $1=dir  $2=PRODUCTS value or "-" to leave the list out  $3.. = "<name>:<body>"
+site() {
+	local dir="$1" products="$2"; shift 2
+	rm -rf "$dir"; mkdir -p "$dir/.github/workflows" "$dir/install"
+	{
+		echo "env:"
+		[ "$products" = "-" ] || echo "  PRODUCTS: \"$products\""
+	} > "$dir/.github/workflows/publish.yml"
+	local spec name
+	for spec in "$@"; do
+		name="${spec%%:*}"
+		printf '%s\n' "${spec#*:}" > "$dir/install/$name"
+	done
+	echo "$dir"
+}
+
+run_install() { # $1=site dir
+	( cd "$1" && BASE_URL="file://$1" bash "$INSTALL" ) >"$WORK/out" 2>&1
+}
+
+S="$(site "$WORK/site-ok" "alpha beta" \
+	'alpha:#!/bin/sh' 'beta:#!/usr/bin/env bash')"
+rc=0; run_install "$S" || rc=$?
+check "every advertised installer being served passes" "0" "$rc"
+check "and the first product was asked for" "1" "$(said 'installer served for alpha')"
+check "and the second one too, not only the first" "1" \
+	"$(said 'installer served for beta')"
+
+# A product in the roster whose installer was never rendered. This is the shape
+# that reaches users: the archive is fine, the page advertises the command, and
+# the path behind it is not there.
+S="$(site "$WORK/site-missing" "alpha beta" 'alpha:#!/bin/sh')"
+rc=0; run_install "$S" || rc=$?
+check "a product whose installer is missing fails" "1" "$rc"
+check "and the error names the url it asked for" "1" "$(said '/install/beta')"
+check "and it is the unreachable message, not the body one" "1" \
+	"$(said 'is unreachable at')"
+
+# An edge serving its own error page answers 200 as happily as the script does,
+# and the page pipes the answer into a root shell, so the status alone is not
+# the property.
+S="$(site "$WORK/site-html" "alpha" 'alpha:<!doctype html>')"
+rc=0; run_install "$S" || rc=$?
+check "a body that is not a script fails even though it was served" "1" "$rc"
+check "and the error says the body is not a shell script" "1" \
+	"$(said 'the body is not a shell script')"
+check "and it is not reported as unreachable" "0" "$(said 'is unreachable at')"
+
+# The roster is read from publish.yml. If that read comes back empty the step
+# has nothing to ask for, and passing would be a check that inspects nothing.
+S="$(site "$WORK/site-noproducts" "-" 'alpha:#!/bin/sh')"
+rc=0; run_install "$S" || rc=$?
+check "an empty product list fails rather than passing vacuously" "1" "$rc"
+check "and says it cannot tell which installers to ask for" "1" \
+	"$(said 'cannot tell which installers to ask for')"
+
+# An architecture spec in the roster is not part of the path.
+S="$(site "$WORK/site-arch" "alpha:amd64" 'alpha:#!/bin/sh')"
+rc=0; run_install "$S" || rc=$?
+check "a product carrying an architecture spec is asked for by name alone" "0" "$rc"
+check "and the name it used is the product, not the spec" "1" \
+	"$(said 'installer served for alpha')"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
