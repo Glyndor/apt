@@ -238,6 +238,21 @@ cp "$DIST/Release" "$DIST/InRelease"
 assert_error 1 "signature verification failed" "an unsigned index is rejected" -- run
 
 build_archive
+# Same case as above, but the unsigned fixture is valid OpenPGP: a literal data
+# packet that any OpenPGP parser will accept. A plain-text "unsigned index" is
+# refused as not-OpenPGP, which proves nothing about the signature rule; this
+# case is what catches a verifier that accepts an unsigned packet because it
+# parsed cleanly. The header (0xcb: new-format tag 11, one-octet length) keeps
+# the body short enough for the one-octet length encoding to stay valid.
+python3 - "$DIST/InRelease" <<'PY'
+import sys
+body = b"Date: Sun, 06 Sep 2026 09:47:38 UTC\nSHA256:\n abc 1 x\n"
+packet = b"b\x00" + bytes(4) + body
+open(sys.argv[1], "wb").write(bytes([0xcb, len(packet)]) + packet)
+PY
+assert_error 1 "signature verification failed" "an OpenPGP literal data packet with no signature is rejected" -- run
+
+build_archive
 rm "$DIST/Release.gpg"
 assert_error 1 "detached Release" "a missing detached signature is rejected" -- run
 
