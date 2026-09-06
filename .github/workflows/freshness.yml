@@ -113,6 +113,29 @@ jobs:
       workflow: freshness.yml
       max-age-days: 2
 
+  # drift.yml compares this repository's reusables against the two sibling
+  # channels, and it runs on a schedule and a manual button only, on purpose:
+  # its own header explains that pull_request would deadlock three
+  # repositories and that push to main reads a CDN that is minutes stale. That
+  # leaves the cron as the only thing that ever runs the comparison, so if the
+  # cron stops, drift stops being reported and nothing says so. That is the
+  # same silence every job above exists to break.
+  #
+  # Three days rather than one. The cron asks for 09:41Z and the last five
+  # firings started between 13:00Z and 13:50Z, so three to four hours late is
+  # ordinary here; a one-day threshold on a daily job would trip on lateness
+  # rather than on failure. Three tolerates two skipped firings, and drift is a
+  # slow fault: it harms nobody today, it harms the day somebody fixes a bug in
+  # one copy and not the others.
+  freshness-drift:
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/reusable-schedule-freshness.yml
+    with:
+      workflow: drift.yml
+      max-age-days: 3
+
   # Reports the verdict of the suite on main, which nothing else does.
   #
   # Measured 2026-09-06: `Tests` failed on main in two of the three channel
