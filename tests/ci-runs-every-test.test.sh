@@ -101,4 +101,5 @@ check "and it reports an unregistered test when there is one" \
 
 echo
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

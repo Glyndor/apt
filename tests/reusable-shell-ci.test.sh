@@ -180,4 +180,5 @@ check "and the step says there was nothing to check" "1" \
 	"$(printf '%s' "$out" | grep -q 'nothing to check' && echo 1 || echo 0)"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

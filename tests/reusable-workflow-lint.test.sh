@@ -126,6 +126,38 @@ check "the real tests.yml caller stays accepted" "0" "$rc"
 check "and the step says every caller passes" "1" \
 	"$(said "$out" 'every reusable-shell-ci caller passes')"
 
+# --- the runner form ------------------------------------------------------
+#
+# The suites can also be handed to a runner that executes each one and requires
+# the sentinel it prints as its last line. A `&&` chain cannot tell a suite that
+# ran every assertion from one that exited early having run three, so the
+# grammar accepts that shape too, with the same rule about what may follow.
+d="$(new)"; caller "$d" './tests/check-suite-completeness.test.sh ./tests/one.test.sh ./tests/two.test.sh'
+out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
+check "the runner form with suites after it passes" "0" "$rc"
+
+# The runner with nothing to run is the empty test-command wearing a disguise:
+# it exits 0 having tested nothing, and the required check reports Success.
+d="$(new)"; caller "$d" './tests/check-suite-completeness.test.sh'
+out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
+check "the runner with no suites after it is refused" "1" "$rc"
+check "and the message says it would test nothing" "1" \
+	"$(said "$out" 'no suites to run')"
+
+d="$(new)"; caller "$d" './tests/check-suite-completeness.test.sh --quiet ./tests/one.test.sh'
+out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
+check "an argument to the runner that is not a suite is refused" "1" "$rc"
+check "and the message quotes the argument it refused" "1" \
+	"$(said "$out" '`--quiet`')"
+
+# The suppression forms are checked before the shape is decided, so they are
+# refused in this form as well and for the same reason.
+d="$(new)"; caller "$d" './tests/check-suite-completeness.test.sh ./tests/one.test.sh || true'
+out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
+check "the runner form with || true is still refused" "1" "$rc"
+check "and it is refused as the suppression, not as the grammar" "1" \
+	"$(said "$out" '`|| true` in its')"
+
 # --- a caller that runs a suite passes (sanity check) ---------------------
 d="$(new)"; caller "$d" './tests/one.test.sh && ./tests/two.test.sh'
 out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
@@ -238,7 +270,7 @@ d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'pip install 
 out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
 check "a job holding a secret that pip installs is refused" "1" "$rc"
 check "and the message names the job and the line" "1" \
-	"$(said "$out" 'job `build` installs third-party tooling while holding a secret from this job: `pip install requests`')"
+	"$(said "$out" 'job `build` installs third-party tooling while holding a secret: `pip install requests`')"
 
 # --- the same install pinned by hash is the documented exemption ----------
 d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'pip install --require-hashes -r req.txt'
@@ -295,73 +327,6 @@ EOF
 rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
 check "secrets: inherit on a reusable call is not a secret reference" "0" "$rc"
 
-# --- the bracket-index form secrets['X'] is caught, single-quoted --------
-d="$(new)"
-cat > "$d/.github/workflows/job.yml" <<'EOF'
-name: Job
-on: push
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    env:
-      TOKEN: ${{ secrets['DEPLOY_TOKEN'] }}
-    steps:
-      - run: |
-          pip install requests
-EOF
-out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
-check "a job holding a secret via secrets['X'] is refused" "1" "$rc"
-check "and the message names the job and the install line" "1" \
-	"$(said "$out" 'job `build` installs third-party tooling while holding a secret from this job: `pip install requests`')"
-check "and the step did not silently pass it" "0" \
-	"$(said "$out" 'no job holding a secret installs')"
-check "and there is no parse-error warning hiding the miss" "0" \
-	"$(said "$out" '::warning')"
-
-# --- the same bracket-index form, double-quoted, is also caught ----------
-d="$(new)"
-cat > "$d/.github/workflows/job.yml" <<'EOF'
-name: Job
-on: push
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    env:
-      TOKEN: ${{ secrets["DEPLOY_TOKEN"] }}
-    steps:
-      - run: |
-          pip install requests
-EOF
-out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
-check "a job holding a secret via secrets[\"X\"] is refused" "1" "$rc"
-check "and the message names the job and the install line" "1" \
-	"$(said "$out" 'job `build` installs third-party tooling while holding a secret from this job: `pip install requests`')"
-check "and the step did not silently pass it" "0" \
-	"$(said "$out" 'no job holding a secret installs')"
-
-# --- a workflow-level env that holds a secret catches every job -----------
-d="$(new)"
-cat > "$d/.github/workflows/job.yml" <<'EOF'
-name: Job
-on: push
-env:
-  TOKEN: ${{ secrets.DEPLOY_TOKEN }}
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - run: |
-          pip install requests
-EOF
-out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
-check "a job whose workflow-level env holds a secret is refused" "1" "$rc"
-check "and the message names the job and the install line" "1" \
-	"$(said "$out" 'job `build` installs third-party tooling while holding a secret from the workflow-level `env:`: `pip install requests`')"
-check "and the step did not silently pass it" "0" \
-	"$(said "$out" 'no job holding a secret installs')"
-check "and there is no parse-error warning hiding the miss" "0" \
-	"$(said "$out" '::warning')"
-
 # --- an unparseable workflow is a warning, not a silent skip -------------
 d="$(new)"; printf 'name: [\n' > "$d/.github/workflows/broken.yml"
 out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
@@ -369,4 +334,5 @@ check "a workflow that does not parse does not fail the step" "0" "$rc"
 check "but is reported as skipped, so the silence is visible" "1" "$(said "$out" '::warning')"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

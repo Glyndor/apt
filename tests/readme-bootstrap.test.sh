@@ -155,4 +155,5 @@ check "the anchor other repositories link to still exists" "1" \
 
 echo
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -400,4 +400,5 @@ check "and reports drift.yml missing rather than passing by default" \
 rm -rf "$empty"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

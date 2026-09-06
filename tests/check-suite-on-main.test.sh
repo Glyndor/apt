@@ -286,4 +286,5 @@ check "and the job carries the note that it must not be required" "1" \
 
 echo
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

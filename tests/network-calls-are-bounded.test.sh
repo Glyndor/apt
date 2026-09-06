@@ -155,4 +155,5 @@ check "a curl mentioned only inside a string is not flagged" "0" \
 	"$(says "$list" 'with-strings.sh')"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

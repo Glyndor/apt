@@ -121,4 +121,5 @@ out="$(run_step main)"; rc=$?
 check "a branch whose only commit is empty still fails" "1" "$rc"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

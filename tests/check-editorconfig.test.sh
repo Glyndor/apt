@@ -142,4 +142,5 @@ check "and says the walk found nothing" "1" \
 	"$(printf '%s' "$out" | grep -q 'no tracked files' && echo 1 || echo 0)"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

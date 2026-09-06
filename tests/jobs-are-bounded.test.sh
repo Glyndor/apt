@@ -155,4 +155,5 @@ rm -rf "$empty"
 check "an empty workflows directory reports nothing to inspect" "" "$list"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
