@@ -14,6 +14,12 @@ name: Freshness
 # because registration is lost when the config stops changing on the default
 # branch.
 #
+# suite-on-main watches a second kind of silence, one that is not about a cron
+# at all. The suite reports on the commit it ran for, so a run still reporting
+# when a merge lands finishes against a closed pull request and is shown to
+# nobody. That job reads the verdict on main and says it out loud here, which is
+# the one place a red main is visible on ordinary work.
+#
 # Separate from the test suite on purpose. These fail because something did not
 # happen elsewhere, never because this pull request is wrong, and reading them
 # in the same file as the tests invites treating them as flakes.
@@ -100,3 +106,59 @@ jobs:
     with:
       workflow: freshness.yml
       max-age-days: 2
+
+  # Reports the verdict of the suite on main, which nothing else does.
+  #
+  # Measured 2026-09-06: `Tests` failed on main in two of the three channel
+  # repositories and stayed red from 19:32 to 19:52, after a pull request merged
+  # while its own run was still reporting. The run finished against a closed pull
+  # request, so its result had nowhere to appear, and it was found because
+  # somebody went looking rather than because anything said so. The jobs above
+  # cannot see it: they ask for the newest SUCCESSFUL scheduled run, so a failure
+  # is missing from their answer by construction.
+  #
+  # THIS MUST NOT BECOME A REQUIRED STATUS CHECK.
+  #
+  #   Required, `suite on main` would be red on every open pull request for as
+  #   long as main is broken, the pull request that repairs main included, so the
+  #   repair could not merge until main was already green. That turns the failure
+  #   this job exists to surface into a deadlock, and the check that reports a
+  #   problem must never be the thing standing in front of its fix. It reports;
+  #   a person acts on it.
+  #
+  # Both triggers in the `on:` block above are load-bearing here. The schedule
+  # reports a red main on the next tick rather than the next time somebody
+  # happens to push, and `push: main` reports it on the landing itself, which is
+  # the event that creates the run in question.
+  #
+  # The comparison lives in scripts/check-suite-on-main.sh rather than in this
+  # step, so its three answers can be planted and tested off the network; a step
+  # body only a runner can execute is covered by nothing. This file decides when
+  # it runs and what it may reach.
+  #
+  # It reads the API as GITHUB_TOKEN, a job-scoped token on its own rate limit,
+  # and reads nothing beyond this repository's own run history. The grant below
+  # for reading workflow runs is the whole of what it can reach, and no personal
+  # credential is ever used here.
+  suite-on-main:
+    name: suite on main
+    runs-on: ubuntu-latest
+    # Bound: the script measures under 0.01s against a stubbed API, so what a
+    # run costs is a checkout plus the single API call, and the identical call
+    # in reusable-schedule-freshness measures 2 to 15s. Ten times that, rounded
+    # up, never under ten minutes; the six-hour default is what a hang would
+    # otherwise cost.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # reading this repository's workflow-run history
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the newest completed suite run on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: ./scripts/check-suite-on-main.sh "$REPO" tests.yml main

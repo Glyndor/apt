@@ -61,6 +61,7 @@ jobs:
         && ./tests/network-calls-are-bounded.test.sh
         && ./tests/reusable-dependabot-freshness.test.sh
         && ./tests/reusable-schedule-freshness.test.sh
+        && ./tests/check-suite-on-main.test.sh
         && ./tests/reusable-workflow-lint.test.sh
       # shellcheck: tests/lint-workflow-shell.test.sh plants a violation and
       # requires the linter to report it, so it needs the linter. The gate
