@@ -129,3 +129,57 @@ jobs:
             exit 1
           fi
           echo "bootstrap keyring reachable"
+
+      - name: Advertised installers reachable
+        run: |
+          set -euo pipefail
+          # The landing page publishes one line per product,
+          # `curl -fsSL $BASE_URL/install/<product> | sudo sh`, and no check
+          # above asks for that path. So the archive can be reachable, fresh and
+          # consistent while the single command the front page tells people to
+          # run is the one thing nothing verifies: a deploy that drops
+          # `install/`, or a product that joins the roster without its installer
+          # being rendered, leaves the page advertising a URL that 404s and the
+          # first report comes from a user.
+          #
+          # The roster is read from PRODUCTS in publish.yml, the one list the
+          # installers are generated from, so a product added there is asked for
+          # here with no second list to keep in step.
+          # `grep` finding nothing exits 1, and under `set -e` an assignment
+          # from a failing substitution kills the step before the diagnostic
+          # below can run: the job would go red with no line saying why.
+          products="$(grep -oE '^[[:space:]]*PRODUCTS:[[:space:]]*"[^"]*"' \
+            .github/workflows/publish.yml | head -1 | sed 's/.*"\(.*\)"/\1/' \
+            || true)"
+          if [ -z "$products" ]; then
+            echo "::error::no PRODUCTS list found in .github/workflows/publish.yml; this check cannot tell which installers to ask for"
+            exit 1
+          fi
+          body="$(mktemp)"
+          trap 'rm -f "$body"' EXIT
+          for spec in $products; do
+            # A PRODUCTS entry may carry an architecture spec ("klyradb:amd64").
+            # The installer is the same script whatever a product ships, so the
+            # path is the product name alone.
+            product="${spec%%:*}"
+            url="$BASE_URL/install/$product"
+            if ! curl -fsS --retry 3 --retry-all-errors --retry-delay 5 --max-time 30 "$url" -o "$body"; then
+              echo "::error::the installer the landing page advertises is unreachable at $url"
+              exit 1
+            fi
+            # The body is checked, not only the status, because a CDN error page
+            # answers 200 as happily as the script does: an edge serving its own
+            # "not found" HTML would satisfy a status-only check while the page's
+            # `| sudo sh` piped that HTML into a root shell. Requiring the first
+            # line to be a shebang costs one read and rules that out.
+            first_line=""
+            IFS= read -r first_line < "$body" || true
+            case "$first_line" in
+              '#!'*) ;;
+              *)
+                echo "::error::$url answers but the body is not a shell script; the edge may be serving an error page"
+                exit 1
+                ;;
+            esac
+            echo "installer served for $product"
+          done
