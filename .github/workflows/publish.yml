@@ -169,6 +169,60 @@ jobs:
                   ;;
               esac
             done <<< "$assets"
+            # Per-arch selection BEFORE any transfer. The wildcard
+            # `*_${arch}.deb` matches every asset whose name ends that way, so
+            # a release carrying two same-arch .deb files (each under the cap)
+            # is fully transferred before the post-download count check
+            # refuses it; the only ceiling on that today is the fifteen-minute
+            # job bound. Pick exactly one .deb and one .sig per declared arch
+            # by name and download only those. The pre-download size loop
+            # above and the post-download count and size loops below are kept:
+            # this is a cheaper first refusal, not a replacement.
+            declare -A deb_for_arch=()
+            declare -A sig_for_arch=()
+            for arch in $product_archs; do
+              deb_names=()
+              sig_names=()
+              while IFS=' ' read -r size name; do
+                [ -n "$size" ] || continue
+                case "$name" in
+                  *_${arch}.deb.sig)
+                    sig_names+=("$name")
+                    ;;
+                  *_${arch}.deb)
+                    deb_names+=("$name")
+                    ;;
+                esac
+              done <<< "$assets"
+              # Order the .sig case before .deb so a name ending in
+              # `_amd64.deb.sig` falls into sig_names and not deb_names -- the
+              # .deb pattern is a prefix of it, and a bare `*_amd64.deb` would
+              # match `foo_amd64.deb.sig` only if the case ordering let it.
+              if [ "${#deb_names[@]}" -ne 1 ]; then
+                echo "::error::Glyndor/$p's $tag release carries ${#deb_names[@]} ${arch} .deb file(s): ${deb_names[*]:-(none)}; refusing to choose one without first knowing which"
+                exit 1
+              fi
+              if [ "${#sig_names[@]}" -ne 1 ]; then
+                echo "::error::Glyndor/$p's $tag release carries ${#sig_names[@]} ${arch} .deb.sig file(s): ${sig_names[*]:-(none)}; refusing to choose one without first knowing which"
+                exit 1
+              fi
+              # `--pattern` is a glob, and the name it is given comes from
+              # the release listing, which is attacker controlled. A single
+              # asset literally named `*_amd64.deb` would pass the count check
+              # above (it is the only match) and then re-open the wildcard it
+              # was meant to close. Refuse the metacharacters rather than
+              # trying to escape them: no real asset name carries one.
+              for chosen in "${deb_names[0]}" "${sig_names[0]}"; do
+                case "$chosen" in
+                  *[][*?]*)
+                    echo "::error::Glyndor/$p's $tag release carries an asset whose name contains a glob metacharacter: $chosen"
+                    exit 1
+                    ;;
+                esac
+              done
+              deb_for_arch[$arch]="${deb_names[0]}"
+              sig_for_arch[$arch]="${sig_names[0]}"
+            done
             mkdir -p "debs/$p"
             for arch in $product_archs; do
               before=$(find "debs/$p" -maxdepth 1 -name "*_${arch}.deb" | wc -l)
@@ -178,9 +232,11 @@ jobs:
               # --delete` below, silently skipping a product would evict it from
               # the served archive on the next publish. Download the tag pinned
               # above, not "latest" again, so every arch comes from the same
-              # release.
+              # release, and the exact filenames selected above so no other
+              # same-arch asset can ride in under the pattern.
               if ! gh release download "$tag" --repo "Glyndor/$p" \
-                   --pattern "*_${arch}.deb" --pattern "*_${arch}.deb.sig" \
+                   --pattern "${deb_for_arch[$arch]}" \
+                   --pattern "${sig_for_arch[$arch]}" \
                    --dir "debs/$p" --clobber; then
                 echo "::error::could not download the ${arch} .deb (+.sig) of Glyndor/$p's $tag release; refusing to publish an archive that would drop it"
                 exit 1
