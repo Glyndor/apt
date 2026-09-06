@@ -64,7 +64,8 @@ jobs:
           cleanup() { gpgconf --homedir "$gpghome" --kill all 2>/dev/null || true; rm -rf "$gpghome" "$tmp" "$verified"; }
           trap cleanup EXIT
           gpg --homedir "$gpghome" --batch --quiet --import keyring/glyndor-apt-key.asc
-          if ! gpg --homedir "$gpghome" --batch --yes --output "$verified" --decrypt "$tmp" 2>/dev/null; then
+          if ! gpgv --keyring "$gpghome/pubring.kbx" --quiet \
+              --output "$verified" "$tmp"; then
             echo "::error::InRelease signature verification failed; the served index is unsigned or signed by an untrusted key"
             exit 1
           fi

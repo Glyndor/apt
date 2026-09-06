@@ -109,9 +109,13 @@ fetch() {
 
 # verify_clearsigned <clearsigned-file> <output-body>
 # Writes the cryptographically verified body, so everything parsed downstream
-# is what the archive key actually signed.
+# is what the archive key actually signed. gpgv, not gpg --decrypt: the latter
+# exits 0 over any OpenPGP packet, including an unsigned literal data packet,
+# so a fixture that is valid OpenPGP but carries no signature would slip past.
+# gpgv requires a signature from a key in --keyring and refuses the rest.
 verify_clearsigned() {
-	gpg --batch --yes --output "$2" --decrypt "$1" 2>/dev/null
+	gpgv --keyring "$GNUPGHOME/pubring.kbx" --quiet \
+		--output "$2" "$1"
 }
 
 # sha256_of <file>
