@@ -34,7 +34,7 @@
 # schedule and only one that never converges fails the run.
 #
 # That is the ONLY thing the retry buys, and the schedule (6 x 10 s by default)
-# is not measured — nobody has timed how long an edge purge takes to propagate.
+# is not measured: nobody has timed how long an edge purge takes to propagate.
 # It was originally also justified by a write-then-read visibility lag in R2,
 # which turned out not to exist: #47's object was deleted by the publish racing
 # itself, not briefly invisible (#53). Retrying a deleted object only fails
@@ -43,7 +43,7 @@
 #
 # Trust rests on the archive public key, never on the transport: an http:// base
 # URL is accepted (the test suite serves one locally) because TLS is not what
-# makes the answer trustworthy here — the signature is.
+# makes the answer trustworthy here; the signature is.
 #
 # Requires: curl, gpg, sha256sum.
 #
@@ -72,7 +72,7 @@ MAX_INDEX_BYTES=$((64 * 1024 * 1024))
 # Overridable from the environment so the suite can exercise the cap on a
 # small archive; production never sets it and gets the default.
 MAX_ENTRIES="${VERIFY_PUBLISHED_MAX_ENTRIES:-200}"
-# A package is a real binary, so it gets its own, larger per-object cap — kept
+# A package is a real binary, so it gets its own, larger per-object cap, kept
 # in step with the per-.deb cap publish.yml enforces on the way in.
 MAX_POOL_OBJECT_BYTES=$((300 * 1024 * 1024))
 # And a budget for the whole pool. The archive is latest-only, so this grows
@@ -150,7 +150,7 @@ declared_packages() {
 }
 
 # reject_unsafe_paths <label> <entries-file>
-# The paths come from a signed document, so they are authentic — but authentic
+# The paths come from a signed document, so they are authentic, but authentic
 # is not the same as safe, and the key that signs them is the one thing this
 # script cannot detect the compromise of. Reject anything that is not a plain
 # relative path before it is pasted into a URL or used as a filename.
@@ -256,7 +256,7 @@ if ! fetch "$BASE_URL/$DIST_PATH/InRelease" "$WORK/InRelease"; then
 	exit 1
 fi
 if ! verify_clearsigned "$WORK/InRelease" "$WORK/InRelease.body"; then
-	echo "::error::InRelease signature verification failed — the served index is unsigned or signed by an untrusted key" >&2
+	echo "::error::InRelease signature verification failed; the served index is unsigned or signed by an untrusted key" >&2
 	exit 1
 fi
 
@@ -270,11 +270,11 @@ if ! fetch "$BASE_URL/$DIST_PATH/Release" "$WORK/Release" \
 	exit 1
 fi
 if ! gpg --batch --verify "$WORK/Release.gpg" "$WORK/Release" 2>/dev/null; then
-	echo "::error::Release.gpg does not verify against Release — the detached pair is stale or untrusted" >&2
+	echo "::error::Release.gpg does not verify against Release; the detached pair is stale or untrusted" >&2
 	exit 1
 fi
 if ! diff -q <(declared_files "$WORK/InRelease.body") <(declared_files "$WORK/Release") >/dev/null; then
-	echo "::error::Release and InRelease declare different files — the archive is serving two different builds" >&2
+	echo "::error::Release and InRelease declare different files; the archive is serving two different builds" >&2
 	exit 1
 fi
 
@@ -283,7 +283,7 @@ fi
 declared_files "$WORK/InRelease.body" > "$WORK/index-entries"
 index_count="$(wc -l < "$WORK/index-entries")"
 if [ "$index_count" -eq 0 ]; then
-	echo "::error::the signed index declares no SHA256 entries — it is malformed" >&2
+	echo "::error::the signed index declares no SHA256 entries; it is malformed" >&2
 	exit 1
 fi
 if [ "$index_count" -gt "$MAX_ENTRIES" ]; then
@@ -308,7 +308,7 @@ verify_set "index file(s)" "$WORK/index-entries" "$DIST_PATH" "$MAX_INDEX_BYTES"
 # bad index by a year AND could not be cleared by publishing again; #59 added
 # them to the purge, so a bad edge copy is now bounded by the publish cadence
 # like everything else. A wrong object in R2 itself is still only fixed by the
-# next correct upload — purging does not conjure the right bytes.
+# next correct upload; purging does not conjure the right bytes.
 #
 # Deduplicate: an architecture-independent package (the keyring) is declared in
 # every architecture's Packages, and fetching it once per architecture proves
@@ -323,7 +323,7 @@ LC_ALL=C sort -u -o "$WORK/pool-entries" "$WORK/pool-entries"
 
 pool_count="$(wc -l < "$WORK/pool-entries")"
 if [ "$pool_count" -eq 0 ]; then
-	echo "::error::the verified indices declare no packages — an archive serving no installable package is broken" >&2
+	echo "::error::the verified indices declare no packages; an archive serving no installable package is broken" >&2
 	exit 1
 fi
 if [ "$pool_count" -gt "$MAX_ENTRIES" ]; then

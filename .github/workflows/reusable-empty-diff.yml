@@ -4,7 +4,7 @@ name: empty-diff (reusable)
 # Eight no-op PRs landed on Glyndor/homebrew-tap and Glyndor/scoop-bucket
 # before this gate existed: the work was already in main via squash-merge,
 # the branch was recreated as `-v2`, and the second merge landed as a commit
-# with zero files changed. CI is happy with that — a commit with no diff is
+# with zero files changed. CI is happy with that: a commit with no diff is
 # valid git and a green GitHub Actions run, and only `git show --stat` flags
 # it.
 #
@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${BASE:-}" ]; then
-            echo "::error::could not determine the pull request base ref — this reusable must be called from a pull_request-triggered workflow"
+            echo "::error::could not determine the pull request base ref; this reusable must be called from a pull_request-triggered workflow"
             exit 1
           fi
           if git diff --quiet "origin/${BASE}...HEAD"; then

@@ -57,7 +57,7 @@ PY
 }
 
 # Fake `gh`. Appends its argv (NUL-separated) to STUB_LOG and prints line 1
-# of STUB_RESPONSES — there is only ever one call per step run, but a
+# of STUB_RESPONSES. There is only ever one call per step run, but a
 # responses file makes the contract the same as the dependabot stub so the
 # two tests stay symmetrical. An empty line is exactly what
 # `gh --jq '... // empty'` produces when nothing matched.

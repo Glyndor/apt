@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/purge-cache.sh — the step that clears the mutable, fixed-name
+# Tests for scripts/purge-cache.sh, the step that clears the mutable, fixed-name
 # files from Cloudflare after a publish.
 #
 # The property under test is that the purge covers EVERY URL the run just
 # published, in as many requests as Cloudflare's per-request limit needs. Before
 # this script the step refused to send more than 30 and said the list "needs to
 # be sent in batches" without ever doing so, which would have failed the publish
-# after the sync had already landed — a fresh archive behind a stale edge cache.
+# after the sync had already landed: a fresh archive behind a stale edge cache.
 #
 # A fake Cloudflare API is served locally and records each request body, so the
 # assertions are on what was actually sent rather than on the script's own log.
@@ -200,7 +200,7 @@ check "every URL is sent exactly once" \
 # One product, so content is nine URLs and fits in one batch: the second request
 # is the index one, which is the failure this case is about. The seven-product
 # archive above splits content across two batches, and there the second request
-# would be content — a different case, covered below.
+# would be content, a different case, covered below.
 start_server fail-second
 build_archive 1 "amd64 arm64"
 rc=0

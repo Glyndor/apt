@@ -25,7 +25,7 @@
 # as the control Package field AND carry it as the filename prefix
 # ("<expected_package>_..."). The release key is shared by every Glyndor
 # product, so a valid signature alone does not prove a .deb is the product it
-# was downloaded from — a compromised release could otherwise ship an asset
+# was downloaded from, since a compromised release could otherwise ship an asset
 # whose control Package (and/or filename) claims to be a different product.
 
 set -euo pipefail
@@ -54,7 +54,7 @@ debs=("$DEBS_DIR"/*.deb)
 count=0
 for deb in "${debs[@]}"; do
 	# Every .deb here is an untrusted downloaded release asset and must be
-	# verified with no exceptions — keying a skip on the filename would let a
+	# verified with no exceptions: keying a skip on the filename would let a
 	# product publish an asset under a trusted name to bypass the check. The
 	# locally-built keyring package is produced in a later step (build-keyring),
 	# after this runs, and is signed by the archive key, not the release key.
@@ -65,7 +65,7 @@ for deb in "${debs[@]}"; do
 	# rather than rejected, evict the real keyring package from the archive
 	# with no signal that anything was wrong.
 	if [[ "$(basename "$deb")" == glyndor-archive-keyring* ]]; then
-		echo "::error::$(basename "$deb") has the reserved keyring name glyndor-archive-keyring — a product must not ship an asset under this filename" >&2
+		echo "::error::$(basename "$deb") has the reserved keyring name glyndor-archive-keyring; a product must not ship an asset under this filename" >&2
 		exit 1
 	fi
 
@@ -73,20 +73,20 @@ for deb in "${debs[@]}"; do
 	# the filename: a product could ship a normally-named, validly-signed .deb
 	# whose internal Package is glyndor-archive-keyring and so shadow the real
 	# keyring in the archive. The keyring is built locally, never downloaded.
-	# A control field dpkg-deb cannot read is a hard error — an unreadable
+	# A control field dpkg-deb cannot read is a hard error: an unreadable
 	# package must not slip past the reserved-name gate unclassified.
 	if ! pkg="$(dpkg-deb -f "$deb" Package)"; then
-		echo "::error::cannot read the Package control field of $(basename "$deb") — refusing an unreadable package" >&2
+		echo "::error::cannot read the Package control field of $(basename "$deb"); refusing an unreadable package" >&2
 		exit 1
 	fi
 	if [ "$pkg" = "glyndor-archive-keyring" ]; then
-		echo "::error::$(basename "$deb") declares the reserved package name glyndor-archive-keyring — a product must not ship the keyring package" >&2
+		echo "::error::$(basename "$deb") declares the reserved package name glyndor-archive-keyring; a product must not ship the keyring package" >&2
 		exit 1
 	fi
 
 	# Bind the verified package to the product it was downloaded from. Without
 	# this, any product's compromised release could sign a .deb whose control
-	# Package (and filename) claims to be a different, unrelated product — the
+	# Package (and filename) claims to be a different, unrelated product, since the
 	# signature alone would still verify, since the release key is shared.
 	if [ -n "$EXPECTED_PACKAGE" ]; then
 		if [ "$pkg" != "$EXPECTED_PACKAGE" ]; then
@@ -101,13 +101,13 @@ for deb in "${debs[@]}"; do
 
 	sig="$deb.sig"
 	if [ ! -f "$sig" ]; then
-		echo "::error::no signature ($sig) for $(basename "$deb") — refusing to publish an unverified package" >&2
+		echo "::error::no signature ($sig) for $(basename "$deb"); refusing to publish an unverified package" >&2
 		exit 1
 	fi
 
 	# Capture the verifier's exit code (rather than just its pass/fail status)
 	# so the message below can tell a malformed local trust anchor apart from
-	# an untrusted signature that plainly fails verification — conflating the
+	# an untrusted signature that plainly fails verification. Conflating the
 	# two previously reported "release may be tampered" even when the real
 	# cause was our own key file, which sent whoever was debugging it looking
 	# for an attack that wasn't there.
@@ -142,15 +142,15 @@ if not keys:
 	sys.exit(2)
 
 # An Ed25519 detached signature is exactly 64 bytes. Read at most one byte
-# past a generous 4096-byte cap rather than the whole file — a hostile or
+# past a generous 4096-byte cap rather than the whole file: a hostile or
 # corrupt .sig asset must not be read into memory wholesale before its length
 # is even checked.
 #
 # Both checks below exit 1, not 2: exit 2 is reserved for a malformed LOCAL
 # trust anchor (the committed key file this script itself was given), so the
 # caller can tell "our config is broken" apart from "the downloaded asset is
-# bad". An oversized or wrong-length .sig is the latter — untrusted data the
-# release supplied, not our key material — so it belongs in the same bucket
+# bad". An oversized or wrong-length .sig is the latter, untrusted data the
+# release supplied rather than our key material, so it belongs in the same bucket
 # as a signature that fails cryptographic verification below.
 MAX_SIG_BYTES = 4096
 with open(sig_path, "rb") as f:
@@ -181,11 +181,11 @@ PYEOF
 		if [ "$python_rc" -eq 2 ]; then
 			# Our bug: the committed release public key file failed to load, so
 			# no key was even available to check the signature against.
-			echo "::error::local release trust file is malformed — could not load a release public key to verify $(basename "$deb") against" >&2
+			echo "::error::local release trust file is malformed; could not load a release public key to verify $(basename "$deb") against" >&2
 		else
 			# Their bug: a key loaded fine, but $(basename "$deb")'s signature did
 			# not verify against any of them.
-			echo "::error::invalid signature for $(basename "$deb") — release may be tampered" >&2
+			echo "::error::invalid signature for $(basename "$deb"); release may be tampered" >&2
 		fi
 		exit 1
 	fi

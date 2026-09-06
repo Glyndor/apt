@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/verify-debs.sh — the fail-closed gate that admits a product
+# Tests for scripts/verify-debs.sh, the fail-closed gate that admits a product
 # .deb only when its detached Ed25519 signature verifies against a trusted
 # release key. Each case asserts the script's exit status (0 = admitted,
 # non-zero = rejected) so a regression that lets an unverified or reserved-name
@@ -98,13 +98,13 @@ with open(os.path.join(work, "priv.b64"), "w") as f:
 with open(os.path.join(work, "key.b64"), "w") as f:
 	f.write(b64(key.public_key()) + "\n")
 
-# Two keys (wrong first, right second) — exercises rotation-overlap admit-if-any.
+# Two keys (wrong first, right second), exercising rotation-overlap admit-if-any.
 with open(os.path.join(work, "keys-multi.b64"), "w") as f:
 	f.write("# glyndor release keys\n")
 	f.write(b64(wrong) + "\n")
 	f.write(b64(key.public_key()) + "\n")
 
-# Only-wrong key — nothing should verify against it.
+# Only-wrong key: nothing should verify against it.
 with open(os.path.join(work, "key-wrong.b64"), "w") as f:
 	f.write(b64(wrong) + "\n")
 PYEOF
@@ -168,7 +168,7 @@ printf 'not a real debian package' > "$d/garbage.deb"; sign "$d/garbage.deb"
 assert 1 "unreadable package control is rejected" -- "$VERIFY" "$d" "$WORK/key.b64"
 
 # --- Case 8: a validly-signed .deb whose control Package does not match the
-#            expected_package argument is rejected — the shared release key
+#            expected_package argument is rejected, because the shared release key
 #            lets any product sign a .deb, so a product's identity must also
 #            be bound to the product it claims to be, not just checked for a
 #            valid signature. ---
@@ -186,7 +186,7 @@ assert_error 1 "declares 'podup', expected 'otherproduct'" \
 
 # --- Case 9: a .deb whose control Package matches expected_package but whose
 #            filename does not carry the "<expected_package>_" prefix is
-#            rejected — matching the control field alone would still admit a
+#            rejected, because matching the control field alone would still admit a
 #            relabeled asset. ---
 d="$WORK/case9"; mkdir -p "$d"
 deb="$(make_deb wrongname podup)"; cp "$deb" "$d/"; sign "$d/wrongname.deb"
@@ -200,7 +200,7 @@ deb="$(make_deb podup_1.0_amd64 podup)"; cp "$deb" "$d/"; sign "$d/podup_1.0_amd
 assert 0 "three-arg form admits a correctly-named package" -- "$VERIFY" "$d" "$WORK/key.b64" podup
 
 # --- Case 11: the reserved keyring filename is rejected even when the
-#             control Package field is an ordinary product name — the
+#             control Package field is an ordinary product name, so the
 #             filename itself must never be able to shadow the locally-built
 #             keyring package. ---
 d="$WORK/case11"; mkdir -p "$d"
@@ -218,8 +218,8 @@ head -c 5000 /dev/zero > "$d/oversized.deb.sig"
 assert_error 1 "over 4096 bytes" "oversized signature file is rejected" \
 	-- "$VERIFY" "$d" "$WORK/key.b64"
 
-# --- Case 13: a malformed local trust file — the release public key itself
-#             fails to load — is diagnosed as our bug and must not be
+# --- Case 13: a malformed local trust file, where the release public key
+#             itself fails to load, is diagnosed as our bug and must not be
 #             reported as "release may be tampered": that message points
 #             whoever is debugging it at an attack that isn't there, when
 #             the real cause is our own committed key file. ---
@@ -237,7 +237,7 @@ assert_error 1 "local release trust file is malformed" \
 #             depends on `shopt -s nullglob` to actually produce an empty
 #             array when the glob has no matches; that option is what makes
 #             this control exercisable, and removing either line 50 (the
-#             shopt) or line 52 (the check itself) takes this test red —
+#             shopt) or line 52 (the check itself) takes this test red,
 #             verified by mutation on the PR branch. ---
 d="$WORK/case14"; mkdir -p "$d"
 assert_error 1 "no .deb files to verify" \

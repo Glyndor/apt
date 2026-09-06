@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/build-installers.sh — the generator behind /install/<product>.
+# Tests for scripts/build-installers.sh, the generator behind /install/<product>.
 #
 # Every product in PRODUCTS now gets an installer from this one template, so a
 # defect here reaches every product at once rather than one. That is the whole
@@ -8,7 +8,7 @@
 # one fix reaches everyone, and so does one mistake.
 #
 # The generator has three fail-closed paths, and each exists because the failure
-# it prevents produces a script that RUNS and installs the wrong thing — worse
+# it prevents produces a script that RUNS and installs the wrong thing, worse
 # than one that does not run at all. Those three are what these cases pin:
 #
 #   1. a template that lost its @PRODUCT@ placeholder
@@ -107,8 +107,8 @@ check "and writes nothing" "0" "$(find "$WORK/out" -name epistle 2>/dev/null | w
 
 # --- fail-closed 2: substitution left a placeholder behind --------------------
 #
-# Reached by a placeholder `sed` cannot replace with the s/@PRODUCT@/x/g form —
-# here one split across a line — which is exactly what a careless template edit
+# Reached by a placeholder `sed` cannot replace with the s/@PRODUCT@/x/g form,
+# here one split across a line, which is exactly what a careless template edit
 # produces.
 
 awk '{ print } NR==1 { print "# @PRODUCT\\@" }' "$TEMPLATE" > "$WORK/split-placeholder"
@@ -118,7 +118,7 @@ check "a rendered installer is checked for leftovers" "0" "$rc"
 
 # --- fail-closed 3: the rendered script is not valid shell --------------------
 
-# An unterminated `if` is a syntax error; a malformed `[` test is not — `sh -n`
+# An unterminated `if` is a syntax error; a malformed `[` test is not, because `sh -n`
 # parses, it does not resolve commands. Getting that wrong is how a "broken
 # shell" case passes while proving nothing.
 # shellcheck disable=SC2016  # $x must reach the file unexpanded; it is the

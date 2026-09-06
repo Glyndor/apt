@@ -45,7 +45,7 @@ name: Drift
 # What this gives up: applying a change to one repository and forgetting the
 # others is reported the next morning rather than instantly. That is the same
 # trade the freshness watchers already make with `max-age-days: 3`, and drift
-# between copies is a slow fault — it harms nobody today, it harms the day
+# between copies is a slow fault: it harms nobody today, it harms the day
 # somebody fixes a bug in one copy and not the others.
 on:
   schedule:

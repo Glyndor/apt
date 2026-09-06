@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/verify-published.sh — the gate that reads the published
+# Tests for scripts/verify-published.sh, the gate that reads the published
 # archive back and refuses to call a publish successful unless every file the
 # signed index declares is served at exactly the size and hash it was signed
 # with. Each case asserts the script's exit status (0 = archive consistent,
@@ -53,7 +53,7 @@ assert() {
 }
 
 # assert_says <expected-exit> <needle> <description> -- <command...>
-# For asserting something about a run that is expected to succeed — what it
+# For asserting something about a run that is expected to succeed: what it
 # reports, not just that it exited zero.
 assert_says() {
 	local want="$1" needle="$2" desc="$3"
@@ -110,11 +110,11 @@ gpg --batch --quiet --armor --export "$TRUSTED_KEY" > "$TRUSTED_ASC"
 # declarations across two architectures, three distinct objects.
 PODUP_POOL="pool/main/p/podup"
 KEYRING_POOL="pool/main/g/glyndor-archive-keyring"
-# The '+' is deliberate — a real Debian version carries one, and the path
+# The '+' is deliberate: a real Debian version carries one, and the path
 # validation has to allow it without allowing traversal.
 KEYRING_DEB="$KEYRING_POOL/glyndor-archive-keyring_1.0.0+key1_all.deb"
 
-# write_pool — the .deb objects the indices point at.
+# write_pool: the .deb objects the indices point at.
 write_pool() {
 	local arch
 	mkdir -p "$SITE/$PODUP_POOL" "$SITE/$KEYRING_POOL"
@@ -124,7 +124,7 @@ write_pool() {
 	printf 'fake keyring deb\n' > "$SITE/$KEYRING_DEB"
 }
 
-# stanza <package> <architecture> <pool-path> — one Packages entry, declaring
+# stanza <package> <architecture> <pool-path>: one Packages entry, declaring
 # the pool object the way a real index does.
 stanza() {
 	printf 'Package: %s\nVersion: 1.12.0\nArchitecture: %s\nFilename: %s\nSize: %s\nSHA256: %s\n\n' \
@@ -133,7 +133,7 @@ stanza() {
 		"$(sha256sum "$SITE/$3" | cut -d' ' -f1)"
 }
 
-# write_indices — the index files a two-architecture reprepro export produces.
+# write_indices: the index files a two-architecture reprepro export produces.
 write_indices() {
 	local arch
 	write_pool
@@ -148,7 +148,7 @@ write_indices() {
 	done
 }
 
-# write_release <signing-key> — the Release body plus both signed forms.
+# write_release <signing-key>: the Release body plus both signed forms.
 write_release() {
 	local key="$1" f
 	{
@@ -174,7 +174,7 @@ write_release() {
 		--local-user "$key" --armor --detach-sign --output "$DIST/Release.gpg" "$DIST/Release"
 }
 
-# build_archive [<signing-key>] — a consistent archive, from scratch.
+# build_archive [<signing-key>]: a consistent archive, from scratch.
 build_archive() {
 	rm -rf "$SITE"
 	mkdir -p "$DIST"

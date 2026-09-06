@@ -23,7 +23,7 @@ permissions:
 # Serialise publishes. The daily schedule and a manual run can otherwise
 # overlap and run two `aws s3 sync --delete` against the same bucket at once,
 # racing to a half-deleted, inconsistent index that apt rejects. Never cancel a
-# run in flight — a partial sync must always finish.
+# run in flight: a partial sync must always finish.
 concurrency:
   group: publish-apt
   cancel-in-progress: false
@@ -37,7 +37,7 @@ env:
   # named <name>_<version>_<arch>.deb. Add a repo here once it ships one.
   #
   # A bare name means the product ships every architecture in ARCHITECTURES.
-  # Append ":arch,arch" to declare a narrower set — "klyradb:amd64" for a
+  # Append ":arch,arch" to declare a narrower set: "klyradb:amd64" for a
   # product that has no arm64 build. DECLARE it rather than letting a missing
   # .deb pass silently: this archive is rebuilt from scratch and synced with
   # --delete, so a product quietly skipped is a product EVICTED from the served
@@ -128,14 +128,14 @@ jobs:
             # Resolve "latest" exactly once per product and reuse that tag for
             # every arch below. Without this, each `gh release download` call
             # re-resolves "latest" independently, so a release landing mid-run
-            # can hand amd64 and arm64 two different tags — a mixed-version
+            # can hand amd64 and arm64 two different tags, producing a mixed-version
             # archive with no signal that anything went wrong.
             tag="$(gh release view --repo "Glyndor/$p" --json tagName --jq .tagName)" \
               || { echo "::error::could not resolve Glyndor/$p's latest release tag"; exit 1; }
             echo "pinned $p to release $tag"
             # Check the sizes the release actually advertises before pulling
             # any bytes, so an oversized asset can't exhaust runner disk mid-
-            # download — the post-download check below is belt-and-braces in
+            # download. The post-download check below is belt-and-braces in
             # case the advertised size ever disagrees with the delivered one.
             assets="$(gh release view "$tag" --repo "Glyndor/$p" --json assets \
                         --jq '.assets[] | "\(.size) \(.name)"')" \
@@ -150,7 +150,7 @@ jobs:
               [ -n "$size" ] || continue
               case "$size" in
                 ''|*[!0-9]*)
-                  echo "::error::Glyndor/$p's release asset $name has a non-numeric size ($size) — refusing to compare it against the byte caps"
+                  echo "::error::Glyndor/$p's release asset $name has a non-numeric size ($size); refusing to compare it against the byte caps"
                   exit 1
                   ;;
               esac
@@ -193,12 +193,12 @@ jobs:
               echo "downloaded $arch .deb for $p"
             done
             echo "::endgroup::"
-            # A product must never ship a keyring-named asset — the real keyring
+            # A product must never ship a keyring-named asset; the real keyring
             # is built locally below. verify-debs.sh hard-fails the publish on
             # this filename rather than the asset being silently dropped here,
             # which would evict that product from the archive with no signal.
             # Reject any oversized package or signature before it is verified
-            # or served — belt-and-braces alongside the pre-download check
+            # or served, belt-and-braces alongside the pre-download check
             # above, in case the advertised size ever disagrees with the
             # delivered bytes.
             while IFS= read -r f; do
@@ -232,7 +232,7 @@ jobs:
           # Bind each verified .deb to the product directory it was downloaded
           # into. The release key is shared by every product, so a valid
           # signature alone does not prove a .deb is the product it claims to
-          # be — a compromised release could otherwise ship an asset that
+          # be, since a compromised release could otherwise ship an asset that
           # impersonates another product.
           for spec in $PRODUCTS; do
             p="${spec%%:*}"
@@ -293,21 +293,21 @@ jobs:
               || { echo "::error::$v is not configured."; exit 1; }
           done
           # Three passes: the Cache-Control differs per file class, and the
-          # ordering keeps the live archive consistent for clients mid-publish —
+          # ordering keeps the live archive consistent for clients mid-publish:
           # new packages land before the metadata that references them, and old
           # packages are removed only after the metadata stopped referencing
           # them, so the signed index never points at a package that 404s. That
           # ordering is necessary and not sufficient: it says nothing about an
           # index file being removed after it is written, which is what #47/#53
-          # were — hence the read-back verification that closes this job.
+          # were, hence the read-back verification that closes this job.
           #   - pool/ .debs are immutable (the filename carries the version), so
-          #     cache them for a year — they never change once published.
+          #     cache them for a year; they never change once published.
           #   - everything else (the dists/ metadata, index.html, the keyring
           #     .deb) shares a fixed name but changes every rebuild. Cache it a
           #     day AND purge it from Cloudflare below on every publish, so a
           #     fresh release is visible at once; the long TTL is safe because
           #     each rebuild (daily + manual) purges, and nothing changes between
-          #     rebuilds — it just cuts needless origin revalidations.
+          #     rebuilds; it just cuts needless origin revalidations.
           #
           # Passes 1 and 3 use --size-only: a product .deb is built once and
           # published, and its version is baked into the filename, so a size
@@ -315,7 +315,7 @@ jobs:
           #
           # That reasoning covers product .debs and nothing else, which is the
           # part that bit. The keyring package is ALSO in pool/ and is NOT a
-          # release — publish.yml rebuilds it every run, under a filename that
+          # release: publish.yml rebuilds it every run, under a filename that
           # only moves when the signing key changes. So "same name, same size,
           # different content" needs no immutability violation to happen here;
           # it just needs a non-deterministic build, which is what #55 was. When
@@ -329,7 +329,7 @@ jobs:
           # property or it does not belong in these passes.
           #
           # Pass 2 keeps the default comparison (size + modification time; the
-          # AWS CLI never content-hashes) — the dists/ metadata and the
+          # AWS CLI never content-hashes): the dists/ metadata and the
           # bucket-root keyring copy are rewritten every rebuild and land with a
           # current mtime, so a re-signed index always re-uploads.
           #
@@ -341,7 +341,7 @@ jobs:
           # did that to was a strict prefix of a sibling (Packages of
           # Packages.gz, Release of Release.gpg) and no other key ever was, so
           # the comparator appears to classify a prefix key as local-only and
-          # remote-only at once. This is what #47 actually was — not the R2
+          # remote-only at once. This is what #47 actually was, not the R2
           # visibility lag recorded there at the time.
           #
           # Do NOT "fix" this by splitting the pass into upload-then-delete:
@@ -386,7 +386,7 @@ jobs:
           # glyndor.net), so this purges by URL and never purge_everything.
           #
           # It used to be inline here, and it refused to send more than 30 with
-          # a message saying the list "needed to be sent in batches" — which it
+          # a message saying the list "needed to be sent in batches", which it
           # never did. That ceiling is reached by the roster in the product
           # context on three architectures, and it would have failed the run
           # AFTER the sync, leaving a fresh archive behind a stale edge cache.
@@ -412,6 +412,6 @@ jobs:
           # It runs after the purge, not before: checking while the edge still
           # holds the previous metadata would compare a fresh signature against
           # stale bytes. The script retries internally to cover that purge being
-          # asynchronous — that alone, since the R2 visibility lag it was also
+          # asynchronous, and only that, since the R2 visibility lag it was also
           # written for turned out not to exist (#53).
           ./scripts/verify-published.sh "$ARCHIVE_URL"

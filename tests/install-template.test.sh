@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/install-template.sh — the rendered installer that runs as
+# Tests for scripts/install-template.sh, the rendered installer that runs as
 # root on the operator's machine, downloads the archive keyring, and installs
 # a Glyndor product from it.
 #
 # The cases pin an ORDER: the archive keyring is verified BEFORE dpkg is
 # allowed to run anything from the package. A .deb that executes first can
-# write the very keyring the check then reads — with the expected fingerprint
+# write the very keyring the check then reads, with the expected fingerprint
 # alongside an attacker's, which the presence test admits. The verify reads
 # the extracted payload, not a file dpkg has already written.
 #
@@ -84,7 +84,7 @@ else
 fi
 
 # --- Cases 2 and 3: the verify happens AFTER extraction and BEFORE dpkg -i ---
-# Structural assertions on the rendered script — read off line numbers rather
+# Structural assertions on the rendered script, read off line numbers rather
 # than running the installer, because running the real one needs root and a
 # live archive. A regression that lets `dpkg -i` execute first, or that moves
 # the verify before extraction, will reorder the line numbers below.
