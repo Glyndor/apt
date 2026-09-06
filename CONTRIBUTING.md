@@ -82,6 +82,20 @@ New test files must be added to `test-command` in `.github/workflows/tests.yml`.
 sits in `tests/`, passes by hand, and reads as coverage while CI never runs it.
 That happened here.
 
+Two traps a local run cannot see, and both cost a day here:
+
+**The exec bit that counts is git's.** `core.fileMode=false` is common on Linux
+setups, and with it `chmod +x` never reaches the index. A test file committed
+`100644` runs fine from your shell and is exit 126 on a runner, which aborts the
+whole `&&` chain. Read the bit with `git ls-files -s tests/`, never with
+`ls -l`, and set it with `git update-index --chmod=+x tests/<name>.test.sh`
+before you commit.
+
+**`check-editorconfig.sh` reads tracked files only**, and a test asserts it
+ignores an untracked one, so a new file missing its final newline passes locally
+and fails the moment it is committed. Run the checker after `git add`, not
+before.
+
 ## Workflows
 
 CI is split by responsibility rather than gathered in one file:
