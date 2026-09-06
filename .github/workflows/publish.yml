@@ -315,6 +315,52 @@ jobs:
           # bootstrap (curl + dpkg -i before apt knows the repo).
           cp debs/glyndor-archive-keyring.deb public/glyndor-archive-keyring.deb
 
+      - name: Sign the keyring package
+        env:
+          GLYNDOR_APT_GPG_PRIVATE_KEY: ${{ secrets.GLYNDOR_APT_GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # This signature is NOT yet verified by anything. The installer change
+          # that demands it is a separate, deliberate PR: until it lands, every
+          # fresh install must continue to bootstrap from an unsigned archive,
+          # and the worst this step can do is produce a signature nobody
+          # checks. The order is this way round for the same reason the deploy
+          # is split: the archive must serve the .asc before any installer can
+          # require it, or the first fresh install between the two deploys
+          # fails.
+          if [ -z "$GLYNDOR_APT_GPG_PRIVATE_KEY" ]; then
+            echo "::error::GLYNDOR_APT_GPG_PRIVATE_KEY secret is not configured."
+            exit 1
+          fi
+          # Same import and same key selection as scripts/build-repo.sh,
+          # re-run here because that script imported into its own ephemeral
+          # GNUPGHOME and unset the secret afterwards. This is one more use of
+          # the existing key, not a second way to get at it.
+          GNUPGHOME="$(mktemp -d)"
+          export GNUPGHOME
+          chmod 700 "$GNUPGHOME"
+          cleanup() { gpgconf --kill all 2>/dev/null || true; rm -rf "$GNUPGHOME"; }
+          trap cleanup EXIT
+          printf '%s' "$GLYNDOR_APT_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+          unset GLYNDOR_APT_GPG_PRIVATE_KEY
+          SEC_COUNT="$(gpg --batch --with-colons --list-secret-keys | { grep -c '^sec:' || true; })"
+          [ "$SEC_COUNT" -eq 1 ] || { echo "::error::expected exactly one secret key, found $SEC_COUNT"; exit 1; }
+          FPR="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/{print $10; exit}')"
+          [ -n "$FPR" ] || { echo "could not determine signing key fingerprint"; exit 1; }
+          if ! gpg --batch --with-colons --show-keys keyring/glyndor-apt-key.asc \
+            | awk -F: '/^fpr:/{print $10}' | grep -qxF "$FPR"; then
+            echo "::error::signing key ($FPR) is not present in keyring/glyndor-apt-key.asc"
+            exit 1
+          fi
+          # Sign the SERVED copy, not the debs/ one: a mismatch between the
+          # two is exactly what a future installer must be able to catch, and
+          # signing one and serving the other would make that mismatch
+          # invisible. --armor + --detach-sign = a standalone .asc that is the
+          # signature only, not the data plus signature.
+          gpg --batch --local-user "$FPR" --armor --detach-sign \
+            --output public/glyndor-archive-keyring.deb.asc \
+            public/glyndor-archive-keyring.deb
+
       - name: Build the bootstrap installers
         run: |
           set -euo pipefail

@@ -55,12 +55,14 @@ check "publish.yml declares exactly one job" "1" \
 # --- the steps exist --------------------------------------------------------
 verify_sigs="$(step_line 'Verify product .deb release signatures')"
 build_repo="$(step_line 'Build signed apt repository')"
+sign_keyring="$(step_line 'Sign the keyring package')"
 publish="$(step_line 'Publish to R2')"
 purge="$(step_line 'Purge Cloudflare cache')"
 verify_pub="$(step_line 'Verify the published archive')"
 
 for pair in "verify_sigs:the release signatures are verified" \
             "build_repo:the signed repository is built" \
+            "sign_keyring:the keyring package is signed" \
             "publish:the archive is published to R2" \
             "purge:the Cloudflare cache is purged" \
             "verify_pub:the published archive is read back"; do
@@ -148,7 +150,6 @@ check "the purge script never asks for purge_everything" "0" \
 check "and the workflow purges through that script" "1" \
 	"$(grep -c '\./scripts/purge-cache\.sh' "$WF")"
 
-# === behaviour: the download step against a stubbed gh =====================
 #
 # The cases below extract the "Download the latest .deb of each product" step
 # body and run it with `gh` pointed at a stub. The stub records every
@@ -404,7 +405,152 @@ check "and the arm64 call did not select the amd64 asset" "0" \
 	"$(grep '^call .*release download' "$WORK/calls" | \
 	   grep -F -- '--pattern podup_1.0.0_arm64.deb' | \
 	   grep -cF 'podup_1.0.0_amd64' || true)"
+# --- the keyring-signing step runs in the right place ----------------------
+#
+# The keyring has to exist (Build signed apt repository has copied it into
+# public/) and the upload must not have happened yet (Publish to R2). The
+# file checks below assert WHICH file is signed and WHERE the .asc is
+# written; this one asserts only WHEN.
+check "the keyring-signing step runs after the keyring is built" "1" \
+	"$(before "$build_repo" "$sign_keyring")"
+check "the keyring-signing step runs before the archive is uploaded" "1" \
+	"$(before "$sign_keyring" "$publish")"
 
+# --- the keyring-signing step signs the SERVED copy -------------------------
+#
+# The body of the step: from its `- name:` line up to the next `- name:` or
+# `- uses:` line, with comment lines removed so a mention of `debs/` in the
+# step's own comment cannot satisfy the wrong-path check below.
+all_step_lines="$(grep -n '^      - name:\|^      - uses:' "$WF" | cut -d: -f1)"
+sign_end="$(printf '%s\n' "$all_step_lines" | awk -v s="$sign_keyring" '$1 > s {print; exit}')"
+[ -n "$sign_end" ] || sign_end="$(wc -l <"$WF")"
+sign_body="$(sed -n "${sign_keyring},${sign_end}p" "$WF" | grep -v '^[[:space:]]*#')"
+
+# The .asc must land under public/ so the existing upload (which syncs the
+# whole public/ tree) picks it up. A signature dropped next to debs/ would
+# never reach the served archive and the deploy split fails its purpose.
+check "the keyring-signing step writes the .asc under public/" "1" \
+	"$(printf '%s\n' "$sign_body" | grep -q 'public/glyndor-archive-keyring.deb.asc' && echo 1 || echo 0)"
+
+# The signature must sign the SERVED copy. A signature over debs/.../X.deb
+# is not a signature over public/.../X.deb; signing one and serving the
+# other is exactly the silent mismatch this guard exists to catch, because
+# the comment in the step says "not the debs/ one" and the assertion below
+# reads commands, not prose.
+check "the keyring-signing step signs the served copy, not the debs/ one" "1" \
+	"$(printf '%s\n' "$sign_body" | grep -q 'public/glyndor-archive-keyring.deb' && \
+	   printf '%s\n' "$sign_body" | grep -qE 'public/glyndor-archive-keyring\.deb([[:space:]]*$|\\)' && \
+	   ! printf '%s\n' "$sign_body" | grep -qE 'debs/glyndor-archive-keyring' && \
+	   echo 1 || echo 0)"
+
+# --- the same gpg commands actually sign and verify end to end -------------
+#
+# The structural cases above prove the workflow step NAMES the right paths.
+# They do NOT prove the gpg pipeline produces a .asc that verifies against
+# the same key and not against a different one. Asserting the shape of a
+# control is not asserting the control, and this file has been bitten by
+# exactly that before. This block runs the same import + fingerprint-select
+# + sign gpg commands against throwaway keys in a private GNUPGHOME and
+# proves the mechanism works, so a future regression in the gpg flags is
+# caught here even if the workflow file is left untouched.
+#
+# Requires: gpg.
+WORK_PW="$(mktemp -d)"
+trap 'gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK_PW"' EXIT
+
+mkkey_pw() { # $1=uid -> prints the armored secret key
+	local home="$WORK_PW/gnupg-$1"
+	mkdir -p "$home"; chmod 700 "$home"
+	GNUPGHOME="$home" gpg --batch --quiet --passphrase '' \
+		--quick-generate-key "$1 <$1@test.invalid>" default default never \
+		>/dev/null 2>&1
+	GNUPGHOME="$home" gpg --batch --armor --export-secret-keys "$1"
+}
+pubof_pw() { # $1=uid -> prints the armored public key
+	GNUPGHOME="$WORK_PW/gnupg-$1" gpg --batch --armor --export "$1"
+}
+
+# Only alpha's secret half is imported anywhere: bravo exists to prove the
+# signature does NOT verify against a key that did not sign it, and for that
+# only its public half is needed. Generated for its side effect, so the
+# secret is not bound to a name nothing reads.
+KEY_A_PW="$(mkkey_pw alpha)"
+mkkey_pw bravo >/dev/null
+PUB_A_PW="$(pubof_pw alpha)"
+PUB_B_PW="$(pubof_pw bravo)"
+
+# A fixture standing in for the served keyring .deb. What is being tested is
+# the gpg pipeline, not the .deb's contents.
+DEB_PW="$WORK_PW/glyndor-archive-keyring.deb"
+printf 'fake keyring package body\n' > "$DEB_PW"
+
+# Same import + fingerprint-select path build-repo.sh and the new step use.
+SIGNHOME_PW="$WORK_PW/sign"
+mkdir -p "$SIGNHOME_PW"; chmod 700 "$SIGNHOME_PW"
+printf '%s' "$KEY_A_PW" | GNUPGHOME="$SIGNHOME_PW" gpg --batch --quiet --import
+sec_count_pw="$(GNUPGHOME="$SIGNHOME_PW" gpg --batch --with-colons --list-secret-keys \
+	| { grep -c '^sec:' || true; })"
+check "the import guard admits exactly one secret key" "1" \
+	"$( [ "$sec_count_pw" -eq 1 ] && echo 1 || echo 0 )"
+fpr_pw="$(GNUPGHOME="$SIGNHOME_PW" gpg --batch --with-colons --list-secret-keys \
+	| awk -F: '/^fpr:/{print $10; exit}')"
+check "the fingerprint extract reads the only key (40 hex chars)" "40" "${#fpr_pw}"
+
+# Same sign command the workflow step runs.
+GNUPGHOME="$SIGNHOME_PW" gpg --batch --local-user "$fpr_pw" --armor --detach-sign \
+	--output "$DEB_PW.asc" "$DEB_PW"
+check "the sign command produces a non-empty .asc" "1" \
+	"$( [ -s "$DEB_PW.asc" ] && echo 1 || echo 0 )"
+
+# Detached check: --armor + --detach-sign gives a standalone signature, not
+# the data plus signature. A fixture whose first line appears in the .asc
+# means the sign was made without --detach-sign.
+check "the .asc is detached (does not embed the signed data)" "0" \
+	"$( grep -q 'fake keyring package body' "$DEB_PW.asc" && echo 1 || echo 0 )"
+check "and it carries the armoured PGP signature header" "1" \
+	"$( head -1 "$DEB_PW.asc" | grep -q -- '-----BEGIN PGP SIGNATURE-----' && echo 1 || echo 0 )"
+
+# Verify with the matching public key: must succeed. Use a separate GNUPGHOME
+# so the signing keyring never leaks into the verifier and a passing check
+# here is the verifier alone admitting the signature.
+VRF_PW="$WORK_PW/vrf"
+mkdir -p "$VRF_PW"; chmod 700 "$VRF_PW"
+printf '%s' "$PUB_A_PW" | GNUPGHOME="$VRF_PW" gpg --batch --quiet --import
+if GNUPGHOME="$VRF_PW" gpg --batch --verify "$DEB_PW.asc" "$DEB_PW" >/dev/null 2>&1; then
+	echo "ok    the .asc verifies against the matching public key"
+	pass=$((pass + 1))
+else
+	echo "FAIL  the .asc did not verify against the matching public key"
+	fail=$((fail + 1))
+fi
+
+# Verify with a different public key: must fail (the whole point).
+VRF2_PW="$WORK_PW/vrf2"
+mkdir -p "$VRF2_PW"; chmod 700 "$VRF2_PW"
+printf '%s' "$PUB_B_PW" | GNUPGHOME="$VRF2_PW" gpg --batch --quiet --import
+if GNUPGHOME="$VRF2_PW" gpg --batch --verify "$DEB_PW.asc" "$DEB_PW" >/dev/null 2>&1; then
+	echo "FAIL  the .asc verified against a non-matching public key"
+	fail=$((fail + 1))
+else
+	echo "ok    the .asc does not verify against a non-matching public key"
+	pass=$((pass + 1))
+fi
+
+# Tampered .deb must fail verification against the matching key. The
+# fingerprint check stops an attacker who swapped the key; this is the
+# separate property that the .asc catches an attacker who swapped the
+# bytes after the signature was made.
+cp "$DEB_PW" "$DEB_PW.tampered"
+printf 'injected bytes\n' >> "$DEB_PW.tampered"
+if GNUPGHOME="$VRF_PW" gpg --batch --verify "$DEB_PW.asc" "$DEB_PW.tampered" >/dev/null 2>&1; then
+	echo "FAIL  the .asc verified against a tampered .deb"
+	fail=$((fail + 1))
+else
+	echo "ok    the .asc does not verify against a tampered .deb"
+	pass=$((pass + 1))
+fi
+
+# === behaviour: the download step against a stubbed gh ==============
 echo
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
