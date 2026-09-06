@@ -245,7 +245,15 @@ doing "downloading the archive keyring"
 # --proto-redir=https keeps -L from being talked down to http:// by a redirect.
 # The fingerprint check would still refuse whatever arrived, but there is no
 # reason to fetch a trust anchor over a downgraded connection to find out.
+# --connect-timeout 20 --max-time 300 keeps a stalled connection from hanging
+# the installer indefinitely. --max-filesize bounds the bytes and not the
+# clock: measured against a server streaming 100 bytes per second, a curl with
+# the size cap and no deadline ran until it was killed, and the same call with
+# --max-time returned exit 28 on time. The numbers are generous on purpose,
+# because this runs on a user's link rather than on a runner, and the package
+# is a few kilobytes against an 8 MB ceiling.
 curl -fsSL --proto-redir =https --max-filesize $((8 * 1024 * 1024)) \
+	--connect-timeout 20 --max-time 300 \
 	-o "$workdir/glyndor-archive-keyring.deb" "$KEYRING_URL" \
 	|| fail "could not download $KEYRING_URL (over 8 MB, or the transfer failed)"
 

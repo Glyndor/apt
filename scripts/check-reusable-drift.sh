@@ -92,7 +92,7 @@ for sibling in "${SIBLINGS[@]}"; do
 
 		url="https://raw.githubusercontent.com/$sibling/main/.github/workflows/$name"
 
-		if ! curl -fsSL "$url" > "$tmp/remote" 2>"$tmp/curl.err"; then
+		if ! curl -fsSL --connect-timeout 10 --max-time 60 "$url" > "$tmp/remote" 2>"$tmp/curl.err"; then
 			echo "::error::could not fetch $name from $sibling: the request to GitHub failed" >&2
 			echo "  $url" >&2
 			if [ -s "$tmp/curl.err" ]; then
