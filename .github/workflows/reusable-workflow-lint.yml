@@ -114,50 +114,229 @@ jobs:
       # nothing. `pip install --require-hashes` is the exception because a
       # hash-pinned install resolves nothing, since the artifacts are fixed by
       # the lockfile, so no surprise tree appears.
-      - name: A required test job must not be switchable off by an empty input
+      # A required test job must not be switchable off.
+      #
+      # The previous form of this check was a text match over the test-command
+      # block. Two edits walked straight past it. Job-level `if: false` on the
+      # caller leaves the test-command string untouched, so the grep saw
+      # nothing wrong; GitHub reports a skipped required check as Success and
+      # does not block a merge, so the suite went dark while CI stayed green.
+      # And `true || ./tests/first.test.sh && ./tests/second.test.sh` still
+      # contains the pattern the grep looked for; bash short-circuits the
+      # prefix, so the suite never runs.
+      #
+      # This step now parses the workflow instead. It refuses, each with its
+      # own message naming the file, the job and the reason:
+      #
+      #   - a caller of reusable-shell-ci.yml that carries a job-level `if:`
+      #     of any value. Any conditional on a caller of a required job is a
+      #     switch; a skipped required check reports Success.
+      #   - a test-command whose first non-blank token is not a suite
+      #     invocation. The accepted grammar is a list of
+      #     `./tests/<name>.test.sh` or `bash ./tests/<name>.test.sh`
+      #     invocations joined by `&&`, optionally spread over lines with
+      #     YAML block scalars.
+      #   - the suppression forms: `|| true` anywhere in the command, a
+      #     `true ||` prefix, and a leading `exit 0`. All three make the
+      #     suite go dark without failing the required check.
+      #   - no caller at all, which the previous message already named.
+      #
+      # The grammar is repeated in every refusal except the no-caller one, so
+      # an author who trips the check learns the shape rather than guessing
+      # from "your command is wrong".
+      #
+      # This assertion cannot live in the shell job: that is the job the
+      # `if:` skips, so a check inside it shares the fate of the thing it
+      # would be checking. workflow-lint is a separate required check and
+      # survives.
+      # Requiring at least one caller is half the check, and the half the
+      # previous form left out first. Iterating callers and finding none
+      # passes: "no violations found" and "nothing to look at" produce the
+      # same green, which is the exact failure this assertion was written
+      # against. Deleting tests.yml outright would have walked straight past
+      # it.
+      - name: A required test job must not be switchable off
         run: |
-          set -euo pipefail
-          # reusable-shell-ci.yml's `test` job carries
-          # `if: inputs.test-command != ''`, and `shell / test` is a required
-          # check here. GitHub reports a skipped job as Success and it does not
-          # block a merge even when required, so emptying `test-command` in a
-          # caller -- a one-line deletion that reads as tidying -- would merge
-          # pull requests without running a single test, with nothing red.
-          #
-          # This assertion cannot live in the shell job: that is the job the
-          # `if:` skips, so a check inside it shares the fate of the thing it
-          # would be checking. workflow-lint is a separate required check and
-          # survives.
-          # Requiring at least one caller is half the check, and the half I
-          # left out first. Iterating callers and finding none passes: "no
-          # violations found" and "nothing to look at" produce the same green,
-          # which is the exact failure this assertion was written against.
-          # Deleting tests.yml outright would have walked straight past it.
-          callers=0
-          missing=""
-          for wf in .github/workflows/*.yml; do
-            case "$(basename "$wf")" in reusable-*) continue ;; esac
-            grep -q 'reusable-shell-ci\.yml' "$wf" || continue
-            callers=$((callers + 1))
-            # A caller of reusable-shell-ci must pass a non-empty test-command.
-            # `>-` folds the value onto following lines, so read the block
-            # rather than the single line the key sits on.
-            if ! sed -n '/test-command:/,/^      [a-z-]*:/p' "$wf" \
-                 | grep -qE '\./tests/.*\.test\.sh'; then
-              missing="$missing $wf"
-            fi
-          done
-          if [ "$callers" -eq 0 ]; then
-            echo "::error::no workflow calls reusable-shell-ci, so the required \`shell / test\` check would never report" >&2
-            echo "A required check that is never reported blocks a pull request, but nothing here would have said why." >&2
-            exit 1
-          fi
-          if [ -n "$missing" ]; then
-            echo "::error::a workflow calls reusable-shell-ci without a test-command that runs any suite:$missing" >&2
-            echo "An empty test-command skips the \`test\` job, and a skipped required check reports Success." >&2
-            exit 1
-          fi
-          echo "every reusable-shell-ci caller passes a test-command that runs a suite"
+          python3 - <<'PY'
+          import glob
+          import os
+          import re
+          import sys
+
+          import yaml
+
+          # The reusable that defines the required `shell / test` check.
+          REUSABLE = "reusable-shell-ci.yml"
+
+          # A single suite invocation, as the grammar accepts it: the path
+          # alone, or `bash` in front of it. Names are constrained to what
+          # the shell treats as ordinary characters, so `./tests/a-b_c.test.sh`
+          # and `./tests/a-b_c/inner.test.sh` are accepted but `./tests/*`
+          # is not; the grammar is strict by design.
+          INVOCATION_RE = re.compile(
+              r"^(?:bash )?\./tests/[A-Za-z0-9_./-]+\.test\.sh$"
+          )
+
+          # The three suppression forms. Each is matched against the command
+          # with whitespace normalised: newlines folded to single spaces,
+          # runs of whitespace collapsed.
+          OR_TRUE_RE = re.compile(r"\|\|\s*true")
+          TRUE_OR_PREFIX_RE = re.compile(r"^\s*true\s*\|\|")
+          EXIT_0_PREFIX_RE = re.compile(r"^\s*exit\s+0\b")
+
+          # Repeated in every grammar refusal, so an author
+          # who trips the check learns the shape rather than guessing.
+          GRAMMAR = (
+              "The accepted grammar is a list of `./tests/<name>.test.sh` or "
+              "`bash ./tests/<name>.test.sh` invocations joined by `&&`, "
+              "optionally spread over lines with YAML block scalars"
+          )
+
+
+          def normalize(value):
+              # Block scalars fold newlines to spaces; collapse whitespace
+              # so `&&` is the only separator left to look for.
+              return " ".join(value.split())
+
+
+          def check_test_command(cmd, path, job_id):
+              """Return None on success, else a refusal message that already
+              names the file and the job."""
+              if OR_TRUE_RE.search(cmd):
+                  return (
+                      f"job `{job_id}` in {path} has `|| true` in its "
+                      "test-command. That masks a suite failure: bash "
+                      "short-circuits the suite, and the required check "
+                      "reports Success regardless. " + GRAMMAR + "."
+                  )
+              if TRUE_OR_PREFIX_RE.match(cmd):
+                  return (
+                      f"job `{job_id}` in {path} has a test-command that "
+                      "starts with `true ||`. Bash short-circuits the prefix "
+                      "and skips every suite. " + GRAMMAR + "."
+                  )
+              if EXIT_0_PREFIX_RE.match(cmd):
+                  return (
+                      f"job `{job_id}` in {path} has a test-command that "
+                      "starts with `exit 0`. The shell exits before any "
+                      "suite runs. " + GRAMMAR + "."
+                  )
+              # Grammar: split on `&&`, strip, and every part must be a suite
+              # invocation. An empty part (a stray `&&`) is also a violation
+              # and falls into the empty-part branch below.
+              parts = [p.strip() for p in cmd.split("&&")]
+              if not parts or not parts[0]:
+                  return (
+                      f"job `{job_id}` in {path} has a test-command that "
+                      "names no suite. " + GRAMMAR + "."
+                  )
+              if not INVOCATION_RE.match(parts[0]):
+                  return (
+                      f"job `{job_id}` in {path} has a test-command whose "
+                      "first non-blank token is not a suite invocation. "
+                      + GRAMMAR + "."
+                  )
+              for part in parts[1:]:
+                  if not INVOCATION_RE.match(part):
+                      return (
+                          f"job `{job_id}` in {path} has a test-command whose "
+                          "later invocations do not match the grammar. "
+                          + GRAMMAR + "."
+                      )
+              return None
+
+
+          def main():
+              files = sorted(set(
+                  glob.glob(".github/workflows/*.yml")
+                  + glob.glob(".github/workflows/*.yaml")
+              ))
+
+              callers = 0
+              violations = []
+
+              for path in files:
+                  name = os.path.basename(path)
+                  if name.startswith("reusable-"):
+                      continue
+                  try:
+                      with open(path) as fh:
+                          spec = yaml.safe_load(fh)
+                  except yaml.YAMLError as e:
+                      # Silent skip would hide a misconfigured workflow that
+                      # the caller is going to learn about elsewhere in CI
+                      # for the wrong reason. Warning annotation instead.
+                      print(f"::warning file={path}::skipped: YAML parse error: {e}")
+                      continue
+                  if not isinstance(spec, dict):
+                      continue
+                  jobs = spec.get("jobs") or {}
+                  if not isinstance(jobs, dict):
+                      continue
+                  for job_id, job in jobs.items():
+                      if not isinstance(job, dict):
+                          continue
+                      uses = job.get("uses")
+                      if not isinstance(uses, str) or REUSABLE not in uses:
+                          continue
+                      callers += 1
+                      # Rule: a job-level `if:` on a caller of a required job
+                      # is a switch. Any value: `false`, `inputs.foo`, even
+                      # `true` would skip the call when the expression is
+                      # false, and a skipped required check reports Success.
+                      if "if" in job:
+                          violations.append((
+                              path, job_id,
+                              f"job `{job_id}` in {path} calls `{REUSABLE}` "
+                              "and carries a job-level `if:` of any value. "
+                              "Any conditional on a caller of a required job "
+                              "is a switch: a skipped required check reports "
+                              "Success and does not block a merge. Move the "
+                              "condition into the called workflow's steps, or "
+                              "delete it."
+                          ))
+                          continue
+                      # Rule: the test-command must invoke at least one suite.
+                      with_block = job.get("with")
+                      tc = (
+                          with_block.get("test-command")
+                          if isinstance(with_block, dict) else None
+                      )
+                      if not isinstance(tc, str) or not tc.strip():
+                          violations.append((
+                              path, job_id,
+                              f"job `{job_id}` in {path} calls `{REUSABLE}` "
+                              "without a test-command that runs any suite. "
+                              + GRAMMAR + "."
+                          ))
+                          continue
+                      err = check_test_command(normalize(tc), path, job_id)
+                      if err is not None:
+                          violations.append((path, job_id, err))
+
+              if callers == 0:
+                  print(
+                      "::error::no workflow calls reusable-shell-ci, so the "
+                      "required `shell / test` check would never report"
+                  )
+                  print(
+                      "A required check that is never reported blocks a pull "
+                      "request, but nothing here would have said why."
+                  )
+                  sys.exit(1)
+              if violations:
+                  for path, job_id, msg in violations:
+                      print(f"::error file={path}::{msg}")
+                  sys.exit(1)
+              print(
+                  "every reusable-shell-ci caller passes a test-command that "
+                  "runs a suite"
+              )
+
+
+          if __name__ == "__main__":
+              main()
+          PY
 
       - name: A job holding a secret must not install third-party tooling
         if: ${{ inputs.tooling-isolation }}
