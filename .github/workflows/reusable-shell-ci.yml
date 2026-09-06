@@ -47,6 +47,9 @@ jobs:
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-latest
+    # Bound: 8 to 9s measured. Ten times that, rounded up, never under ten
+    # minutes; the six-hour default is what a hang would otherwise cost.
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -193,6 +196,10 @@ jobs:
     name: test
     if: inputs.test-command != ''
     runs-on: ubuntu-latest
+    # Bound: worst measured run across the three channels is 83s in apt; the
+    # suite grows with the tree. Ten times that, rounded up, never under ten
+    # minutes; the six-hour default is what a hang would otherwise cost.
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}

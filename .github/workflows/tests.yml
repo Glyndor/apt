@@ -57,6 +57,8 @@ jobs:
         && ./tests/reusable-dco.test.sh
         && ./tests/check-editorconfig.test.sh
         && ./tests/check-reusable-drift.test.sh
+        && ./tests/jobs-are-bounded.test.sh
+        && ./tests/network-calls-are-bounded.test.sh
         && ./tests/reusable-dependabot-freshness.test.sh
         && ./tests/reusable-schedule-freshness.test.sh
         && ./tests/reusable-workflow-lint.test.sh

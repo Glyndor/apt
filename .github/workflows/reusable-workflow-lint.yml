@@ -42,6 +42,10 @@ jobs:
   workflow-lint:
     name: workflow-lint
     runs-on: ubuntu-latest
+    # Bound: 15 to 28s measured, and it installs actionlint and shellcheck.
+    # Ten times that, rounded up, never under ten minutes; the six-hour
+    # default is what a hang would otherwise cost.
+    timeout-minutes: 10
     env:
       ACTIONLINT_VERSION: v1.7.12
     steps:
