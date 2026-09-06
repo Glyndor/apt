@@ -305,4 +305,5 @@ check "within the limit passes without asking upstream, even with an unreadable 
 check "and made no git call" "0" "$(git_calls | tr -d ' ')"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

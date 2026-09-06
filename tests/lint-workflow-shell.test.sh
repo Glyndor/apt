@@ -148,4 +148,5 @@ rc=$?
 check "a quoted GitHub expression is not reported as a shell problem" "0" "$rc"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

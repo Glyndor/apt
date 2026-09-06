@@ -125,4 +125,5 @@ assert_error 1 "scripts/check-test-coverage.sh" \
 
 echo
 echo "passed $pass, failed $fail"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -270,4 +270,5 @@ check "and claims only the half it checked" "1" \
 	"$(printf '%s' "$out" | grep -qE 'Automatic security upgrades +on$' && echo 1 || echo 0)"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

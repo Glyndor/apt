@@ -282,4 +282,5 @@ check "and made no request at all" "0" \
 	"$(wc -l < "$WORK/curl.log" | tr -d ' ')"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

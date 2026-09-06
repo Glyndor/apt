@@ -17,6 +17,13 @@ name: Tests
 # anyone noticing -- it sat in tests/, passed by hand, and CI never ran it.
 # tests/ci-runs-every-test.test.sh now fails when that happens again.
 #
+# The first item is the runner and the rest are its arguments. A `&&` chain
+# cannot tell a suite that ran every assertion from one that exited early
+# having run three: both leave a zero status and the chain moves on. Every
+# test file now ends by printing a sentinel after its last assertion, and
+# tests/check-suite-completeness.test.sh requires one from every file it was
+# given, naming the file that did not produce one.
+#
 # Order is roughly cheapest-first, so a broken fixture surfaces before the
 # suites that build .debs and shell out to gpg.
 
@@ -33,38 +40,39 @@ jobs:
     uses: ./.github/workflows/reusable-shell-ci.yml
     with:
       test-command: >-
+        ./tests/check-suite-completeness.test.sh
         ./tests/verify-debs.test.sh
-        && ./tests/verify-published.test.sh
-        && ./tests/build-keyring.test.sh
-        && ./tests/build-repo.test.sh
-        && ./tests/purge-cache.test.sh
-        && ./tests/build-index-page.test.sh
-        && ./tests/build-installers.test.sh
-        && ./tests/install-template.test.sh
-        && ./tests/install-template-behaviour.test.sh
-        && ./tests/unattended-upgrades.test.sh
-        && ./tests/architectures-agree.test.sh
-        && ./tests/readme-bootstrap.test.sh
-        && ./tests/keyring-fingerprints.test.sh
-        && ./tests/publish-workflow.test.sh
-        && ./tests/health-check-workflow.test.sh
-        && ./tests/locale-pinned.test.sh
-        && ./tests/check-test-coverage.test.sh
-        && ./tests/ci-runs-every-test.test.sh
-        && ./tests/lint-workflow-shell.test.sh
-        && ./tests/reusable-line-limit.test.sh
-        && ./tests/reusable-shell-ci.test.sh
-        && ./tests/reusable-empty-diff.test.sh
-        && ./tests/reusable-dco.test.sh
-        && ./tests/check-editorconfig.test.sh
-        && ./tests/check-reusable-drift.test.sh
-        && ./tests/jobs-are-bounded.test.sh
-        && ./tests/workflow-shape.test.sh
-        && ./tests/network-calls-are-bounded.test.sh
-        && ./tests/reusable-dependabot-freshness.test.sh
-        && ./tests/reusable-schedule-freshness.test.sh
-        && ./tests/check-suite-on-main.test.sh
-        && ./tests/reusable-workflow-lint.test.sh
+        ./tests/verify-published.test.sh
+        ./tests/build-keyring.test.sh
+        ./tests/build-repo.test.sh
+        ./tests/purge-cache.test.sh
+        ./tests/build-index-page.test.sh
+        ./tests/build-installers.test.sh
+        ./tests/install-template.test.sh
+        ./tests/install-template-behaviour.test.sh
+        ./tests/unattended-upgrades.test.sh
+        ./tests/architectures-agree.test.sh
+        ./tests/readme-bootstrap.test.sh
+        ./tests/keyring-fingerprints.test.sh
+        ./tests/publish-workflow.test.sh
+        ./tests/health-check-workflow.test.sh
+        ./tests/locale-pinned.test.sh
+        ./tests/check-test-coverage.test.sh
+        ./tests/ci-runs-every-test.test.sh
+        ./tests/lint-workflow-shell.test.sh
+        ./tests/reusable-line-limit.test.sh
+        ./tests/reusable-shell-ci.test.sh
+        ./tests/reusable-empty-diff.test.sh
+        ./tests/reusable-dco.test.sh
+        ./tests/check-editorconfig.test.sh
+        ./tests/check-reusable-drift.test.sh
+        ./tests/jobs-are-bounded.test.sh
+        ./tests/workflow-shape.test.sh
+        ./tests/network-calls-are-bounded.test.sh
+        ./tests/reusable-dependabot-freshness.test.sh
+        ./tests/reusable-schedule-freshness.test.sh
+        ./tests/check-suite-on-main.test.sh
+        ./tests/reusable-workflow-lint.test.sh
       # shellcheck: tests/lint-workflow-shell.test.sh plants a violation and
       # requires the linter to report it, so it needs the linter. The gate
       # itself runs in the shellcheck job against the pinned binary; this one

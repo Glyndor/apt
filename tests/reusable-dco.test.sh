@@ -201,4 +201,5 @@ rc=0; run_merges "$resolved" "$lin" >/dev/null || rc=$?
 check "a range with no merge commit passes" "0" "$rc"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -175,4 +175,5 @@ check "and does not report it as a missing schedule" "0" \
 	"$(printf '%s' "$out" | grep -c 'No successful scheduled run')"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
