@@ -238,7 +238,7 @@ d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'pip install 
 out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
 check "a job holding a secret that pip installs is refused" "1" "$rc"
 check "and the message names the job and the line" "1" \
-	"$(said "$out" 'job `build` installs third-party tooling while holding a secret: `pip install requests`')"
+	"$(said "$out" 'job `build` installs third-party tooling while holding a secret from this job: `pip install requests`')"
 
 # --- the same install pinned by hash is the documented exemption ----------
 d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'pip install --require-hashes -r req.txt'
@@ -294,6 +294,73 @@ jobs:
 EOF
 rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
 check "secrets: inherit on a reusable call is not a secret reference" "0" "$rc"
+
+# --- the bracket-index form secrets['X'] is caught, single-quoted --------
+d="$(new)"
+cat > "$d/.github/workflows/job.yml" <<'EOF'
+name: Job
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets['DEPLOY_TOKEN'] }}
+    steps:
+      - run: |
+          pip install requests
+EOF
+out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
+check "a job holding a secret via secrets['X'] is refused" "1" "$rc"
+check "and the message names the job and the install line" "1" \
+	"$(said "$out" 'job `build` installs third-party tooling while holding a secret from this job: `pip install requests`')"
+check "and the step did not silently pass it" "0" \
+	"$(said "$out" 'no job holding a secret installs')"
+check "and there is no parse-error warning hiding the miss" "0" \
+	"$(said "$out" '::warning')"
+
+# --- the same bracket-index form, double-quoted, is also caught ----------
+d="$(new)"
+cat > "$d/.github/workflows/job.yml" <<'EOF'
+name: Job
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets["DEPLOY_TOKEN"] }}
+    steps:
+      - run: |
+          pip install requests
+EOF
+out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
+check "a job holding a secret via secrets[\"X\"] is refused" "1" "$rc"
+check "and the message names the job and the install line" "1" \
+	"$(said "$out" 'job `build` installs third-party tooling while holding a secret from this job: `pip install requests`')"
+check "and the step did not silently pass it" "0" \
+	"$(said "$out" 'no job holding a secret installs')"
+
+# --- a workflow-level env that holds a secret catches every job -----------
+d="$(new)"
+cat > "$d/.github/workflows/job.yml" <<'EOF'
+name: Job
+on: push
+env:
+  TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          pip install requests
+EOF
+out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
+check "a job whose workflow-level env holds a secret is refused" "1" "$rc"
+check "and the message names the job and the install line" "1" \
+	"$(said "$out" 'job `build` installs third-party tooling while holding a secret from the workflow-level `env:`: `pip install requests`')"
+check "and the step did not silently pass it" "0" \
+	"$(said "$out" 'no job holding a secret installs')"
+check "and there is no parse-error warning hiding the miss" "0" \
+	"$(said "$out" '::warning')"
 
 # --- an unparseable workflow is a warning, not a silent skip -------------
 d="$(new)"; printf 'name: [\n' > "$d/.github/workflows/broken.yml"
