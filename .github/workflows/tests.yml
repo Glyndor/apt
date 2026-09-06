@@ -45,6 +45,7 @@ jobs:
         && ./tests/unattended-upgrades.test.sh
         && ./tests/architectures-agree.test.sh
         && ./tests/readme-bootstrap.test.sh
+        && ./tests/keyring-fingerprints.test.sh
         && ./tests/publish-workflow.test.sh
         && ./tests/health-check-workflow.test.sh
         && ./tests/locale-pinned.test.sh
