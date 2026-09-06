@@ -37,7 +37,7 @@ check() { # <description> <expected> <actual>
 	fi
 }
 
-for tool in gpg dpkg-deb curl; do
+for tool in gpg dpkg-deb curl python3 openssl; do
 	command -v "$tool" >/dev/null 2>&1 || {
 		echo "NOTE  $tool is not installed here, so nothing below could run."
 		echo "      This is not a pass. Install $tool and run again."
@@ -313,6 +313,123 @@ rc=0; run_installer "$WORK/huge.deb" "$FPR_GOOD" || rc=$?
 check "a download larger than the cap is refused" "1" "$rc"
 check "and it is refused at the download, not later" "1" "$(said 'could not download')"
 check "and nothing was installed" "0" "$(installed)"
+
+# --- a redirect from https to http is refused --------------------------------
+#
+# The keyring is fetched over https, and that matters across redirects, not
+# only on the first hop. A 302 from a trusted origin to http:// would have
+# curl follow it (because -L is set), and the installer would then trust a
+# trust anchor fetched in cleartext. The fingerprint check would still refuse
+# whatever arrived, but there is no reason to fetch a trust anchor over a
+# downgraded connection to find out: --proto-redir =https refuses the redirect
+# before it is followed, so the refusal is at the download rather than at the
+# fingerprint check.
+#
+# The redirect target serves a VALID keyring carrying the expected fingerprint,
+# otherwise removing the flag would make this case pass for the wrong reason:
+# curl would follow the redirect, the fingerprint check would refuse whatever
+# arrived, and "could not download" would not be in the output. A successful
+# install behind the removed flag is what proves the protection was actually
+# exercised, and three failing assertions (exit code, attribution, marker) are
+# what names the protection in the failure log.
+#
+# The cert is self-signed, with a SAN for 127.0.0.1 so curl accepts it once
+# CURL_CA_BUNDLE points at it. Without that env var curl would refuse the cert
+# before reaching the redirect, and the case would pass with the flag removed:
+# the failure attributed to "cert not trusted" rather than to the redirect that
+# has been followed.
+HTTPS_PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
+HTTP_PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
+openssl req -x509 -newkey rsa:2048 \
+	-keyout "$WORK/cert.key" -out "$WORK/cert.pem" -days 1 -nodes \
+	-subj "/CN=localhost" \
+	-addext "subjectAltName = IP:127.0.0.1" >/dev/null 2>&1
+DEB_REDIRECT="$(mkdeb good good no)"
+HTTPS_URL="https://127.0.0.1:$HTTPS_PORT/glyndor-archive-keyring.deb"
+HTTP_TARGET="http://127.0.0.1:$HTTP_PORT/glyndor-archive-keyring.deb"
+
+# One process, two ports: HTTPS returns 302 to the HTTP port, HTTP serves the
+# keyring. Daemon threads do the serving; the main thread blocks on a signal
+# so SIGTERM stops the process promptly instead of waiting out a sleep.
+WORK="$WORK" HTTPS_PORT="$HTTPS_PORT" HTTP_PORT="$HTTP_PORT" \
+	HTTP_TARGET="$HTTP_TARGET" KEYRING_DEB="$DEB_REDIRECT" \
+	python3 - >"$WORK/srv.log" 2>&1 <<'PYEOF' &
+import http.server, ssl, socketserver, threading, signal, os
+WORK = os.environ['WORK']
+HTTPS_PORT = int(os.environ['HTTPS_PORT'])
+HTTP_PORT = int(os.environ['HTTP_PORT'])
+HTTP_TARGET = os.environ['HTTP_TARGET']
+KEYRING_DEB = os.environ['KEYRING_DEB']
+class RedirHandler(http.server.BaseHTTPRequestHandler):
+	def do_GET(self):
+		try:
+			self.send_response(302)
+			self.send_header('Location', HTTP_TARGET)
+			self.end_headers()
+		except (BrokenPipeError, ConnectionResetError):
+			pass
+	def log_message(self, *a, **k): pass
+class DebHandler(http.server.BaseHTTPRequestHandler):
+	def do_GET(self):
+		try:
+			with open(KEYRING_DEB, 'rb') as f:
+				data = f.read()
+			self.send_response(200)
+			self.send_header('Content-Type', 'application/octet-stream')
+			self.send_header('Content-Length', str(len(data)))
+			self.end_headers()
+			self.wfile.write(data)
+		except (BrokenPipeError, ConnectionResetError):
+			pass
+	def log_message(self, *a, **k): pass
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ctx.load_cert_chain(f'{WORK}/cert.pem', f'{WORK}/cert.key')
+httpd = socketserver.TCPServer(('127.0.0.1', HTTPS_PORT), RedirHandler)
+httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+threading.Thread(target=httpd.serve_forever, daemon=True).start()
+httpd2 = socketserver.TCPServer(('127.0.0.1', HTTP_PORT), DebHandler)
+threading.Thread(target=httpd2.serve_forever, daemon=True).start()
+stop = threading.Event()
+signal.signal(signal.SIGTERM, lambda *_: stop.set())
+signal.signal(signal.SIGINT, lambda *_: stop.set())
+with open(f'{WORK}/srv.ready', 'w') as f:
+	f.write('ok')
+stop.wait()
+PYEOF
+SRV_PID=$!
+
+# Poll for readiness rather than sleeping a guessed interval, so the suite is
+# deterministic on a slow runner. A server that never came up is a missing
+# fixture, not a passing test.
+for _ in $(seq 1 50); do
+	[ -f "$WORK/srv.ready" ] && break
+	sleep 0.1
+done
+if [ ! -f "$WORK/srv.ready" ]; then
+	kill "$SRV_PID" 2>/dev/null
+	echo "NOTE  the local redirect server never came up; the redirect case could not run."
+	echo "      This is not a pass."
+	exit 1
+fi
+
+rm -f "$WORK/marker"
+sed 's/@PRODUCT@/testpkg/g' "$TEMPLATE" > "$WORK/install.sh"
+mkdir -p "$WORK/apt.conf.d"
+env -i PATH="$BIN:$PATH" HOME="$WORK" \
+	DPKG_MARKER="$WORK/marker" \
+	KEYRING_URL="$HTTPS_URL" \
+	GLYNDOR_APT_FPR="$FPR_GOOD" \
+	APT_CONF_D="$WORK/apt.conf.d" \
+	CURL_CA_BUNDLE="$WORK/cert.pem" \
+	/bin/sh "$WORK/install.sh" >"$WORK/out" 2>&1
+rc=$?
+
+check "a redirect from https to http is refused" "1" "$rc"
+check "and it is refused at the download, not later" "1" "$(said 'could not download')"
+check "and nothing was installed" "0" "$(installed)"
+
+kill "$SRV_PID" 2>/dev/null
+wait "$SRV_PID" 2>/dev/null
 
 # --- a .deb carrying no keyring at all --------------------------------------
 #
