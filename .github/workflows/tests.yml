@@ -59,6 +59,7 @@ jobs:
         && ./tests/check-editorconfig.test.sh
         && ./tests/check-reusable-drift.test.sh
         && ./tests/jobs-are-bounded.test.sh
+        && ./tests/workflow-shape.test.sh
         && ./tests/network-calls-are-bounded.test.sh
         && ./tests/reusable-dependabot-freshness.test.sh
         && ./tests/reusable-schedule-freshness.test.sh

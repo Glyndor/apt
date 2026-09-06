@@ -13,10 +13,6 @@ name: Drift
 # such change would deadlock: three pull requests, none mergeable until the
 # others merge.
 #
-# On push to main instead, the first merge reports drift, which is true and
-# is the reminder to carry the change across. The schedule then keeps
-# reporting until it is carried, so a half-applied change cannot go quiet.
-# Drift is not urgent within hours, so daily is enough.
 # Schedule and a manual button, and deliberately NOT `push: main`. Removing
 # that trigger is what fixes two defects at once, and both are worth naming
 # because re-adding it brings them back and neither is visible from the code.
