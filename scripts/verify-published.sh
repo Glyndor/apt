@@ -75,6 +75,11 @@ MAX_ENTRIES="${VERIFY_PUBLISHED_MAX_ENTRIES:-200}"
 # A package is a real binary, so it gets its own, larger per-object cap, kept
 # in step with the per-.deb cap publish.yml enforces on the way in.
 MAX_POOL_OBJECT_BYTES=$((300 * 1024 * 1024))
+
+# The detached signature over the bootstrap keyring package. An armoured Ed25519
+# signature is a few hundred bytes; this is the same generous-but-finite shape
+# as the caps above.
+MAX_BOOTSTRAP_SIG_BYTES=$((64 * 1024))
 # And a budget for the whole pool. The archive is latest-only, so this grows
 # with the number of products rather than with time; blowing through it means
 # the check needs redesigning, which should be an error and not a slow publish.
@@ -150,6 +155,25 @@ declared_packages() {
 			filename = ""; size = ""; hash = ""
 		}
 		END { if (filename != "") { print hash, size, filename } }
+	' "$1"
+}
+
+# declared_entry <verified-index-body> <package-name>
+# Emits "<sha256> <size> <filename>" for one package's stanza. Same parse as
+# declared_packages, keyed on the name rather than emitting everything, because
+# the caller wants one specific package and matching on the pool path instead
+# would be a second place that knows how reprepro lays the pool out.
+declared_entry() {
+	awk -v want="$2" '
+		/^Package:/ { name = $2 }
+		/^Filename:/ { filename = $2 }
+		/^Size:/ { size = $2 }
+		/^SHA256:/ { hash = $2 }
+		/^[[:space:]]*$/ {
+			if (name == want && filename != "") { print hash, size, filename; exit }
+			name = ""; filename = ""; size = ""; hash = ""
+		}
+		END { if (name == want && filename != "") { print hash, size, filename } }
 	' "$1"
 }
 
@@ -347,3 +371,77 @@ fi
 
 echo "the verified indices declare $pool_count package(s), $pool_bytes byte(s)"
 verify_set "package(s)" "$WORK/pool-entries" "" "$MAX_POOL_OBJECT_BYTES" ""
+
+# --- The bootstrap pair ------------------------------------------------------
+
+# Everything above walks the chain an apt CLIENT follows. Nobody arrives as an
+# apt client: the first command a stranger runs pipes the installer into a root
+# shell, and that installer downloads two files served from the ROOT of the
+# archive, outside dists/ and outside pool/.
+#
+# So nothing above reads them back. The run could report success with the root
+# copy of the keyring missing, truncated, or left over from a previous publish,
+# and the first thing to notice would be somebody running the install line.
+#
+# The keyring package is served twice: once in pool/, declared by the signed
+# index and verified above, and once at the root under a fixed name, which is
+# the copy the installer fetches. They are the same bytes by construction, so
+# the pool object's SIGNED hash is what the root copy is held to. That is what
+# ties the bootstrap copy into the same signed chain as everything else, rather
+# than into a second opinion about it.
+KEYRING_PACKAGE="glyndor-archive-keyring"
+BOOTSTRAP_DEB="$KEYRING_PACKAGE.deb"
+
+: > "$WORK/bootstrap-entry"
+shopt -s nullglob
+for index in "$WORK"/indices/*_Packages; do
+	declared_entry "$index" "$KEYRING_PACKAGE" > "$WORK/bootstrap-entry"
+	[ -s "$WORK/bootstrap-entry" ] && break
+done
+shopt -u nullglob
+
+if [ ! -s "$WORK/bootstrap-entry" ]; then
+	echo "::error::the verified indices declare no $KEYRING_PACKAGE; the archive cannot be bootstrapped and the install line is broken" >&2
+	exit 1
+fi
+
+# Re-key the entry onto the root path. The hash and size stay the ones the
+# signed index declares; only the URL changes, which is the whole point.
+awk -v name="$BOOTSTRAP_DEB" '{ print $1, $2, name }' \
+	"$WORK/bootstrap-entry" > "$WORK/bootstrap-entries"
+
+echo "the signed index pins the bootstrap keyring package"
+verify_set "bootstrap package" "$WORK/bootstrap-entries" "" \
+	"$MAX_POOL_OBJECT_BYTES" "$WORK/bootstrap"
+
+# And the detached signature beside it. This one is not in any index -- an
+# index declares what apt fetches, and apt never fetches this -- so it is
+# checked cryptographically rather than by hash: the archive key must have
+# signed the bytes that were just verified above.
+#
+# gpgv against the key this script already imported, which is the repository's
+# own published key, not the one inside the downloaded package. The installer
+# has to read the key out of the package because it has nothing else; here the
+# real key is on disk, so use it and check the stronger property.
+#
+# Retried on the same schedule as everything else. The Cloudflare purge is
+# asynchronous, and this file has exactly the staleness window the purge exists
+# to close: a root object under a fixed name, served for a day.
+bootstrap_sig_ok=0
+for attempt in $(seq 1 "$ATTEMPTS"); do
+	if fetch "$BASE_URL/$BOOTSTRAP_DEB.asc" "$WORK/bootstrap.asc" \
+		"$MAX_BOOTSTRAP_SIG_BYTES" \
+		&& gpgv --keyring "$GNUPGHOME/pubring.kbx" --quiet \
+			"$WORK/bootstrap.asc" "$WORK/bootstrap/$BOOTSTRAP_DEB" 2>/dev/null; then
+		bootstrap_sig_ok=1
+		break
+	fi
+	[ "$attempt" -lt "$ATTEMPTS" ] && sleep "$DELAY"
+done
+
+if [ "$bootstrap_sig_ok" -ne 1 ]; then
+	echo "::error::$BOOTSTRAP_DEB.asc is missing or does not verify against the archive key, after $ATTEMPTS attempt(s); the install line refuses a package whose signature does not check out, so this archive cannot be bootstrapped" >&2
+	exit 1
+fi
+
+echo "the bootstrap keyring package and its signature are served as signed"

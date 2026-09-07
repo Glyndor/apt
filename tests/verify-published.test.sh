@@ -174,12 +174,26 @@ write_release() {
 		--local-user "$key" --armor --detach-sign --output "$DIST/Release.gpg" "$DIST/Release"
 }
 
+# write_bootstrap <signing-key>: the two files served from the ROOT of the
+# archive, which is where the install line fetches from. The package is a COPY
+# of the pool object, byte for byte, the way publish.yml copies it: that is what
+# lets the signed index pin the root copy without declaring it.
+write_bootstrap() {
+	cp "$SITE/$KEYRING_DEB" "$SITE/glyndor-archive-keyring.deb"
+	gpg --batch --yes --quiet --pinentry-mode loopback --passphrase '' \
+		--local-user "$1" --armor --detach-sign \
+		--output "$SITE/glyndor-archive-keyring.deb.asc" \
+		"$SITE/glyndor-archive-keyring.deb"
+}
+
 # build_archive [<signing-key>]: a consistent archive, from scratch.
 build_archive() {
+	local key="${1:-$TRUSTED_KEY}"
 	rm -rf "$SITE"
 	mkdir -p "$DIST"
 	write_indices
-	write_release "${1:-$TRUSTED_KEY}"
+	write_release "$key"
+	write_bootstrap "$key"
 }
 
 # --- Local HTTP server -------------------------------------------------------
@@ -338,6 +352,62 @@ sed -i "s|Filename: $PODUP_POOL/podup_1.12.0_amd64.deb|Filename: pool/../../etc/
 	"$DIST/main/binary-amd64/Packages"
 write_release "$TRUSTED_KEY"
 assert_error 1 "not a plain relative path" "a traversal path in a verified index is rejected" -- run
+
+# --- The bootstrap pair: what the install line actually fetches --------------
+#
+# Nobody arrives as an apt client. The first command a stranger runs pipes the
+# installer into a root shell, and that installer fetches two files from the
+# ROOT of the archive, outside dists/ and outside pool/. Every case above walks
+# the chain apt walks and reaches neither of them.
+
+build_archive
+rm "$SITE/glyndor-archive-keyring.deb"
+assert_error 1 "glyndor-archive-keyring.deb" "a missing bootstrap package is rejected" -- run
+
+build_archive
+# The root copy diverging from the pool object is the case the signed index can
+# catch and nothing else can: same name, different bytes, and apt never looks.
+printf 'a different keyring deb\n' > "$SITE/glyndor-archive-keyring.deb"
+assert_error 1 "mismatch" "a bootstrap package that is not the signed one is rejected" -- run
+
+build_archive
+rm "$SITE/glyndor-archive-keyring.deb.asc"
+assert_error 1 "does not verify against the archive key" "a bootstrap package served without its signature is rejected" -- run
+
+build_archive
+# A real signature over the real bytes, by a key the archive does not publish.
+# This is the one the installer cannot catch on its own: it reads the key out of
+# the package it just downloaded, while this script holds the published key.
+gpg --batch --yes --quiet --pinentry-mode loopback --passphrase '' \
+	--local-user "$UNTRUSTED_KEY" --armor --detach-sign \
+	--output "$SITE/glyndor-archive-keyring.deb.asc" \
+	"$SITE/glyndor-archive-keyring.deb"
+assert_error 1 "does not verify against the archive key" "a bootstrap signature by an untrusted key is rejected" -- run
+
+build_archive
+# A valid signature by the right key over DIFFERENT bytes, which is what an
+# attacker keeps when they rebuild the package around the published key.
+printf 'other bytes\n' > "$WORK/other"
+gpg --batch --yes --quiet --pinentry-mode loopback --passphrase '' \
+	--local-user "$TRUSTED_KEY" --armor --detach-sign \
+	--output "$SITE/glyndor-archive-keyring.deb.asc" "$WORK/other"
+assert_error 1 "does not verify against the archive key" "a bootstrap signature made over other bytes is rejected" -- run
+
+build_archive
+: > "$SITE/glyndor-archive-keyring.deb.asc"
+assert_error 1 "does not verify against the archive key" "an empty bootstrap signature is rejected" -- run
+
+build_archive
+# An archive that carries no keyring package at all cannot be bootstrapped, and
+# saying "0 of 0 verified" over it would be the emptiest kind of green.
+sed -i '/^Package: glyndor-archive-keyring$/,/^$/d' \
+	"$DIST/main/binary-amd64/Packages" "$DIST/main/binary-arm64/Packages"
+write_release "$TRUSTED_KEY"
+assert_error 1 "declare no glyndor-archive-keyring" "an archive declaring no keyring package is rejected" -- run
+
+build_archive
+assert_says 0 "bootstrap keyring package and its signature are served as signed" \
+	"a consistent archive says its bootstrap pair was checked" -- run
 
 # --- The caps: bounded work, not just bounded objects ------------------------
 # The two caps are the only thing keeping a hostile or runaway index from
