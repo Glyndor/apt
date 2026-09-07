@@ -99,6 +99,68 @@ POST
 		chmod 755 "$root/DEBIAN/postinst"
 	fi
 	dpkg-deb --root-owner-group --build "$root" "$WORK/$name.deb" >/dev/null 2>&1
+	# Every fixture is signed by a key its own keyring carries, so a refusal
+	# below is the one the case is about. Defaulting to the first of $2 is what
+	# keeps that true without every call site having to say it: the evil-keyring
+	# fixture is signed by evil, the rotation fixture by good, and both are then
+	# correct in every respect except the one under test.
+	sign_deb "${4:-${uids%% *}}" "$WORK/$name.deb"
+	echo "$WORK/$name.deb"
+}
+
+# $1=uid whose key signs  $2=package to sign, written to <package>.asc
+sign_deb() {
+	# --yes matters more than it looks. Without it gpg refuses to overwrite an
+	# existing .asc, --batch turns that refusal into a silent non-zero, and the
+	# PREVIOUS signature stays on disk next to a package that was just rebuilt
+	# with new timestamps. Measured: six cases went green against a stale
+	# signature, including the one asserting that a signature by an outside key
+	# is refused, which was passing because no outside key had signed anything.
+	GNUPGHOME="$WORK/gnupg-$1" gpg --batch --yes --quiet --pinentry-mode loopback \
+		--passphrase '' --local-user "$1" --armor --detach-sign \
+		--output "$2.asc" "$2" >/dev/null 2>&1
+}
+
+# A package that keeps a signature made over DIFFERENT bytes.
+#
+# This is what the fingerprint check cannot see, and it needs no stolen key.
+# The attacker takes the published package, which carries the genuine archive
+# key, adds a payload, and serves the published signature next to it. The key
+# inside is the real one, so every check that reads only the key passes.
+#
+# Both payloads reach root. `postinst` is executed by `dpkg -i`. `sources` needs
+# no maintainer script at all: `Trusted: yes` switches off verification for
+# everything apt then fetches from that source.
+#
+# $1=name  $2=postinst|sources
+mktampered() {
+	local name="$1" payload="$2"
+	local root="$WORK/pkg-$name"
+	rm -rf "$root"
+	mkdir -p "$root/DEBIAN" "$root/usr/share/keyrings"
+	printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' \
+		> "$root/DEBIAN/control"
+	export_ring good "$root/usr/share/keyrings/glyndor.gpg"
+
+	# The legitimate pair first: this is what the archive publishes, and the
+	# signature the attacker keeps.
+	dpkg-deb --root-owner-group --build "$root" "$WORK/$name.deb" >/dev/null 2>&1
+	sign_deb good "$WORK/$name.deb"
+
+	# Now the payload, and rebuild over the same path. Same keyring, same genuine
+	# key, different bytes, and the signature from a moment ago left in place.
+	case "$payload" in
+		postinst)
+			printf '#!/bin/sh\ntouch /tmp/pwned\n' > "$root/DEBIAN/postinst"
+			chmod 755 "$root/DEBIAN/postinst"
+			;;
+		sources)
+			mkdir -p "$root/etc/apt/sources.list.d"
+			printf 'Types: deb\nURIs: http://attacker.test.invalid\nSuites: stable\nComponents: main\nTrusted: yes\n' \
+				> "$root/etc/apt/sources.list.d/glyndor.sources"
+			;;
+	esac
+	dpkg-deb --root-owner-group --build "$root" "$WORK/$name.deb" >/dev/null 2>&1
 	echo "$WORK/$name.deb"
 }
 
@@ -219,6 +281,82 @@ check "and it is refused for the key, not something else" "1" \
 check "and its maintainer script was never given the chance to run" "0" \
 	"$(installed)"
 
+# --- the package is authenticated, not just the key inside it ---------------
+#
+# The case above is refused because the key is wrong. Keep the key right and
+# every check that reads only the key passes: the published package carries the
+# genuine archive key, so an attacker who can serve the download rebuilds it
+# around that key with a payload of their own and keeps the published signature.
+#
+# Nothing here is signed by a key the attacker does not have. The refusal comes
+# from the bytes having changed after the signature was made.
+DEB="$(mktampered tampered-postinst postinst)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a package rebuilt around the genuine key is refused" "1" "$rc"
+check "and it is refused for the signature, not the key" "1" \
+	"$(said 'not signed by the archive key')"
+check "and dpkg -i was never reached" "0" "$(installed)"
+# The half that makes the assertion above mean something. If the fingerprint
+# check had refused this fixture, the case would pass while proving the old
+# property again, which is exactly how the hostile fixture above passed for
+# years without ever reaching the payload.
+check "and the fingerprint check passed it first" "1" \
+	"$(said 'Key fingerprint verified')"
+
+# The second payload named in the issue, and the one that needs no maintainer
+# script: `Trusted: yes` in the sources file this package installs turns off
+# verification for everything apt fetches from that source afterwards.
+DEB="$(mktampered tampered-sources sources)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a package carrying a rewritten sources file is refused" "1" "$rc"
+check "and it too is refused for the signature" "1" \
+	"$(said 'not signed by the archive key')"
+check "and the fingerprint check passed it first" "1" \
+	"$(said 'Key fingerprint verified')"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+# --- the signature has to come from the key the package carries -------------
+#
+# A correct package with a signature made by a key that is not in its keyring.
+# The fingerprint check reads the keyring and is satisfied; only verifying
+# against that same keyring rejects this.
+DEB="$(mkdeb signed-by-other good no)"
+sign_deb evil "$DEB"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a signature by a key outside the keyring is refused" "1" "$rc"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+# --- a signature that is missing, empty or not a signature ------------------
+#
+# Whoever can substitute the package can also answer with a 404 or a truncated
+# body, and the one thing that must never happen is falling back to the
+# fingerprint check on its own.
+DEB="$(mkdeb sig-absent good no)"
+rm -f "$DEB.asc"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a package served without its signature is refused" "1" "$rc"
+check "and says the signature could not be downloaded" "1" \
+	"$(said 'could not download')"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+DEB="$(mkdeb sig-empty good no)"
+: > "$DEB.asc"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "an empty signature is refused" "1" "$rc"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+DEB="$(mkdeb sig-truncated good no)"
+head -c 60 "$DEB.asc" > "$WORK/trunc.asc" && mv "$WORK/trunc.asc" "$DEB.asc"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a truncated signature is refused" "1" "$rc"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+DEB="$(mkdeb sig-garbage good no)"
+printf 'not a signature at all\n' > "$DEB.asc"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a signature that is not one is refused" "1" "$rc"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
 # --- the published fingerprint can be pasted in the form it is published -----
 #
 # gpg prints a fingerprint in groups, and the README publishes it that way. The
@@ -281,6 +419,10 @@ check "and nothing was installed" "0" "$(installed)"
 
 # --- something that is not a .deb -------------------------------------------
 printf 'this is not a debian package' > "$WORK/junk.deb"
+# The signature is fetched before anything is unpacked, so a fixture without one
+# would be refused at the download and this case would stop being about the
+# package at all. Its content does not matter: extraction fails first.
+printf 'not a signature\n' > "$WORK/junk.deb.asc"
 rc=0; run_installer "$WORK/junk.deb" "$FPR_GOOD" || rc=$?
 check "a download that is not a .deb is refused" "1" "$rc"
 check "and says extraction failed" "1" "$(said 'could not extract')"
@@ -322,6 +464,9 @@ root="$WORK/pkg-empty"; mkdir -p "$root/DEBIAN"
 printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' \
 	> "$root/DEBIAN/control"
 dpkg-deb --root-owner-group --build "$root" "$WORK/empty.deb" >/dev/null 2>&1
+# Signed by a real key, so this case is refused for the missing keyring rather
+# than for a signature that was never made.
+sign_deb good "$WORK/empty.deb"
 rc=0; run_installer "$WORK/empty.deb" "$FPR_GOOD" || rc=$?
 check "a package shipping no keyring is refused" "1" "$rc"
 check "and nothing was installed" "0" "$(installed)"

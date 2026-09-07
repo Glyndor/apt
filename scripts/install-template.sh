@@ -30,6 +30,12 @@ set -eu
 KEYRING_URL="${KEYRING_URL:-https://apt.glyndor.net/glyndor-archive-keyring.deb}"
 KEYRING_PATH="/usr/share/keyrings/glyndor.gpg"
 
+# Derived rather than overridable, deliberately. A separate variable would let a
+# copied command line point the package at one host and its signature at
+# another, which is the one arrangement that makes the check below meaningless.
+# Moving the package moves its signature with it.
+KEYRING_SIG_URL="$KEYRING_URL.asc"
+
 # Fingerprint of the archive signing key. Downloading the keyring package is the
 # one step that has nothing but the transport behind it; checking what it
 # installed against this constant is what closes that window. Override for a
@@ -257,6 +263,17 @@ curl -fsSL --proto-redir =https --max-filesize $((8 * 1024 * 1024)) \
 	-o "$workdir/glyndor-archive-keyring.deb" "$KEYRING_URL" \
 	|| fail "could not download $KEYRING_URL (over 8 MB, or the transfer failed)"
 
+# And the detached signature over it, under the same bounds against a smaller
+# ceiling: an armoured Ed25519 signature is a few hundred bytes.
+#
+# Fetched here rather than after the checks below so that both halves of what
+# is served arrive together. A server that answers with the package and not the
+# signature is refused before anything is unpacked.
+curl -fsSL --proto-redir =https --max-filesize $((64 * 1024)) \
+	--connect-timeout 20 --max-time 300 \
+	-o "$workdir/glyndor-archive-keyring.deb.asc" "$KEYRING_SIG_URL" \
+	|| fail "could not download $KEYRING_SIG_URL (over 64 KB, or the transfer failed)"
+
 # Extract WITHOUT installing. `dpkg-deb -x` unpacks the data archive and runs no
 # maintainer script, so nothing from the downloaded package executes until its
 # key has been checked. `dpkg -i` here would run preinst/postinst as root, and
@@ -330,6 +347,62 @@ printf '%s\n' "$GLYNDOR_APT_FPR" | while IFS= read -r f; do
 	[ -n "$f" ] || continue
 	note "$(printf '%s' "$f" | sed -E 's/(.{4})/\1 /g; s/ $//; s/^(([0-9A-F]{4} ){5})/\1 /')"
 done
+doing "checking the archive signature"
+
+# The check above authenticates the KEY. It says nothing about the package that
+# carried it, and the package is what runs as root a few lines down.
+#
+# Two payloads pass everything up to this point. A substituted .deb can ship the
+# genuine key alongside a hostile postinst, which `dpkg -i` executes. It can
+# also ship a glyndor.sources carrying `Trusted: yes`, which turns off
+# verification for everything apt subsequently fetches from that source, and
+# needs no maintainer script at all. The precondition for both is the one this
+# script already trusts once: whoever can serve the download.
+#
+# So verify the detached signature over the WHOLE package with the key that was
+# just authenticated. The pinned fingerprint authenticates the key, the key
+# authenticates the bytes. Substituting the package means keeping the genuine
+# key to get past the fingerprint check, and then being unable to produce a
+# signature over the substituted bytes here.
+#
+# gpg and not gpgv, although gpgv is the narrower tool. gpg is already
+# guaranteed: the block near the top installs gnupg when it is missing and the
+# exit trap purges it again. gpgv is a separate binary that apt declares as
+# `gpgv | gpgv2 | gpgv1` on some releases, and Debian trixie's apt depends on
+# sqv instead, so requiring it would mean provisioning and removing a second
+# package for one call.
+#
+# The exit status is the entire result, read directly rather than by grepping
+# the output for "Good signature". That text is localised, and the pipeline
+# trap described further up applies here as well.
+#
+# Measured with gpg 2.4.8, with the key present ONLY in --keyring and never
+# imported into any trust store: a good signature exits 0, a package modified
+# after signing exits 1, and a signature made by a key outside the keyring, a
+# truncated one, an empty one and an absent file all exit 2. That an untrusted
+# key still exits 0 is what makes --keyring on its own the right shape here:
+# trust is not gpg's to decide, it comes from the fingerprint check above.
+#
+# The keyring argument has to be absolute. gpg resolves a bare relative
+# --keyring path against GNUPGHOME rather than the working directory and then
+# does not find the key, with nothing on screen saying so: measured, the call
+# that exits 0 with an absolute path exits 2 with the same file named
+# relatively. $workdir comes from `mktemp -d`, so it is absolute.
+#
+# GNUPGHOME points inside the work directory so that verifying leaves nothing
+# behind on the machine, the same promise the rest of this script keeps. stdin
+# is redirected because this script is itself being read from stdin by the shell
+# running it, and an unredirected child would consume the rest of the program.
+mkdir -p "$workdir/gnupg"
+chmod 700 "$workdir/gnupg"
+GNUPGHOME="$workdir/gnupg" gpg --no-default-keyring \
+	--keyring "$workdir/extracted$KEYRING_PATH" \
+	--verify "$workdir/glyndor-archive-keyring.deb.asc" \
+	"$workdir/glyndor-archive-keyring.deb" </dev/null >/dev/null 2>&1 \
+	|| fail "the downloaded package is not signed by the archive key it carries; nothing was installed"
+
+step "Package signature verified"
+
 doing "installing the keyring"
 dpkg -i "$workdir/glyndor-archive-keyring.deb" >/dev/null \
 	|| fail "could not install the keyring package"
