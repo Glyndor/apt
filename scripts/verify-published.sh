@@ -164,16 +164,29 @@ declared_packages() {
 # the caller wants one specific package and matching on the pool path instead
 # would be a second place that knows how reprepro lays the pool out.
 declared_entry() {
+	# The `found` flag is not decoration. awk's `exit` runs the END block on its
+	# way out, and END's guard was still true with the stanza's fields still set,
+	# so the matching entry printed TWICE: once from the blank-line rule and once
+	# from END. Measured in run 34171012608 against the live archive, where the
+	# gate reported "all 2 bootstrap package" over a single object and fetched it
+	# twice. Every test passed through it, because they all assert a refusal or
+	# the closing message and none asserted the count.
 	awk -v want="$2" '
 		/^Package:/ { name = $2 }
 		/^Filename:/ { filename = $2 }
 		/^Size:/ { size = $2 }
 		/^SHA256:/ { hash = $2 }
 		/^[[:space:]]*$/ {
-			if (name == want && filename != "") { print hash, size, filename; exit }
+			if (name == want && filename != "") {
+				print hash, size, filename; found = 1; exit
+			}
 			name = ""; filename = ""; size = ""; hash = ""
 		}
-		END { if (name == want && filename != "") { print hash, size, filename } }
+		END {
+			if (!found && name == want && filename != "") {
+				print hash, size, filename
+			}
+		}
 	' "$1"
 }
 
@@ -411,7 +424,7 @@ awk -v name="$BOOTSTRAP_DEB" '{ print $1, $2, name }' \
 	"$WORK/bootstrap-entry" > "$WORK/bootstrap-entries"
 
 echo "the signed index pins the bootstrap keyring package"
-verify_set "bootstrap package" "$WORK/bootstrap-entries" "" \
+verify_set "bootstrap package(s)" "$WORK/bootstrap-entries" "" \
 	"$MAX_POOL_OBJECT_BYTES" "$WORK/bootstrap"
 
 # And the detached signature beside it. This one is not in any index -- an

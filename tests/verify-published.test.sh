@@ -409,6 +409,16 @@ build_archive
 assert_says 0 "bootstrap keyring package and its signature are served as signed" \
 	"a consistent archive says its bootstrap pair was checked" -- run
 
+build_archive
+# One object, fetched once. The stanza parser used to emit the matching entry
+# twice, because awk's `exit` runs END on its way out and END's guard was still
+# true, and the gate then downloaded and checked the same package twice while
+# reporting "all 2". Every other case here passed straight through it: they
+# assert refusals and the closing message, and a duplicate changes neither.
+# Asserting the count is what makes the duplicate visible.
+assert_says 0 "all 1 bootstrap package(s)" \
+	"the bootstrap package is counted once, not once per parse path" -- run
+
 # --- The caps: bounded work, not just bounded objects ------------------------
 # The two caps are the only thing keeping a hostile or runaway index from
 # turning this gate into an unbounded download. They are exercised here by
