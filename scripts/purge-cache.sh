@@ -9,10 +9,13 @@
 # under a stable name every run, and a bad edge copy of a pool object served
 # `immutable, max-age=31536000` would outlive a bad index by a year.
 #
-# The URL list is DERIVED from the Release and Packages files the run just
-# built, never written by hand. A hand-maintained list drifted from reprepro in
-# both directions once already (#48): it named a Packages.xz reprepro does not
-# emit, and never named the per-architecture Release files it does.
+# The URL list is DERIVED from the tree the run just built, never written by
+# hand. A hand-maintained list drifted from reprepro in both directions once
+# already (#48): it named a Packages.xz reprepro does not emit, and never named
+# the per-architecture Release files it does. It then stayed behind twice more,
+# on the bootstrap installers and on the keyring signature, each time because a
+# new served file had to be remembered somewhere separate from where it is
+# produced.
 #
 # Usage: purge-cache.sh <archive-url> <built-dir>
 #   <archive-url>  public base URL, e.g. https://apt.glyndor.net
@@ -83,6 +86,30 @@ installer_paths="$(find "$BUILT_DIR/install" -maxdepth 1 -type f -printf 'instal
 [ -n "$installer_paths" ] \
 	|| { echo "::error::no bootstrap installer was built; there is nothing to purge and every product's install line is stale"; exit 1; }
 
+# And the files the publish writes to the root of the archive. Derived for the
+# same reason the three lists above are. This one was named by hand, and it
+# stopped matching what is served the moment the publish started putting a
+# detached signature beside the keyring package: `index.html` and the keyring
+# were listed, the signature was not, and nothing said so.
+#
+# `public/` at depth one holds exactly what the run put there, since dists/,
+# pool/ and install/ are directories.
+root_paths="$(find "$BUILT_DIR" -maxdepth 1 -type f -printf '%f\n' \
+	2>/dev/null | LC_ALL=C sort -u)"
+[ -n "$root_paths" ] \
+	|| { echo "::error::the built tree has no files at its root; the keyring package and the landing page are served from there"; exit 1; }
+
+# These two are named rather than left to the count above, because they are the
+# pair the bootstrap installer fetches together: it verifies the detached
+# signature over the package before installing it, so an edge that still serves
+# one of them from a previous run is a refused install on a machine nobody is
+# attacking. A run that did not produce both is broken upstream of this step and
+# must not go on to purge a shorter list.
+for _required in glyndor-archive-keyring.deb glyndor-archive-keyring.deb.asc; do
+	printf '%s\n' "$root_paths" | grep -qxF "$_required" \
+		|| { echo "::error::$_required is missing from $BUILT_DIR; the keyring package and its signature are served together and have to be purged together"; exit 1; }
+done
+
 # Split into content and indices, and purge the indices LAST.
 #
 # A partial purge is not degradation for apt, it is a signature that does not
@@ -102,9 +129,7 @@ installer_paths="$(find "$BUILT_DIR/install" -maxdepth 1 -type f -printf 'instal
 # them against a BATCH_SIZE of 30, and the guard below refuses to run rather
 # than split them if that ever stops being true.
 {
-	printf '%s\n' \
-		"$ARCHIVE_URL/glyndor-archive-keyring.deb" \
-		"$ARCHIVE_URL/index.html"
+	printf '%s\n' "$root_paths" | sed "s|^|$ARCHIVE_URL/|"
 	printf '%s\n' "$pool_paths" | sed "s|^|$ARCHIVE_URL/|"
 	printf '%s\n' "$installer_paths" | sed "s|^|$ARCHIVE_URL/|"
 } | awk 'NF' | LC_ALL=C sort -u > "$work/urls-content"

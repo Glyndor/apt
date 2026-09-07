@@ -80,6 +80,15 @@ build_archive() { # $1=product count $2=arch list
 	for ((i = 1; i <= products; i++)); do
 		printf '#!/bin/sh\n' > "$BUILT/install/prod$i"
 	done
+
+	# The root of the archive: the landing page build-index-page.sh writes, the
+	# keyring package publish.yml copies in, and the detached signature it makes
+	# over that package. The script reads this directory now rather than naming
+	# the files, so a fixture that omits one is a fixture the publish could not
+	# have produced.
+	printf '<!doctype html>\n' > "$BUILT/index.html"
+	printf 'not a real package\n' > "$BUILT/glyndor-archive-keyring.deb"
+	printf -- '-----BEGIN PGP SIGNATURE-----\n' > "$BUILT/glyndor-archive-keyring.deb.asc"
 }
 
 # A fake Cloudflare purge endpoint. Appends each request body as one line to
@@ -143,8 +152,9 @@ export CF_ZONE="fake-zone"
 export CF_API_BASE="http://127.0.0.1:$PORT/client/v4"
 
 # --- one product, two architectures: today's archive ------------------------
-# 5 fixed + 6 index (3 per arch) + 3 pool (1 per arch, plus the keyring, which
-# both indices declare and the list deduplicates) + 1 installer = 15 URLs.
+# 3 root + 3 fixed indices + 6 derived indices (3 per arch) + 3 pool (1 per
+# arch, plus the keyring, which both indices declare and the list deduplicates)
+# + 1 installer = 16 URLs.
 #
 # Two requests, not one: content first, then the indices on their own. A
 # partial purge is not degradation for apt but a signature that does not
@@ -156,12 +166,22 @@ build_archive 1 "amd64 arm64"
 
 check "one product on two arches sends content and indices separately" \
 	"2" "$(wc -l < "$REQUESTS")"
-check "one product on two arches purges 15 URLs in total" \
-	"15" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
+check "one product on two arches purges 16 URLs in total" \
+	"16" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
 check "the pool object is deduplicated across the two indices" \
 	"1" "$(jq -s -r '[.[].files[] | select(endswith("_all.deb"))] | length' < "$REQUESTS")"
 check "the per-architecture Release files are purged" \
 	"2" "$(jq -s -r '[.[].files[] | select(endswith("binary-amd64/Release") or endswith("binary-arm64/Release"))] | length' < "$REQUESTS")"
+
+# The signature is the file this list forgot. It is served from the root under a
+# fixed name with `max-age=86400`, next to a package that is rebuilt every run,
+# so an unpurged one is the edge handing out a new package with the previous
+# signature over it. Named individually because the installer refuses to install
+# the package without a signature that verifies over those exact bytes.
+check "the keyring package and its signature are purged together" \
+	"2" "$(jq -s -r '[.[].files[] | select(test("glyndor-archive-keyring[.]deb([.]asc)?$"))] | length' < "$REQUESTS")"
+check "the landing page is purged" \
+	"1" "$(jq -s -r '[.[].files[] | select(endswith("/index.html"))] | length' < "$REQUESTS")"
 
 # The ordering is the whole point: an InRelease purged before the Packages it
 # names leaves the edge serving a new signature over stale indices, which is a
@@ -175,10 +195,11 @@ check "the last request carries nothing but indices" \
 	"9" "$(tail -1 "$REQUESTS" | jq -r '.files | length')"
 
 # --- the roster on three architectures: the case that used to fail ----------
-# 5 fixed + 9 index + (7 products + keyring) × 3 arches deduplicated to 22 pool
-# objects + 7 installers = 43 URLs. The old step refused this outright.
+# 3 root + 12 index (3 fixed, 3 per arch) + (7 products + keyring) × 3 arches
+# deduplicated to 22 pool objects + 7 installers = 44 URLs. The old step refused
+# a list this long outright.
 #
-# Three requests now, not two: content is 34 URLs against a BATCH_SIZE of 30, so
+# Three requests now, not two: content is 32 URLs against a BATCH_SIZE of 30, so
 # it splits, and the indices still go on their own and last.
 start_server ok
 build_archive 7 "amd64 arm64 armhf"
@@ -188,8 +209,8 @@ build_archive 7 "amd64 arm64 armhf"
 total="$(jq -rs '[.[].files[]] | length' < "$REQUESTS")"
 check "seven products on three arches needs three requests" \
 	"3" "$(wc -l < "$REQUESTS")"
-check "seven products on three arches purges 43 URLs" \
-	"43" "$total"
+check "seven products on three arches purges 44 URLs" \
+	"44" "$total"
 check "no request exceeds Cloudflare's 30-file limit" \
 	"" "$(jq -rs '[.[] | select((.files | length) > 30)] | length | select(. > 0) | "\(.) oversized"' < "$REQUESTS")"
 check "every URL is sent exactly once" \
@@ -233,6 +254,23 @@ rm -rf "$BUILT"
 rc=0
 "$PURGE" "https://apt.example" "$BUILT" >/dev/null 2>&1 || rc=$?
 check "a missing Release fails rather than purging nothing" "1" "$rc"
+
+# The pair the installer depends on. A publish that produced the package but no
+# signature is broken before this step, and purging the shorter list quietly
+# would leave the edge to be discovered later by whoever runs the installer.
+build_archive 1 "amd64 arm64"
+rm -f "$BUILT/glyndor-archive-keyring.deb.asc"
+rc=0
+"$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 || rc=$?
+check "a missing keyring signature fails the purge" "1" "$rc"
+check "the error names the file that is missing" \
+	"1" "$(grep -c 'glyndor-archive-keyring.deb.asc is missing' "$WORK/out")"
+
+build_archive 1 "amd64 arm64"
+rm -f "$BUILT/glyndor-archive-keyring.deb"
+rc=0
+"$PURGE" "https://apt.example" "$BUILT" >/dev/null 2>&1 || rc=$?
+check "a missing keyring package fails the purge" "1" "$rc"
 
 rc=0
 CF_TOKEN="" "$PURGE" "https://apt.example" "$BUILT" >/dev/null 2>&1 || rc=$?
