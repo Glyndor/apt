@@ -52,12 +52,15 @@ assert_error() {
 
 # Build a .deb with a given control Package name into $WORK, echo its path.
 make_deb() {
-	local name="$1" pkg="$2" root
+	local name="$1" pkg="$2" root ver
+	# Third argument is the Debian Version. Defaulted so every existing call
+	# site keeps the version it was written against.
+	ver="${3:-1.0}"
 	root="$WORK/root-$name"
 	mkdir -p "$root/DEBIAN"
 	cat > "$root/DEBIAN/control" <<EOF
 Package: $pkg
-Version: 1.0
+Version: $ver
 Architecture: amd64
 Maintainer: Glyndor <packages@glyndor.net>
 Description: test fixture
@@ -262,6 +265,46 @@ assert_error 1 "has no keys" "a trust file with no key is refused for having no 
 d="$WORK/case15"; mkdir -p "$d"; cp "$WORK/good.deb" "$d/"; cp "$WORK/case1/good.deb.sig" "$d/"
 assert_error 1 "not found" "a trust file that does not exist is refused as missing" \
 	-- "$VERIFY" "$d" "$WORK/does-not-exist.b64"
+
+# --- Case 16: a .deb from another release is refused, which the signature -----
+#             cannot catch on its own.
+#
+# The release key is shared and covers the bytes, never the tag they were
+# attached to, and the archive is rebuilt latest-only from whatever the newest
+# release carries. So an actor with release-publish rights and no signing key
+# re-attaches a previously published, still validly signed .deb to a new tag.
+# Measured on the real archive 2026-09-07: podup_5.4.0_amd64.deb, five releases
+# behind what was being served, passed this script with exit 0.
+#
+# The observation that differs is the exit status for the SAME bytes under two
+# different expected tags, so both halves are asserted: refused under the tag it
+# does not belong to, admitted under the one it does. Without the second half a
+# gate that refused everything would pass.
+d="$WORK/case16"; mkdir -p "$d"
+deb="$(make_deb old podup 5.4.0)"; cp "$deb" "$d/podup_5.4.0_amd64.deb"
+sign "$d/podup_5.4.0_amd64.deb"
+assert_error 1 "version mismatch" \
+	"a .deb from an older release is refused under the current tag" \
+	-- "$VERIFY" "$d" "$WORK/key.b64" podup v5.9.2
+assert 0 "and the same .deb is admitted under its own tag" \
+	-- "$VERIFY" "$d" "$WORK/key.b64" podup v5.4.0
+
+# --- Case 17: epoch and revision belong to the packaging, not to the tag. -----
+#             Comparing the whole Version string would refuse a legitimate
+#             repackage, so only the upstream part is compared.
+d="$WORK/case17"; mkdir -p "$d"
+deb="$(make_deb repack podup 1:5.9.2-3)"; cp "$deb" "$d/podup_5.9.2_amd64.deb"
+sign "$d/podup_5.9.2_amd64.deb"
+assert 0 "an epoch and a Debian revision do not break the tag binding" \
+	-- "$VERIFY" "$d" "$WORK/key.b64" podup v5.9.2
+
+# --- Case 18: with no tag given the binding is skipped, which is why the ------
+#             workflow must never pass an empty one.
+#
+# tests/publish-workflow.test.sh is where that half is asserted; this case only
+# pins the script's own contract so the two cannot drift apart silently.
+assert 0 "no expected tag means the binding is not applied" \
+	-- "$VERIFY" "$WORK/case16" "$WORK/key.b64" podup
 
 echo "passed $pass, failed $fail"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
