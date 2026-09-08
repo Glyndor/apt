@@ -147,6 +147,136 @@ out="$(cd "$work" && ./scripts/lint-workflow-shell.sh style 2>&1)"
 rc=$?
 check "a quoted GitHub expression is not reported as a shell problem" "0" "$rc"
 
+# --- every YAML block scalar header for `run:` is recognised ------------
+#
+# The extractor only used to recognise `run: |` and single-line `run: cmd`,
+# so a chomped `run: |-` slipped between them: its body was never linted
+# and never counted, which is the failure mode the "found no blocks" guard
+# exists to catch (the guard can't fire when 34 other blocks satisfy it,
+# so the chomped one simply disappears). The cases below pin each shape.
+
+# Earlier sections leave their fixtures in the tree; clear them so each
+# case below measures exactly the workflow it planted.
+rm -f "$work/.github/workflows/expressions.yml"
+
+cat >"$work/.github/workflows/chomp.yml" <<'YML'
+name: chomp
+on: [push]
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - name: chomped block with violation
+        run: |-
+          set -euo pipefail
+          rm -rf $UNQUOTED/*
+YML
+
+out="$(cd "$work" && ./scripts/lint-workflow-shell.sh style 2>&1)"
+# The exit-code assertion alone is not the discriminator: the broken
+# extractor also exits 1 (with "found no blocks"). The SC2115 finding on
+# the workflow line is what proves the body actually reached shellcheck.
+check "a dirty run: |- block trips shellcheck" "1" \
+	"$(printf '%s' "$out" | grep -q 'SC2115' && echo 1 || echo 0)"
+check "and reports it against the right workflow and line" "1" \
+	"$(printf '%s' "$out" | grep -q 'file=.github/workflows/chomp.yml,line=10' && echo 1 || echo 0)"
+
+# The case is about the header, not the body: the same body under `run: |`
+# must reach shellcheck and trip the same rule, so a regression in the body
+# extractor (which would change findings under both headers) goes red here.
+cat >"$work/.github/workflows/pipe.yml" <<'YML'
+name: pipe
+on: [push]
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - name: pipe block with violation
+        run: |
+          set -euo pipefail
+          rm -rf $UNQUOTED/*
+YML
+
+out="$(cd "$work" && ./scripts/lint-workflow-shell.sh style 2>&1)"
+check "the same body under run: | trips the same rule" "1" \
+	"$(printf '%s' "$out" | grep -q 'SC2115' && echo 1 || echo 0)"
+check "and reports it on the same line" "1" \
+	"$(printf '%s' "$out" | grep -q 'file=.github/workflows/pipe.yml,line=10' && echo 1 || echo 0)"
+
+rm -f "$work/.github/workflows/chomp.yml" "$work/.github/workflows/pipe.yml"
+
+# `run: |+` is a keep block and carries the same shell as `run: |`.
+cat >"$work/.github/workflows/keep.yml" <<'YML'
+name: keep
+on: [push]
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - name: keep block with violation
+        run: |+
+          set -euo pipefail
+          rm -rf $UNQUOTED/*
+YML
+
+out="$(cd "$work" && ./scripts/lint-workflow-shell.sh style 2>&1)"
+check "a dirty run: |+ block trips shellcheck" "1" \
+	"$(printf '%s' "$out" | grep -q 'SC2115' && echo 1 || echo 0)"
+rm -f "$work/.github/workflows/keep.yml"
+
+# A folded (`run: >`) block joins its lines into spaces, so the shell it
+# would run is not the shell it looks like; the extractor counts it but
+# does not lint it. A workflow whose ONLY step is a folded block is the
+# case that decides whether the success line is honest.
+cat >"$work/.github/workflows/folded.yml" <<'YML'
+name: folded
+on: [push]
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - name: folded block
+        run: >
+          echo folded
+YML
+
+out="$(cd "$work" && ./scripts/lint-workflow-shell.sh style 2>&1)"
+rc=$?
+check "a run: > block does not abort the extractor" "0" "$rc"
+check "and the success line counts it" "1" \
+	"$(printf '%s' "$out" | grep -q '^1 embedded' && echo 1 || echo 0)"
+rm -f "$work/.github/workflows/folded.yml"
+
+# All three recognised shapes together: the count must add up so an
+# operator reading the success line knows nothing was silently skipped.
+cat >"$work/.github/workflows/shapes.yml" <<'YML'
+name: shapes
+on: [push]
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - name: clip
+        run: |
+          echo clip
+      - name: keep
+        run: |+
+          echo keep
+      - name: folded
+        run: >
+          echo folded
+YML
+
+out="$(cd "$work" && ./scripts/lint-workflow-shell.sh style 2>&1)"
+rc=$?
+# The exit-code assertion is not the discriminator for this case (broken
+# code lints the `run: |` step, finds nothing, still exits 0 with the
+# wrong count). The number in the success line is what proves nothing
+# was silently skipped.
+check "and the success line says three" "1" \
+	"$(printf '%s' "$out" | grep -q '^3 embedded' && echo 1 || echo 0)"
+rm -f "$work/.github/workflows/shapes.yml"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

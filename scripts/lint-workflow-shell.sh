@@ -6,12 +6,18 @@
 # live inside workflows. That shell is not less load-bearing for being
 # embedded: it is the shell that signs, publishes and gates.
 #
-# Both forms are covered: a `run: |` block and a single-line `run: cmd`. The
-# single-line form was skipped when this was written, and the check said so on
-# every run rather than closing it; the seven such steps across the three
-# channel repositories turned out to be plain invocations with nothing the
-# linter could say about them, so this closes a hole that was cheap rather
-# than urgent.
+# Block scalar forms covered: `run: |` (clip), `run: |-` (strip), `run: |+`
+# (keep), the explicit-indentation forms (`run: |2`, `run: |-2`) and the
+# folded `>` family. A folded block joins its lines into spaces, so the
+# shell it would run is not the shell it looks like; the script counts a
+# folded block but does not shellcheck it, and the inline comment in the
+# extractor below makes that trade-off explicit so the success line stays
+# honest about what was inspected. Single-line `run: cmd` is also covered;
+# it was skipped when this was written, and the check said so on every run
+# rather than closing it. The seven such steps across the three channel
+# repositories turned out to be plain invocations with nothing the linter
+# could say about them, so this closes holes that were cheap rather than
+# urgent.
 #
 # A finding is reported against the workflow and the line the `run:` block
 # starts on, not against the temporary file, so the error is navigable.
@@ -51,15 +57,31 @@ for wf in "$workflows"/*.yml "$workflows"/*.yaml; do
 	[ -f "$wf" ] || continue
 	name="$(basename "$wf")"
 
-	# One file per `run: |` block, named for the line the block opens on.
-	# The block ends at the first non-blank line indented no further than the
-	# `run:` key itself, which is how YAML block scalars end.
+	# One file per `run:` block, named for the line the block opens on. The
+	# header regex matches every block scalar YAML accepts for `run:`: `|`,
+	# `|-`, `|+`, the explicit-indentation forms (`|2`, `|-2`), and the
+	# folded `>` family. The body ends at the first non-blank line indented
+	# no further than the `run:` key itself, which is how YAML block scalars
+	# end.
 	awk -v dir="$work" -v tag="$name" '
 		function close_block() { if (out != "") { close(out); out = "" } }
-		/^[[:space:]]*run:[[:space:]]*\|[[:space:]]*$/ {
+		/^[[:space:]]*run:[[:space:]]*[|>]([-+]?[0-9]*)?[[:space:]]*$/ {
 			close_block()
 			key = match($0, /[^ ]/) - 1
 			out = sprintf("%s/%s@%d.sh", dir, tag, NR)
+			# A folded scalar (`>` family) joins its body lines with
+			# spaces, so the shell the workflow would run is not the
+			# shell it looks like; shellchecking it would surface
+			# findings for code that never runs. Count the block so
+			# the success line stays honest, and mark the file so a
+			# reader can tell it was deliberately not linted.
+			if ($0 ~ /^[[:space:]]*run:[[:space:]]*>/) {
+				print "#!/usr/bin/env bash" > out
+				print "# folded scalar: lines join, shell would differ, not linted" >> out
+				close(out)
+				out = ""
+				next
+			}
 			print "#!/usr/bin/env bash" > out
 			body = -1
 			next
@@ -127,7 +149,7 @@ for block in "$work"/*.sh; do
 done
 
 if [ "$blocks" -eq 0 ]; then
-	echo "::error::found no \`run: |\` blocks under .github/workflows; the extractor is broken or the path is wrong" >&2
+	echo "::error::found no \`run:\` blocks under .github/workflows; the extractor is broken or the path is wrong" >&2
 	exit 1
 fi
 
