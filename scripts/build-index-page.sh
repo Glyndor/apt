@@ -69,6 +69,90 @@ ARCH_LIST="${ARCHES// /, }"
 # the product that released it. A Debian package name cannot contain an HTML
 # metacharacter, but check the charset rather than trust that, because this string is
 # served to browsers.
+# What a reader has to be told, and the reason this page was wrong.
+#
+# The page promised "Debian/Ubuntu" with no qualifier, and that is where someone
+# meets the claim. It is not true of most of Debian and Ubuntu: a package can
+# declare a dependency its release does not carry, and then adding the archive
+# succeeds while `apt install` fails. Measured on 2026-09-07 with podup 5.9.1,
+# which declares `podman (>= 5.0)`: Ubuntu 24.04 LTS ships 4.9.3 and has no
+# backport, so the archive adds cleanly there and the install cannot complete.
+#
+# Only the REQUIREMENT is stated here, never the releases that satisfy it. The
+# requirement is read out of the signed index and is regenerated every publish,
+# so it follows a product that changes its floor. A list of distributions would
+# be a claim about the world that nothing in this repository can falsify, and it
+# would go stale the next time a release moves. Where a release does satisfy it
+# belongs in the product's own documentation, which is maintained against it.
+#
+# A dependency naming a package this archive itself serves is resolved by apt
+# from here, so it is not something the reader has to supply. Deriving that set
+# from the index rather than listing our own names keeps it true as the roster
+# grows.
+# No sort and no dedup: this is only ever asked "is this name in here", by
+# `grep -qxF`, and duplicates across the per-architecture indices answer that
+# identically. The package LIST further down does sort, under a pinned
+# collation, because there the order and the dedup are what reach the page.
+OWN_PACKAGES="$(awk '/^Package:/ { print $2 }' \
+	"$OUT_DIR"/dists/stable/main/binary-*/Packages)"
+
+# depends_of <package>: the raw Depends line, or nothing.
+depends_of() {
+	awk -v want="$1" '
+		/^Package:/ { name = $2 }
+		/^Depends:/ { if (name == want) { $1 = ""; sub(/^ +/, ""); print; exit } }
+	' "$OUT_DIR"/dists/stable/main/binary-*/Packages
+}
+
+# html_escape <string>
+#
+# Two traps, both of which produced wrong output before they were escaped.
+#
+# The ampersand goes first, or the entities the later rules insert get their own
+# ampersands rewritten.
+#
+# And every `&` in the REPLACEMENT is backslash-escaped, because bash expands a
+# bare one there to the text that just matched, the way sed does. Written
+# unescaped, `${s//>/&gt;}` turned `podman (>= 5.0)` into `podman (>gt;= 5.0)`:
+# the entity lost its ampersand and the `>` it was there to remove survived.
+# Rendering the page is what showed it; the function looks right in the diff.
+html_escape() {
+	local s="$1"
+	s="${s//&/\&amp;}"
+	s="${s//</\&lt;}"
+	s="${s//>/\&gt;}"
+	printf '%s' "$s"
+}
+
+# external_requirements <package>: the dependencies the reader's distribution
+# has to provide, comma-separated and HTML-escaped. Same threat model as the
+# package names below: these come from a .deb's control field and are served to
+# a browser, so the charset is checked rather than trusted. A version relation
+# carries `>` and `<<`, which is exactly why escaping is not optional here.
+external_requirements() {
+	local deps dep base out=""
+	deps="$(depends_of "$1")"
+	[ -n "$deps" ] || return 0
+	local IFS=','
+	for dep in $deps; do
+		dep="${dep#"${dep%%[![:space:]]*}"}"
+		dep="${dep%"${dep##*[![:space:]]}"}"
+		[ -n "$dep" ] || continue
+		base="${dep%%[[:space:]|]*}"
+		if printf '%s\n' "$OWN_PACKAGES" | grep -qxF "$base"; then
+			continue
+		fi
+		case "$dep" in
+			*[!a-zA-Z0-9+.:~\(\)\<\>=\ \|-]*)
+				echo "skipping unexpected dependency of $1: $dep" >&2
+				continue
+				;;
+		esac
+		out="$out, <code>$(html_escape "$dep")</code>"
+	done
+	printf '%s' "${out#, }"
+}
+
 PACKAGE_ITEMS=""
 while IFS= read -r pkg; do
 	case "$pkg" in
@@ -77,7 +161,8 @@ while IFS= read -r pkg; do
 			continue
 			;;
 	esac
-	PACKAGE_ITEMS="$PACKAGE_ITEMS<li><code>curl -fsSL https://apt.glyndor.net/install/$pkg | sudo sh</code></li>"
+	req="$(external_requirements "$pkg")"
+	PACKAGE_ITEMS="$PACKAGE_ITEMS<li><code>curl -fsSL https://apt.glyndor.net/install/$pkg | sudo sh</code>${req:+ <span>needs $req</span>}</li>"
 done <<EOF_PKGS
 $(awk '/^Package:/ { print $2 }' "$OUT_DIR"/dists/stable/main/binary-*/Packages \
 	| grep -vx 'glyndor-archive-keyring' | LC_ALL=C sort -u)
@@ -92,6 +177,11 @@ cat > "$OUT_DIR/index.html" <<EOF
 <h1>Glyndor apt repository</h1>
 <p>Debian/Ubuntu ($ARCH_LIST). One line per package:</p>
 <ul>$PACKAGE_ITEMS</ul>
+<p>Adding this archive works wherever apt does. Installing a package also takes
+whatever that package requires, shown beside it above, and that comes from your
+distribution rather than from here: a release that does not carry it can add the
+archive and still fail to install. Each product's own documentation is where to
+look for which releases carry what it asks for.</p>
 <p>The script adds this archive, checks the archive key's fingerprint before
 anything runs as root, installs the package, and switches on automatic security
 upgrades.</p>
