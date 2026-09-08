@@ -19,7 +19,12 @@
 # Requires: python3 with the `cryptography` module, and dpkg-deb.
 #
 # Usage:
-#   verify-debs.sh <debs-dir> [<pubkey-b64-file>] [<expected_package>]
+#   verify-debs.sh <debs-dir> [<pubkey-b64-file>] [<expected_package>] [<expected_tag>]
+#
+# When expected_tag is given, every .deb must declare a Version whose upstream
+# part equals that tag without its leading `v`. The signature covers the bytes
+# and not the tag they were attached to, so this is what stops a still-valid
+# .deb from an older release being re-attached to a new one.
 #
 # When expected_package is given, every .deb in debs-dir must also declare it
 # as the control Package field AND carry it as the filename prefix
@@ -30,10 +35,14 @@
 
 set -euo pipefail
 
-DEBS_DIR="${1:?usage: verify-debs.sh <debs-dir> [<pubkey-b64-file>] [<expected_package>]}"
+DEBS_DIR="${1:?usage: verify-debs.sh <debs-dir> [<pubkey-b64-file>] [<expected_package>] [<expected_tag>]}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KEY_FILE="${2:-$HERE/keyring/glyndor-release-ed25519.b64}"
 EXPECTED_PACKAGE="${3:-}"
+# The release tag the directory was downloaded from, e.g. v5.9.2. Optional so
+# the suite can exercise the other gates on their own, and passed by publish.yml
+# from the tag it already pinned per product.
+EXPECTED_TAG="${4:-}"
 
 [ -f "$KEY_FILE" ] || { echo "::error::release public key $KEY_FILE not found" >&2; exit 1; }
 
@@ -95,6 +104,36 @@ for deb in "${debs[@]}"; do
 		fi
 		if [[ "$(basename "$deb")" != "${EXPECTED_PACKAGE}_"* ]]; then
 			echo "::error::package name mismatch: $(basename "$deb") filename does not start with '${EXPECTED_PACKAGE}_'" >&2
+			exit 1
+		fi
+	fi
+
+	# Bind the package to the RELEASE it came from, not just to the product.
+	#
+	# The signature covers the bytes and says nothing about which tag they were
+	# attached to, and the archive is rebuilt latest-only from whatever the
+	# newest release carries. So without this, an actor who can publish a
+	# release, and who needs no signing key at all, re-attaches a previously
+	# published and still validly signed .deb to a new tag: the signature
+	# verifies, the control Package matches, the filename prefix matches, and
+	# the archive is pinned to the old version for every install that follows.
+	# Measured 2026-09-07: podup_5.4.0_amd64.deb, five releases behind what was
+	# being served, passed this script with exit 0.
+	#
+	# Compare the upstream part only. A Debian version may carry an epoch
+	# (`1:5.9.2`) and a revision (`5.9.2-1`), and neither belongs to the tag;
+	# rejecting those would refuse a legitimate repackage. The tag's leading `v`
+	# is dropped for the same reason, in the other direction.
+	if [ -n "$EXPECTED_TAG" ]; then
+		if ! ver="$(dpkg-deb -f "$deb" Version)"; then
+			echo "::error::cannot read the Version control field of $(basename "$deb"); refusing a package whose version cannot be bound to its release" >&2
+			exit 1
+		fi
+		upstream="${ver#*:}"
+		upstream="${upstream%-*}"
+		want="${EXPECTED_TAG#v}"
+		if [ "$upstream" != "$want" ]; then
+			echo "::error::version mismatch: $(basename "$deb") declares '$ver' but was downloaded from release '$EXPECTED_TAG'; a release must not carry a .deb built for another one" >&2
 			exit 1
 		fi
 	fi

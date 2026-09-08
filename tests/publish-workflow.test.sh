@@ -443,6 +443,37 @@ check "the keyring-signing step signs the served copy, not the debs/ one" "1" \
 	   ! printf '%s\n' "$sign_body" | grep -qE 'debs/glyndor-archive-keyring' && \
 	   echo 1 || echo 0)"
 
+# --- the release tag survives the step boundary -----------------------------
+#
+# verify-debs.sh binds each .deb to the release it came from, and it takes that
+# tag as an argument. The download step resolves it; the verification step runs
+# in a different shell and cannot see the variable. An empty fourth argument
+# means "do not check", which is right for the suite and would be a silently
+# disabled gate here, so the workflow has to persist the tag and refuse when it
+# is absent.
+#
+# Asserted on the workflow text because the failure is a shell-scope one that no
+# amount of running verify-debs.sh in isolation can surface.
+check "the download step records the pinned tag for the next step" "1" \
+	"$(grep -c 'tags/\$p"$' "$WF")"
+check "the verification step reads that recorded tag back" "1" \
+	"$(grep -c 'tag="\$(cat "tags/\$p"' "$WF")"
+check "and refuses when no tag was recorded, rather than skipping the binding" "1" \
+	"$(grep -c 'no pinned tag was recorded' "$WF")"
+check "the admission gate is called with the tag as its fourth argument" "1" \
+	"$(grep -c 'verify-debs.sh "debs/\$p" keyring/glyndor-release-ed25519.b64 "\$p" "\$tag"' "$WF")"
+
+# The guard has to be able to fire. Run the same two lines the workflow runs,
+# in a directory with no recorded tag, and require the refusal.
+guard_dir="$(mktemp -d)"
+guard_out="$(cd "$guard_dir" && p=podup; tag="$(cat "tags/$p" 2>/dev/null || true)"; \
+	[ -n "$tag" ] || { echo "::error::no pinned tag was recorded for $p"; exit 1; }; echo "reached the gate" )" \
+	&& guard_rc=0 || guard_rc=$?
+rm -rf "$guard_dir"
+check "the recorded-tag guard exits non-zero with no tag on disk" "1" "$guard_rc"
+check "and says which product had none" "1" \
+	"$(printf '%s' "$guard_out" | grep -c 'no pinned tag was recorded for podup')"
+
 # --- the same gpg commands actually sign and verify end to end -------------
 #
 # The structural cases above prove the workflow step NAMES the right paths.

@@ -133,6 +133,12 @@ jobs:
             tag="$(gh release view --repo "Glyndor/$p" --json tagName --jq .tagName)" \
               || { echo "::error::could not resolve Glyndor/$p's latest release tag"; exit 1; }
             echo "pinned $p to release $tag"
+            # Record it for the verification step, which runs in its own shell
+            # and cannot see this variable. The admission gate binds each .deb
+            # to the release it came from, and it can only do that if the tag
+            # survives the step boundary.
+            mkdir -p tags
+            printf '%s\n' "$tag" > "tags/$p"
             # Check the sizes the release actually advertises before pulling
             # any bytes, so an oversized asset can't exhaust runner disk mid-
             # download. The post-download check below is belt-and-braces in
@@ -292,7 +298,17 @@ jobs:
           # impersonates another product.
           for spec in $PRODUCTS; do
             p="${spec%%:*}"
-            ./scripts/verify-debs.sh "debs/$p" keyring/glyndor-release-ed25519.b64 "$p"
+            # The tag the download step pinned, read back rather than
+            # recomputed: resolving "latest" again here could hand this step a
+            # newer release than the one the .deb files actually came from.
+            #
+            # Missing is a hard error, never a skip. verify-debs.sh treats an
+            # empty tag as "do not check", which is right for the suite and
+            # would be a silently disabled gate here.
+            tag="$(cat "tags/$p" 2>/dev/null || true)"
+            [ -n "$tag" ] \
+              || { echo "::error::no pinned tag was recorded for $p; refusing to admit packages that cannot be bound to a release"; exit 1; }
+            ./scripts/verify-debs.sh "debs/$p" keyring/glyndor-release-ed25519.b64 "$p" "$tag"
           done
           # Flatten the per-product, now-verified .deb files into a single
           # directory for reprepro and the keyring build below.
