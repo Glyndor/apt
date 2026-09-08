@@ -454,12 +454,18 @@ check "the keyring-signing step signs the served copy, not the debs/ one" "1" \
 #
 # Asserted on the workflow text because the failure is a shell-scope one that no
 # amount of running verify-debs.sh in isolation can surface.
+# shellcheck disable=SC2016  # these patterns are the literal shell text in the
+# workflow, so `$p` and `$tag` must stay unexpanded; expanding them here would
+# search for this test's own empty variables and match nothing, which is a
+# search that always succeeds at finding no problem.
 check "the download step records the pinned tag for the next step" "1" \
 	"$(grep -c 'tags/\$p"$' "$WF")"
+# shellcheck disable=SC2016  # same reason as above: literal workflow text.
 check "the verification step reads that recorded tag back" "1" \
 	"$(grep -c 'tag="\$(cat "tags/\$p"' "$WF")"
 check "and refuses when no tag was recorded, rather than skipping the binding" "1" \
 	"$(grep -c 'no pinned tag was recorded' "$WF")"
+# shellcheck disable=SC2016  # same reason as above: literal workflow text.
 check "the admission gate is called with the tag as its fourth argument" "1" \
 	"$(grep -c 'verify-debs.sh "debs/\$p" keyring/glyndor-release-ed25519.b64 "\$p" "\$tag"' "$WF")"
 
