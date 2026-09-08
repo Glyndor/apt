@@ -59,13 +59,61 @@ fi
 
 self="${BASH_SOURCE[0]##*/}"
 
+# --- this runner's own case -------------------------------------------------
+#
+# The sentinel used to be validated against a pattern that accepted ANY
+# basename, so the runner asked "did some file print a DONE line" when the
+# question it exists to answer is "did THIS file reach its end". A test that
+# printed a sibling's sentinel satisfied it.
+#
+# The case lives inside the runner rather than in a file beside it because the
+# runner is the thing under test and it takes its subjects as arguments: a
+# sibling test would have to invoke this file anyway. It re-runs a copy of
+# itself against two fixtures, one honest and one that prints the other's
+# sentinel, and requires the rejection to NAME both names. Asserting only a
+# non-zero exit would be satisfied by a runner that refused for any reason at
+# all, including a fixture that failed to execute.
+#
+# The environment variable is what stops the copy from recursing. It is set
+# only on the nested invocation, never in CI.
+if [ "${CHECK_SUITE_COMPLETENESS_SKIP_FIXTURE_TEST:-0}" != 1 ]; then
+	WORK="$(mktemp -d)"
+	trap 'rm -f "$WORK/inner.test.sh" "$WORK/outer.test.sh" "$WORK/runner.test.sh"; rmdir "$WORK" 2>/dev/null || true' EXIT
+
+	cat > "$WORK/inner.test.sh" <<'FIXTURE'
+#!/usr/bin/env bash
+printf 'DONE %s 0 0\n' "${BASH_SOURCE[0]##*/}"
+FIXTURE
+
+	cat > "$WORK/outer.test.sh" <<'FIXTURE'
+#!/usr/bin/env bash
+printf 'DONE inner.test.sh 0 0\n'
+FIXTURE
+	chmod +x "$WORK/inner.test.sh" "$WORK/outer.test.sh"
+	cp "${BASH_SOURCE[0]}" "$WORK/runner.test.sh"
+	chmod +x "$WORK/runner.test.sh"
+
+	fixture_output="$(CHECK_SUITE_COMPLETENESS_SKIP_FIXTURE_TEST=1 "$WORK/runner.test.sh" "$WORK/inner.test.sh" "$WORK/outer.test.sh" 2>&1)"
+	fixture_rc=$?
+	fixture_mismatch_named=0
+	if [ "$fixture_rc" -ne 0 ] \
+		&& printf '%s' "$fixture_output" | grep -qF -- "expected sentinel basename: outer.test.sh" \
+		&& printf '%s' "$fixture_output" | grep -qF -- "arrived sentinel basename: inner.test.sh"; then
+		fixture_mismatch_named=1
+	fi
+	check "a mismatched sentinel is rejected and names both names" "1" "$fixture_mismatch_named"
+fi
+
 # Every test file must end with a sentinel of the form
 # `DONE <basename> <pass-count> <fail-count>`. The basename is what the file
 # itself sees in $0 / BASH_SOURCE, so the check is by basename rather than
 # the path the runner was given: a file invoked as `./tests/foo.test.sh`
 # and as `tests/foo.test.sh` both report `foo.test.sh` in their sentinel,
 # and either way the runner reaches the same answer.
-sentinel_re='^DONE [A-Za-z0-9_.-]+\.test\.sh [0-9]+ [0-9]+$'
+#
+# Compared field by field rather than with a regex built from the basename: a
+# basename carries dots, and `foo.test.sh` as a pattern would also accept
+# `fooXtestYsh`.
 
 for f in "$@"; do
 	basename="${f##*/}"
@@ -86,13 +134,26 @@ for f in "$@"; do
 	# terminating \n is not in $output; the last line is the sentinel's
 	# body.
 	last_line="$(printf '%s' "$output" | tail -n 1)"
+	arrived_name="<none>"
 	has_sentinel=0
-	if [ -n "$last_line" ] && [[ "$last_line" =~ $sentinel_re ]]; then
-		has_sentinel=1
+	if [ -n "$last_line" ]; then
+		read -r -a fields <<< "$last_line"
+		if [ "${#fields[@]}" -eq 4 ] \
+			&& [ "${fields[0]}" = "DONE" ] \
+			&& [ "${fields[1]}" = "$basename" ] \
+			&& [[ "${fields[2]}" =~ ^[0-9]+$ ]] \
+			&& [[ "${fields[3]}" =~ ^[0-9]+$ ]]; then
+			has_sentinel=1
+			arrived_name="${fields[1]}"
+		elif [ "${#fields[@]}" -ge 2 ]; then
+			arrived_name="${fields[1]}"
+		fi
 	fi
 
 	check "$basename reached its end" "1" "$has_sentinel"
 	if [ "$has_sentinel" -eq 0 ]; then
+		echo "        expected sentinel basename: $basename"
+		echo "        arrived sentinel basename: $arrived_name"
 		echo "        last line was: $last_line"
 	fi
 
