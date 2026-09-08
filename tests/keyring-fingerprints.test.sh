@@ -159,6 +159,9 @@ fi
 # rotation.
 awk '/^DEFAULT_URL=/ { p = 1 } p; /fpr_overridden=yes/ { exit }' "$rot_installer" \
 	> "$rot_block"
+# shellcheck disable=SC2016  # $fpr_overridden must reach the block unexpanded;
+# the sh that runs the block is what expands it, and expanding it here would
+# write an empty string and make the assertions read their own setup.
 printf 'printf "OVERRIDE=%%s\\n" "$fpr_overridden"\n' >> "$rot_block"
 
 grep -q "$incoming_fpr" "$rot_block" \
