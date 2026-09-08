@@ -27,7 +27,8 @@
 # thing this says now.
 set -eu
 
-KEYRING_URL="${KEYRING_URL:-https://apt.glyndor.net/glyndor-archive-keyring.deb}"
+DEFAULT_URL="https://apt.glyndor.net/glyndor-archive-keyring.deb"
+KEYRING_URL="${KEYRING_URL:-$DEFAULT_URL}"
 KEYRING_PATH="/usr/share/keyrings/glyndor.gpg"
 
 # Derived rather than overridable, deliberately. A separate variable would let a
@@ -46,7 +47,8 @@ KEYRING_SIG_URL="$KEYRING_URL.asc"
 # can be pasted straight in. Without that, a fork operator copying the
 # published fingerprint gets "does not carry the expected fingerprint", which
 # points at the key when the fault is the spaces.
-GLYNDOR_APT_FPR="${GLYNDOR_APT_FPR:-9ADF04EA8C3139CDB67303CFA6705C2EA153F3D6}"
+DEFAULT_FPR="9ADF04EA8C3139CDB67303CFA6705C2EA153F3D6"
+GLYNDOR_APT_FPR="${GLYNDOR_APT_FPR:-$DEFAULT_FPR}"
 
 # Where the automatic-upgrade settings are written. Overridable so the tests can
 # exercise the block for real instead of against a copy of it, which is how the
@@ -74,8 +76,6 @@ APT_CONF_D="${APT_CONF_D:-/etc/apt/apt.conf.d}"
 # what is in use. A line on the screen does not stop anyone determined; it
 # removes the case where the substitution is invisible to someone who would have
 # noticed it.
-DEFAULT_URL="https://apt.glyndor.net/glyndor-archive-keyring.deb"
-DEFAULT_FPR="9ADF04EA8C3139CDB67303CFA6705C2EA153F3D6"
 url_overridden=no
 fpr_overridden=no
 [ "$KEYRING_URL" = "$DEFAULT_URL" ] || url_overridden=yes

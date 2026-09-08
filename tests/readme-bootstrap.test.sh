@@ -62,13 +62,15 @@ check "the fingerprint comes before dpkg -i" "1" \
 # compare against.
 # EVERY fingerprint the installer accepts has to be published here, not just the
 # first. Since apt#141 the installer admits a keyring only if every key in it is
-# one it was told to expect, so during a rotation GLYNDOR_APT_FPR carries two --
-# and a reader checking a keyring that ships both needs both values from this
-# page. Comparing head -1 against head -1 would pass a rotation in which the
-# incoming fingerprint was never published, which is the exact state that makes
-# fresh installs refuse the new keyring.
-script_fprs="$(grep -oE 'GLYNDOR_APT_FPR:-[0-9A-F,]+' scripts/install-template.sh \
-	| head -1 | sed 's/.*:-//' | tr ',' '\n' | grep -v '^$' | LC_ALL=C sort)"
+# one it was told to expect, so during a rotation DEFAULT_FPR carries two --
+# and GLYNDOR_APT_FPR inherits both through the parameter expansion at the top
+# of the installer. A reader checking a keyring that ships both needs both
+# values from this page. Comparing head -1 against head -1 would pass a
+# rotation in which the incoming fingerprint was never published, which is the
+# exact state that makes fresh installs refuse the new keyring.
+script_fprs="$(grep -oE 'DEFAULT_FPR="[0-9A-F,]+"' scripts/install-template.sh \
+	| head -1 | sed 's/^DEFAULT_FPR="//;s/"$//' \
+	| tr ',' '\n' | grep -v '^$' | LC_ALL=C sort)"
 readme_fprs="$(grep -oE '[0-9A-F]{4}( {1,2}[0-9A-F]{4}){9}' "$README" \
 	| tr -d ' ' | LC_ALL=C sort -u)"
 

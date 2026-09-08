@@ -72,14 +72,19 @@ keyring_fprs="$(primaries "$KEYRING")"
 	|| { echo "could not read any primary fingerprint from $KEYRING" >&2; exit 1; }
 
 # Same shape tests/readme-bootstrap.test.sh uses to read the installer's
-# default. The line `GLYNDOR_APT_FPR="${GLYNDOR_APT_FPR:-...}"` is the only
-# one in the script whose value rides out into the bootstrap -- the other
-# mentions are about the comparison itself. A rotation pastes two values
-# here, comma-separated, which is why the extraction splits on `,`.
-script_fprs="$(grep -oE 'GLYNDOR_APT_FPR:-[0-9A-F,]+' "$INSTALLER" \
-	| head -1 | sed 's/.*:-//' | tr ',' '\n' | grep -v '^$' | LC_ALL=C sort -u)"
+# default. `DEFAULT_FPR` is that value: the parameter expansion below it falls
+# back to the same variable, so there is one literal rather than two. A
+# rotation pastes two values here, comma-separated, which is why the
+# extraction splits on `,`.
+#
+# It used to read the literal out of the parameter expansion, because the
+# expansion carried its own copy. That copy is what made a correct rotation
+# warn on every stock install, and the case at the end of this file is what
+# holds the two together now.
+script_fprs="$(grep -oE '^DEFAULT_FPR="[0-9A-F,]+"' "$INSTALLER" \
+	| head -1 | sed 's/^DEFAULT_FPR="//; s/"$//' | tr ',' '\n' | grep -v '^$' | LC_ALL=C sort -u)"
 [ -n "$script_fprs" ] \
-	|| { echo "could not read GLYNDOR_APT_FPR's default from $INSTALLER" >&2; exit 1; }
+	|| { echo "could not read DEFAULT_FPR from $INSTALLER" >&2; exit 1; }
 
 # Sanity check on the keyring side. A fingerprint with the wrong shape is
 # not a value the installer can accept -- the comparison above would silently
@@ -109,6 +114,68 @@ not_accepted="$(comm -23 \
 	<(printf '%s\n' "$script_fprs"))"
 check "every primary fingerprint in the packaged keyring is one the installer accepts" \
 	"" "$not_accepted"
+
+# --- a rotation must not make a stock install warn --------------------------
+#
+# The archive rotates a key by publishing a keyring that carries the old and
+# the new one together, so the default becomes two fingerprints separated by a
+# comma. The installer compares its default against the value in force to
+# decide whether the operator replaced it, and prints "this is not the stock
+# Glyndor install." when they differ.
+#
+# Before the two literals were folded into one, that comparison read a SECOND
+# copy of the default. Editing the value in one place, which is all a rotation
+# is, left the copy behind, the two never matched, and every clean install off
+# the official archive spent the whole overlap window telling the operator it
+# was not the official archive.
+#
+# So the case is the rotation edit itself: change the default on a copy of the
+# installer, exactly as a maintainer would, and run the comparison with nothing
+# overridden.
+rot_installer="$(mktemp)"
+rot_block="$(mktemp)"
+trap 'rm -f "$rot_installer" "$rot_block"' EXIT
+
+packaged_fpr="$(printf '%s' "$keyring_fprs" | head -1)"
+# A second 40-hex value that is certainly not the first. Flipping the leading
+# digit avoids needing a key generator to produce something key-shaped.
+incoming_fpr="$(printf '%s' "$packaged_fpr" | sed 's/^./0/')"
+
+sed "s/^DEFAULT_FPR=\"[0-9A-F,]*\"/DEFAULT_FPR=\"$packaged_fpr,$incoming_fpr\"/" \
+	"$INSTALLER" > "$rot_installer"
+
+# An edit that changed nothing would leave this case measuring the ordinary
+# single-fingerprint path and reporting success over it.
+if cmp -s "$INSTALLER" "$rot_installer"; then
+	echo "FAIL  the rotation edit changed nothing; DEFAULT_FPR was not where this case expects it" >&2
+	exit 1
+fi
+
+# The slice runs from the first assignment the comparison reads to the
+# comparison itself, so whatever the installer sets in between is what the
+# comparison sees. Deliberately NOT seeded with a DEFAULT_FPR of our own: the
+# installer's own line is inside this range, so a value set here would be
+# overwritten and the case would silently measure the stock pair instead of a
+# rotation.
+awk '/^DEFAULT_URL=/ { p = 1 } p; /fpr_overridden=yes/ { exit }' "$rot_installer" \
+	> "$rot_block"
+printf 'printf "OVERRIDE=%%s\\n" "$fpr_overridden"\n' >> "$rot_block"
+
+grep -q "$incoming_fpr" "$rot_block" \
+	|| { echo "FAIL  the extracted comparison does not carry the rotated default" >&2; exit 1; }
+
+rot_out="$(env -u KEYRING_URL -u GLYNDOR_APT_FPR sh "$rot_block" 2>&1)"
+check "a rotation default reaches the comparison" "1" \
+	"$(printf '%s' "$rot_out" | grep -c '^OVERRIDE=')"
+check "and a stock install during a rotation is not called an override" "OVERRIDE=no" \
+	"$(printf '%s' "$rot_out" | grep '^OVERRIDE=' | head -1)"
+
+# The other half, or the assertion above is satisfied by a comparison that
+# answers "no" to everything.
+rot_out="$(KEYRING_URL=http://fork.test/x.deb GLYNDOR_APT_FPR="$incoming_fpr" \
+	sh "$rot_block" 2>&1)"
+check "while a real override during the same rotation still is one" "OVERRIDE=yes" \
+	"$(printf '%s' "$rot_out" | grep '^OVERRIDE=' | head -1)"
 
 # --- the check can see a violation ------------------------------------------
 #
