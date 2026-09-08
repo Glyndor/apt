@@ -169,7 +169,15 @@ purge_file() { # $1=path $2=label
 		body="$(sed -n "$((_sent + 1)),$((_sent + BATCH_SIZE))p" "$1" \
 			| jq -R . | jq -sc '{files: .}')"
 
+		# Bound this curl: without --connect-timeout 20 --max-time 300 a hung
+		# purge would leave a fresh archive behind a stale edge cache with the
+		# job wedged rather than failed, because the step runs after the sync
+		# has already landed: every step of the publish reports success, the
+		# new Packages pairs with the previous InRelease the cache keeps
+		# serving, and CI does not turn red. The numbers match the keyring
+		# fetch in install-template.sh.
 		resp="$(curl -sS --retry 3 --retry-all-errors --retry-delay 5 -X POST \
+			--connect-timeout 20 --max-time 300 \
 			"$CF_API_BASE/zones/$CF_ZONE/purge_cache" \
 			-H @"$hdr" \
 			-H "Content-Type: application/json" \

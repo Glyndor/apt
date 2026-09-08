@@ -9,15 +9,24 @@
 # drift script's classification -- which is the property the script's own
 # header argues for.
 #
-# The rule is strict and the cases are written against the real tree first,
-# then against planted violations. Comment lines are not invocations: a
-# curl mentioned in prose or in a string argument is not a curl that runs,
-# and the scanner walks those past without counting them. A curl invocation
-# is a line whose first non-whitespace token is the literal `curl`.
+# A curl invocation is `curl` in COMMAND POSITION: at the start of a line, or
+# straight after one of the characters that open one, `| ; & ( { !` or `$(`.
+# That covers every shape a real call takes here, including the one inside a
+# command substitution that the first version of this scanner could not see.
 #
-# A gate that inspected nothing prints the same success line as one that
-# did, so the planted-violation case seeds a script with a missing deadline
-# and the test names the file and the line that lost it.
+# The rule is positive on purpose. The obvious alternative, stripping quoted
+# text and then looking for the word anywhere, was written first and had a
+# hole exactly where it mattered: `a="$(curl ...)"` closed on its own line was
+# stripped along with the quotes and never counted, which is the shape of the
+# one call in this repository that had no deadline at all. Command position
+# excludes prose without having to parse quoting, because a curl inside a
+# sentence follows a letter or a colon rather than an operator.
+#
+# The rule is strict and the cases are written against the real tree first,
+# then against planted violations. A gate that inspected nothing prints the
+# same success line as one that did, so the planted-violation case seeds a
+# script with a missing deadline and the test names the file and the line
+# that lost it.
 #
 # Requires: bash.
 set -uo pipefail
@@ -40,13 +49,15 @@ check() { # $1=description $2=expected $3=actual
 	fi
 }
 
-# Walk every script. A line counts when its first non-whitespace token is
-# `curl`; the dead simple heuristic is right for this repository because
-# every other `curl` mention is either a comment or a string literal the
-# shell never executes (`PACKAGE_ITEMS="...<code>curl ...</code>..."` and the
-# `fail` argument in install-template.sh's `[ "$(id -u)" -eq 0 ] || fail
-# "run this as root: curl ..."`). Those do not start with `curl`, so they
-# fall out naturally.
+# Walk every script. The trigger requires `curl` to sit in command position
+# and to be followed by whitespace or end of line, so `curlrc` and `curl.err`
+# fall out on the trailing side and prose falls out on the leading one.
+#
+# Measured against the three mentions in this repository that must NOT count:
+# `PACKAGE_ITEMS="...<code>curl ...</code>..."` in build-index-page.sh follows
+# a `>`, the `fail` argument in install-template.sh's `id -u` guard follows a
+# `:`, and `sed 's/^/  curl: /' "$tmp/curl.err"` follows a `/`. None of the
+# three is an operator that opens a command.
 #
 # A curl invocation can span continuation lines (a `\` at the end of a line
 # joins it to the next). The scanner stitches continuations together and
@@ -70,8 +81,18 @@ violations() {
 			sub(/^[[:space:]]+/, "", t)
 			if (t == "") { flush(); next }
 			if (t ~ /^#/) { flush(); next }
-			if (cmd == "" && t !~ /^curl([[:space:]]|$)/) next
-			if (cmd == "") { orig = $0; startline = FNR; cmd = t; next }
+			if (cmd == "" && t !~ /(^|[|;&({!]|\$\()[[:space:]]*curl([[:space:]]|$)/) next
+			# Close the invocation here when the line does not continue.
+			# Without this a curl line that ends without a backslash stayed
+			# open and swallowed the NEXT line, so two invocations in a row
+			# were reported as one. It never showed while every real call in
+			# the tree spanned continuations and no two sat together;
+			# the six-shape case below is what surfaced it.
+			if (cmd == "") {
+				orig = $0; startline = FNR; cmd = t
+				if (t !~ /\\$/) flush()
+				next
+			}
 			cmd = cmd " " t
 			if (t !~ /\\$/) flush()
 		}
@@ -111,6 +132,34 @@ SH
 list="$(SCRIPTS="$plant/scripts" violations)"
 check "a planted curl without --max-time is named" \
 	"planted.sh:3:curl -fsSL \"https://example.invalid/file\"" "$list"
+
+# --- every shape a real invocation takes ----------------------------------
+#
+# The scanner used to require the line to START with curl, so the only call in
+# this repository with no deadline at all -- inside a command substitution in
+# purge-cache.sh -- was invisible to the gate that names it. One shape is not
+# enough to prove the widening: a rule can be widened in a way that gains one
+# shape and loses another, and the first attempt here did exactly that, seeing
+# `b=$(curl ...)` while missing `a="$(curl ...)"`.
+#
+# So plant all six and require all six.
+
+cat >"$plant/scripts/shapes.sh" <<'SH'
+#!/usr/bin/env bash
+curl -fsSL "https://example.invalid/bare"
+a="$(curl -fsSL https://example.invalid/quoted-substitution)"
+b=$(curl -fsSL https://example.invalid/substitution)
+if ! curl -fsSL https://example.invalid/conditional; then :; fi
+echo z | curl -fsSL https://example.invalid/pipeline
+c=$(true && curl -fsSL https://example.invalid/after-operator)
+SH
+
+list="$(SCRIPTS="$plant/scripts" violations)"
+check "every shape of a deadline-less curl is caught" "6" \
+	"$(printf '%s' "$list" | grep -c '^shapes\.sh:')"
+check "and the quoted command substitution is one of them" "1" \
+	"$(printf '%s' "$list" | grep -c 'quoted-substitution')"
+rm -f "$plant/scripts/shapes.sh"
 
 # --- a comment line is not an invocation ----------------------------------
 #
