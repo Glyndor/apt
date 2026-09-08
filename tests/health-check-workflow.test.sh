@@ -184,6 +184,36 @@ check "and quotes the value it could not read" "1" \
 	"$(said 'not a date at all')"
 
 echo
+
+# --- the budget has to fit inside the job that carries it -------------------
+#
+# The read-back retries, and until 2026-09-08 nothing bounded what those
+# retries could cost: against a peer that accepts a connection and never
+# answers, one fetch burned --max-time times curl's own retries. Measured that
+# day, four attempts and 18.0s at --max-time 3, which is 1800s at the 300 the
+# script used to carry, against a job allowed 600s. The job was cancelled
+# and the operator read a cancellation instead of which file was wrong.
+#
+# So the script takes a budget, and it is passed from HERE rather than
+# defaulted, so that it sits next to the timeout it has to respect. Two numbers
+# in two files is how they drift, which is the defect this repository keeps
+# finding; this reads both out of the same file and requires the relationship
+# rather than trusting whoever edits one of them next.
+budget="$(grep -oE 'verify-published\.sh.*[0-9]+ [0-9]+ [0-9]+' "$WORKFLOW" \
+	| grep -oE '[0-9]+$' | head -1)"
+if [ -z "$budget" ]; then
+	budget="$(grep -A3 'verify-published\.sh' "$WORKFLOW" | grep -oE '^[[:space:]]+keyring/[^ ]+ [0-9]+ [0-9]+ [0-9]+' | grep -oE '[0-9]+$' | head -1)"
+fi
+timeout_min="$(grep -oE 'timeout-minutes: [0-9]+' "$WORKFLOW" | grep -oE '[0-9]+' | head -1)"
+check "the read-back is given an explicit budget" "1" \
+	"$([ -n "$budget" ] && echo 1 || echo 0)"
+check "and the job declares a timeout to fit it in" "1" \
+	"$([ -n "$timeout_min" ] && echo 1 || echo 0)"
+# Comfortably inside, not merely inside: the budget bounds the retries and the
+# job also has to run everything before them and print the diagnosis after.
+check "and the budget leaves at least a third of the job outside itself" "1" \
+	"$([ -n "$budget" ] && [ -n "$timeout_min" ] && [ "$budget" -le $(( timeout_min * 60 * 2 / 3 )) ] && echo 1 || echo 0)"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

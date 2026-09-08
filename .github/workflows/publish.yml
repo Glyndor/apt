@@ -532,4 +532,11 @@ jobs:
           # stale bytes. The script retries internally to cover that purge being
           # asynchronous, and only that, since the R2 visibility lag it was also
           # written for turned out not to exist (#53).
-          ./scripts/verify-published.sh "$ARCHIVE_URL"
+          # attempts, delay, then the budget. The budget is the fifth
+          # argument and it lives here rather than in the script's default so
+          # it can be read next to this job's `timeout-minutes: 15` above:
+          # 600s leaves five minutes of the job for everything else and for
+          # the script to print which file is not being served as signed.
+          # Cancelled-by-timeout prints nothing.
+          ./scripts/verify-published.sh "$ARCHIVE_URL" \
+            keyring/glyndor-apt-key.asc 6 10 600
