@@ -113,7 +113,11 @@ jobs:
           #
           # Three attempts, not the gate's six: no sync is in flight here, so a
           # mismatch should not be transient and an alert should not be held back.
-          ./scripts/verify-published.sh "$BASE_URL" keyring/glyndor-apt-key.asc 3 10
+          # The fifth argument is the budget, read next to this job's
+          # `timeout-minutes: 10`: 360s leaves four minutes for the rest of
+          # the job and for the script's own diagnosis, which a cancellation
+          # would replace with nothing.
+          ./scripts/verify-published.sh "$BASE_URL" keyring/glyndor-apt-key.asc 3 10 360
 
       - name: Bootstrap keyring package reachable
         run: |

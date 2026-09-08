@@ -49,6 +49,17 @@
 #
 # Usage:
 #   verify-published.sh <base-url> [<pubkey-asc>] [<attempts>] [<delay-seconds>]
+#                       [<budget-seconds>]
+#
+# budget-seconds bounds the WHOLE run, and it exists because attempts and delay
+# cannot. A peer that accepts a connection and then never answers burns
+# --max-time per attempt, and curl's own --retry multiplies that again, so the
+# script could spend far longer than the job that calls it is allowed to live.
+# The job would then be cancelled and the operator would read "cancelled after
+# 15 minutes" instead of which file is not being served as signed. Measured
+# 2026-09-08 against a socket that accepts and never responds: four attempts and
+# 18.0s at --max-time 3, which is 1800s at the 300 this used to carry, against a
+# 900s job.
 
 set -euo pipefail
 
@@ -57,6 +68,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PUBKEY_ASC="${2:-$HERE/keyring/glyndor-apt-key.asc}"
 ATTEMPTS="${3:-6}"
 DELAY="${4:-10}"
+# The default is generous because the suite passes its own, and because a run
+# with no budget argument is a local one where the wall is a person's patience.
+# publish.yml and health-check.yml pass theirs from beside their own
+# timeout-minutes, so the two numbers are read together rather than drifting.
+BUDGET="${5:-600}"
+STARTED_AT="$(date -u +%s)"
 
 # Strip a trailing slash so the URLs built below never contain a double one;
 # some edges treat "//dists" as a distinct, uncached path.
@@ -88,6 +105,14 @@ MAX_POOL_BYTES="${VERIFY_PUBLISHED_MAX_POOL_BYTES:-$((2 * 1024 * 1024 * 1024))}"
 case "$ATTEMPTS" in '' | *[!0-9]*) echo "::error::attempts must be a positive integer, got '$ATTEMPTS'" >&2; exit 1 ;; esac
 case "$DELAY" in '' | *[!0-9]*) echo "::error::delay must be a non-negative integer, got '$DELAY'" >&2; exit 1 ;; esac
 [ "$ATTEMPTS" -ge 1 ] || { echo "::error::attempts must be at least 1" >&2; exit 1; }
+case "$BUDGET" in '' | *[!0-9]*) echo "::error::budget must be a positive integer, got '$BUDGET'" >&2; exit 1 ;; esac
+[ "$BUDGET" -ge 1 ] || { echo "::error::budget must be at least 1 second" >&2; exit 1; }
+
+# Seconds spent so far. Used to decide whether another attempt can finish
+# inside the budget rather than to abort one already running: a fetch that is
+# under way is bounded by its own deadline, and killing it would lose the
+# diagnosis this script exists to print.
+elapsed() { echo $(( $(date -u +%s) - STARTED_AT )); }
 [ -f "$PUBKEY_ASC" ] || { echo "::error::archive public key $PUBKEY_ASC not found" >&2; exit 1; }
 
 WORK="$(mktemp -d)"
@@ -108,7 +133,13 @@ gpg --batch --quiet --import "$PUBKEY_ASC" \
 # with -f), which absorbs a brief 404 while an object becomes visible; the
 # caller's own retry loop handles a lag longer than that.
 fetch() {
-	curl -fsS --retry 3 --retry-all-errors --retry-delay 2 --max-time 300 \
+	# --max-time bounds one attempt and --retry-max-time bounds the sequence,
+	# which is what curl's own --retry would otherwise multiply. Both are
+	# generous against measurement rather than against imagination: the largest
+	# object this archive serves is 6.19 MB and fetched in 0.90s on 2026-09-08,
+	# so 30 leaves better than thirty times the margin.
+	curl -fsS --retry 3 --retry-all-errors --retry-delay 2 \
+		--max-time 30 --retry-max-time 60 \
 		--max-filesize "${3:-$MAX_INDEX_BYTES}" "$1" -o "$2"
 }
 
@@ -271,8 +302,18 @@ verify_set() {
 		if [ "${#failed[@]}" -eq 0 ]; then
 			break
 		fi
-		if [ "$attempt" -ge "$ATTEMPTS" ]; then
-			echo "::error::${#failed[@]} of $total $label are not being served as signed, after $attempt attempt(s)" >&2
+		# Two ways to stop retrying, and both end here so the operator gets
+		# the same named list either way. Attempts alone cannot bound this:
+		# against a peer that accepts and never answers, one attempt already
+		# costs --max-time times curl's own retries, and the job would be
+		# cancelled before this message was ever printed.
+		_spent="$(elapsed)"
+		if [ "$attempt" -ge "$ATTEMPTS" ] || [ "$_spent" -ge "$BUDGET" ]; then
+			if [ "$_spent" -ge "$BUDGET" ]; then
+				echo "::error::${#failed[@]} of $total $label are not being served as signed, and the ${BUDGET}s budget ran out after ${_spent}s on attempt $attempt" >&2
+			else
+				echo "::error::${#failed[@]} of $total $label are not being served as signed, after $attempt attempt(s)" >&2
+			fi
 			for entry in "${failed[@]}"; do
 				echo "::error::  ${entry##* }" >&2
 			done
@@ -442,6 +483,12 @@ verify_set "bootstrap package(s)" "$WORK/bootstrap-entries" "" \
 # to close: a root object under a fixed name, served for a day.
 bootstrap_sig_ok=0
 for attempt in $(seq 1 "$ATTEMPTS"); do
+	# Same budget as the sets above, for the same reason: this loop fetches
+	# too, so attempts alone cannot bound what it costs.
+	if [ "$(elapsed)" -ge "$BUDGET" ]; then
+		echo "::error::$BOOTSTRAP_DEB.asc did not verify and the ${BUDGET}s budget ran out on attempt $attempt; the install line refuses a package whose signature does not check out, so this archive cannot be bootstrapped" >&2
+		exit 1
+	fi
 	if fetch "$BASE_URL/$BOOTSTRAP_DEB.asc" "$WORK/bootstrap.asc" \
 		"$MAX_BOOTSTRAP_SIG_BYTES" \
 		&& gpgv --keyring "$GNUPGHOME/pubring.kbx" --quiet \

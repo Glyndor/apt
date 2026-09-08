@@ -419,6 +419,68 @@ build_archive
 assert_says 0 "all 1 bootstrap package(s)" \
 	"the bootstrap package is counted once, not once per parse path" -- run
 
+# --- the budget stops the retries, where attempts alone could not ------------
+#
+# The retry loop exists to absorb an asynchronous edge purge, and until
+# 2026-09-08 nothing bounded what it could cost. Against a peer that accepts a
+# connection and never answers, one fetch burned --max-time times curl's own
+# retries: measured that day, four attempts and 18.0s at --max-time 3, which is
+# 1800s at the 300 the script then carried, against a 900s job. The job was
+# cancelled, so the ::error:: naming the file was never printed and the
+# operator read a cancellation instead of a diagnosis.
+#
+# The observation that differs: with a mismatch that will never converge, the
+# run ends by NAMING the budget rather than by exhausting attempts. Asserting
+# only a non-zero exit would be satisfied by the attempts path, which is the
+# one that already worked.
+build_archive
+sed -i 's/Architecture: arm64/Architecture: ar_64/' "$DIST/main/binary-arm64/Packages"
+# The needle is the ATTEMPT NUMBER, not the word budget. Both paths end in the
+# same message-selection branch, so a run that exhausted nine attempts and then
+# noticed it was over budget prints the budget wording too. Only the attempt
+# the loop STOPS on distinguishes them: bounded by the budget it is the first,
+# bounded by attempts it is the ninth. Measured while writing this: asserting
+# the wording passed with the budget condition deleted.
+# The measurement is HOW MANY TIMES it retried, not the wording. Both paths end
+# in the same message-selection branch, so a run that exhausted every attempt
+# and then noticed it was over budget prints the budget wording too: asserting
+# the words passed with the budget condition deleted, measured while writing
+# this. The retry count is what the budget actually changes.
+budget_out="$("$VERIFY" "$BASE" "$TRUSTED_ASC" 9 1 1 2>&1 || true)"
+budget_retries="$(printf '%s' "$budget_out" | grep -c 'not yet consistent, re-reading')"
+if [ "$budget_retries" -le 2 ]; then
+	echo "ok   - the budget stops the retries early ($budget_retries re-reads of a possible 8)"
+	pass=$((pass + 1))
+else
+	echo "FAIL - the budget did not stop the retries ($budget_retries re-reads)"
+	printf '%s\n' "$budget_out" | sed 's/^/       /'
+	fail=$((fail + 1))
+fi
+
+# The control. With a budget that is not in the way the same archive uses every
+# attempt it was given, so the assertion above is about the budget rather than
+# about a loop that never retries.
+build_archive
+sed -i 's/Architecture: arm64/Architecture: ar_64/' "$DIST/main/binary-arm64/Packages"
+roomy_out="$("$VERIFY" "$BASE" "$TRUSTED_ASC" 4 0 600 2>&1 || true)"
+roomy_retries="$(printf '%s' "$roomy_out" | grep -c 'not yet consistent, re-reading')"
+if [ "$roomy_retries" -eq 3 ]; then
+	echo "ok   - and with room to spare it uses every attempt ($roomy_retries re-reads)"
+	pass=$((pass + 1))
+else
+	echo "FAIL - the roomy control did not use its attempts ($roomy_retries re-reads, wanted 3)"
+	fail=$((fail + 1))
+fi
+
+# The other half. With a budget that is not in the way, the same archive still
+# ends the way it always did, or the assertion above would be satisfied by a
+# script that reported the budget for everything.
+build_archive
+sed -i 's/Architecture: arm64/Architecture: ar_64/' "$DIST/main/binary-arm64/Packages"
+assert_error 1 "after 1 attempt" \
+	"and with room to spare it still ends on the attempts" \
+	-- "$VERIFY" "$BASE" "$TRUSTED_ASC" 1 0 600
+
 # --- The caps: bounded work, not just bounded objects ------------------------
 # The two caps are the only thing keeping a hostile or runaway index from
 # turning this gate into an unbounded download. They are exercised here by
