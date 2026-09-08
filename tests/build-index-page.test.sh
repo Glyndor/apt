@@ -87,8 +87,17 @@ archive() { # $1=dir $2=arch list ("-" for a Release with no Architectures) $3..
 		mkdir -p "$dir/dists/stable/main/binary-$arch"
 		: > "$dir/dists/stable/main/binary-$arch/Packages"
 		for pkg in "$@"; do
-			printf 'Package: %s\nVersion: 1.0\n\n' "$pkg" \
-				>> "$dir/dists/stable/main/binary-$arch/Packages"
+			# "name@dep, dep" attaches a Depends line. The separator is `@`
+			# because it appears in neither a package name nor Debian
+			# dependency syntax, so it cannot collide with what is being tested.
+			if [ "${pkg#*@}" != "$pkg" ]; then
+				printf 'Package: %s\nVersion: 1.0\nDepends: %s\n\n' \
+					"${pkg%%@*}" "${pkg#*@}" \
+					>> "$dir/dists/stable/main/binary-$arch/Packages"
+			else
+				printf 'Package: %s\nVersion: 1.0\n\n' "$pkg" \
+					>> "$dir/dists/stable/main/binary-$arch/Packages"
+			fi
 		done
 		printf 'Package: glyndor-archive-keyring\nVersion: 1.0\n\n' \
 			>> "$dir/dists/stable/main/binary-$arch/Packages"
@@ -108,7 +117,12 @@ P="$WORK/a/index.html"
 check "the architectures come from the Release" "1" \
 	"$(grep -c 'Debian/Ubuntu (amd64, arm64)' "$P")"
 check "one install entry per product" "1" \
-	"$(grep -o '<li><code>curl -fsSL https://apt.glyndor.net/install/podup | sudo sh</code></li>' "$P" | wc -l)"
+	"$(grep -o '<li><code>curl -fsSL https://apt.glyndor.net/install/podup | sudo sh</code>' "$P" | wc -l)"
+# Match the markup, not the word: the prose lower down uses "requires" and
+# "takes" for the same idea, and a bare word match would answer about the
+# paragraph rather than about the list.
+check "a package with no dependencies gets no requirements clause" "0" \
+	"$(grep -c '<span>needs' "$P")"
 check "the keyring is not offered as a product install" "0" \
 	"$(grep -c 'install/glyndor-archive-keyring' "$P")"
 # The page and README.md are read by the same person. README.md tells them not
@@ -130,6 +144,57 @@ check "every product gets an entry" "4" \
 	"$(grep -o '<li><code>curl -fsSL https://apt.glyndor.net/install/' "$WORK/b/index.html" | wc -l)"
 check "and each appears once despite three indices declaring it" "1" \
 	"$(grep -o 'install/helmly | sudo sh<' "$WORK/b/index.html" | wc -l)"
+
+# --- what the reader has to supply ------------------------------------------
+#
+# The page promised "Debian/Ubuntu" with nothing else, and that is the sentence
+# somebody acts on. It is not true of most of Debian and Ubuntu: podup 5.9.1
+# declares `podman (>= 5.0)`, Ubuntu 24.04 LTS ships 4.9.3 with no backport, so
+# the archive adds cleanly there and the install cannot complete.
+#
+# Only the requirement is asserted here, never a list of releases that satisfy
+# it. A release list would be a claim about the world that nothing in this
+# repository can falsify.
+
+archive "$WORK/e" "amd64" 'podup@podman (>= 5.0), unattended-upgrades, glyndor-archive-keyring' \
+	'epistle@glyndor-archive-keyring, adduser'
+rc=0; run "$WORK/e" || rc=$?
+check "an archive declaring dependencies builds a page" "0" "$rc"
+E="$WORK/e/index.html"
+
+check "a version-constrained requirement is shown with the package" "1" \
+	"$(grep -o 'install/podup | sudo sh</code> <span>needs <code>podman (&gt;= 5.0)</code>' "$E" | wc -l)"
+check "an unconstrained one is shown too" "1" \
+	"$(grep -o '<code>unattended-upgrades</code>' "$E" | wc -l)"
+check "each package gets its own requirements, not the archive's" "1" \
+	"$(grep -o 'install/epistle | sudo sh</code> <span>needs <code>adduser</code></span>' "$E" | wc -l)"
+
+# A dependency on something this archive serves is resolved by apt from here, so
+# it is not the reader's to supply. Derived from the index rather than from a
+# list of our own names, which is what keeps it true as the roster grows.
+check "a dependency this archive serves is not listed as a requirement" "0" \
+	"$(grep -c 'needs <code>glyndor-archive-keyring' "$E")"
+
+# The escaping, asserted on the exact bytes rather than on "no angle bracket".
+# `&` in the replacement half of a bash substitution expands to the text that
+# just matched, the way sed does, so the first version of html_escape turned
+# `(>= 5.0)` into `(>gt;= 5.0)`: entity broken, bracket still there. Both halves
+# have to be checked or that output passes a test looking only for `&gt;`.
+check "a version relation is escaped as an entity" "1" \
+	"$(grep -c '&gt;= 5.0' "$E")"
+check "and no raw bracket survives in it" "0" \
+	"$(grep -c '>gt;\|(>= 5.0)' "$E")"
+
+check "the page says adding the archive is not the same as installing" "1" \
+	"$(grep -c 'can add the' "$E")"
+
+archive "$WORK/f" "amd64" 'podup@libevil (<< 1.0) <script>alert(1)</script>'
+rc=0; run "$WORK/f" || rc=$?
+check "a hostile dependency does not stop the build" "0" "$rc"
+check "it is skipped with a warning naming the package" "1" \
+	"$(grep -c 'skipping unexpected dependency of podup' "$WORK/out")"
+check "and no script tag reaches the page" "0" \
+	"$(grep -c '<script' "$WORK/f/index.html")"
 
 # --- the strings reach a browser --------------------------------------------
 
