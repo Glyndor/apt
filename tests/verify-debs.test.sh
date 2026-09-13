@@ -52,16 +52,19 @@ assert_error() {
 
 # Build a .deb with a given control Package name into $WORK, echo its path.
 make_deb() {
-	local name="$1" pkg="$2" root ver
-	# Third argument is the Debian Version. Defaulted so every existing call
-	# site keeps the version it was written against.
+	local name="$1" pkg="$2" root ver arch
+	# Third argument is the Debian Version; fourth is the Architecture. Both
+	# are defaulted so every existing call site keeps the values it was
+	# written against (Architecture: amd64 in particular, which is what every
+	# case below needs unless it explicitly asks for a different arch).
 	ver="${3:-1.0}"
+	arch="${4:-amd64}"
 	root="$WORK/root-$name"
 	mkdir -p "$root/DEBIAN"
 	cat > "$root/DEBIAN/control" <<EOF
 Package: $pkg
 Version: $ver
-Architecture: amd64
+Architecture: $arch
 Maintainer: Glyndor <packages@glyndor.net>
 Description: test fixture
 EOF
@@ -305,6 +308,49 @@ assert 0 "an epoch and a Debian revision do not break the tag binding" \
 # pins the script's own contract so the two cannot drift apart silently.
 assert 0 "no expected tag means the binding is not applied" \
 	-- "$VERIFY" "$WORK/case16" "$WORK/key.b64" podup
+
+# --- Case 19: an amd64 .deb attached under an arm64 asset name is refused ---
+#             because the filename is chosen by whoever uploads the asset
+# and the control Architecture field is the only thing inside the signed
+# bytes. A release can attach the same signed amd64 .deb twice, once under
+# the `_amd64.deb` name and once under the `_arm64.deb` name; without this
+# check the gate admits both and arm64 users get no package.
+#
+# Both checks share one script invocation so the second assertion is on the
+# SAME output as the first; running the script twice and asserting on each
+# invocation separately would also pass if the gate only ever printed one
+# of the two architectures, which is the gap this pair closes.
+d="$WORK/case19"; mkdir -p "$d"
+deb="$(make_deb arch_mismatch podup)"; cp "$deb" "$d/podup_1.0.0_amd64.deb"
+cp "$deb" "$d/podup_1.0.0_arm64.deb"
+sign "$d/podup_1.0.0_amd64.deb"
+sign "$d/podup_1.0.0_arm64.deb"
+rc=0
+out="$("$VERIFY" "$d" "$WORK/key.b64" podup 2>&1)" || rc=$?
+if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -qF "architecture mismatch"; then
+	echo "ok   - an amd64 package under an arm64 asset name is refused (exit $rc)"
+	pass=$((pass + 1))
+else
+	echo "FAIL - an amd64 package under an arm64 asset name is refused (exit $rc: $out)"
+	fail=$((fail + 1))
+fi
+if printf '%s' "$out" | grep -qF "named for arm64" && printf '%s' "$out" | grep -qF "says amd64"; then
+	echo "ok   - and the refusal names both architectures"
+	pass=$((pass + 1))
+else
+	echo "FAIL - and the refusal names both architectures ($out)"
+	fail=$((fail + 1))
+fi
+
+# --- Case 20: a package whose control Architecture matches its filename -----
+#             is admitted. The opposite of case 19: this is what the gate
+# must still let through so the negative case above is not satisfied by a
+# gate that refused everything carrying an architecture in its name.
+d="$WORK/case20"; mkdir -p "$d"
+deb="$(make_deb arch_match podup 1.0 arm64)"; cp "$deb" "$d/podup_1.0.0_arm64.deb"
+sign "$d/podup_1.0.0_arm64.deb"
+assert 0 "a package whose control architecture matches its name passes" \
+	-- "$VERIFY" "$d" "$WORK/key.b64" podup
 
 echo "passed $pass, failed $fail"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

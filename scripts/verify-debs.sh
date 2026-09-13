@@ -138,6 +138,30 @@ for deb in "${debs[@]}"; do
 		fi
 	fi
 
+	# Bind the package's architecture to the one its name claims. The filename
+	# is set by whoever uploads the release asset and is not part of the signed
+	# bytes, so a single signed amd64 .deb can be attached twice under both the
+	# `_amd64.deb` and `_arm64.deb` names and the gate would otherwise admit
+	# both, leaving arm64 users with no package. The control Architecture field
+	# is inside the signed payload, so I read it back to learn the architecture
+	# the build actually produced and trust that one instead.
+	if ! ctrl_arch="$(dpkg-deb -f "$deb" Architecture)"; then
+		echo "::error::cannot read the Architecture control field of $(basename "$deb"); refusing a package whose architecture cannot be bound to its name" >&2
+		exit 1
+	fi
+	base="$(basename "$deb")"
+	claimed_arch=""
+	case "$base" in
+		*_*.deb)
+			claimed_arch="${base##*_}"
+			claimed_arch="${claimed_arch%.deb}"
+			;;
+	esac
+	if [ -n "$claimed_arch" ] && [ "$claimed_arch" != "$ctrl_arch" ]; then
+		echo "::error::architecture mismatch: $base is named for $claimed_arch but its control field says $ctrl_arch; a release must not carry a package built for another architecture under this name" >&2
+		exit 1
+	fi
+
 	sig="$deb.sig"
 	if [ ! -f "$sig" ]; then
 		echo "::error::no signature ($sig) for $(basename "$deb"); refusing to publish an unverified package" >&2
