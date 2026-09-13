@@ -179,6 +179,28 @@ check "a script invoked through an interpreter is not held to the rule" "0" "$rc
 check "and the step says there was nothing to check" "1" \
 	"$(printf '%s' "$out" | grep -q 'nothing to check' && echo 1 || echo 0)"
 
+# ===========================================================================
+# Run tests
+# ===========================================================================
+#
+# The test job shells out to the caller's test-command. Without errexit in
+# the child, the child's exit code is the LAST suite's, so an early failing
+# suite leaves the required `shell / test` check green: the same failure
+# the literal-block-scalar guard in workflow-lint exists to refuse. The
+# child here passes `-e -o pipefail` to bash so the first failing statement
+# exits the job even when a later statement would succeed.
+step_script "$WORKFLOW" "Run tests" > "$WORK/run-tests.sh"
+check "the run-tests step was extracted from the workflow" "1" \
+	"$(grep -c 'TEST_COMMAND' "$WORK/run-tests.sh" | awk '{print ($1>0)}')"
+
+# Two commands on two lines, the first `false`, the second `true`. The newlines
+# match what a literal block scalar (`|`) in YAML hands bash, so the case
+# exercises the same shell path the guard refuses at the workflow level.
+# `false` writes nothing, so the only observable signal is the exit code.
+out="$(TEST_COMMAND=$'false\ntrue' bash "$WORK/run-tests.sh" 2>&1)"; rc=$?
+check "an early failing statement fails the test step even when a later one passes" "1" \
+	"$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

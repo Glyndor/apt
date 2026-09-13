@@ -220,7 +220,17 @@ jobs:
             sudo apt-get install -y -qq $APT_PACKAGES
           fi
 
+      # The guard in reusable-workflow-lint.yml already refuses a
+      # test-command written as a literal YAML block scalar (`|`), because
+      # each line of that scalar becomes its own shell statement and a bare
+      # `bash -c "$TEST_COMMAND"` returns the exit code of the LAST one, so
+      # an early failing suite would leave the required `shell / test` check
+      # green. I pass `-e -o pipefail` to the child here so the FIRST failing
+      # statement exits the job even if a future caller bypasses the guard:
+      # errexit is not inherited by the spawned shell, and this is the place
+      # that fixes that, since a `set -e` above this line never reaches the
+      # child.
       - name: Run tests
         run: |
           set -euo pipefail
-          bash -c "$TEST_COMMAND"
+          bash -e -o pipefail -c "$TEST_COMMAND"

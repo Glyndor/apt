@@ -158,6 +158,37 @@ check "the runner form with || true is still refused" "1" "$rc"
 check "and it is refused as the suppression, not as the grammar" "1" \
 	"$(said "$out" '`|| true` in its')"
 
+# A literal block scalar (`|`) keeps newlines, so the runner sits on line one
+# and each suite sits on its own line: three shell statements after YAML
+# parses, not one. Without this check, the guard joins the lines back into a
+# single string and the suite never fails the required check.
+caller_lit() { # $1=dir  $2..=lines of the test-command body
+	{
+		echo 'name: Tests'
+		echo 'on: pull_request'
+		echo 'jobs:'
+		echo '  shell:'
+		echo '    uses: ./.github/workflows/reusable-shell-ci.yml'
+		echo '    with:'
+		echo '      test-command: |'
+		shift
+		for line in "$@"; do
+			echo "        $line"
+		done
+		echo '      apt-packages: shellcheck'
+	} > "$1/.github/workflows/tests.yml"
+}
+
+d="$(new)"
+caller_lit "$d" \
+	'./tests/check-suite-completeness.test.sh' \
+	'./tests/one.test.sh' \
+	'./tests/two.test.sh'
+out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
+check "a literal block scalar in test-command is refused" "1" "$rc"
+check "and the refusal says the statements would run separately" "1" \
+	"$(said "$out" 'separate shell statements')"
+
 # --- a caller that runs a suite passes (sanity check) ---------------------
 d="$(new)"; caller "$d" './tests/one.test.sh && ./tests/two.test.sh'
 out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
