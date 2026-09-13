@@ -56,6 +56,7 @@ jobs:
         ./tests/keyring-fingerprints.test.sh
         ./tests/publish-workflow.test.sh
         ./tests/health-check-workflow.test.sh
+        ./tests/distro-floor.test.sh
         ./tests/locale-pinned.test.sh
         ./tests/check-test-coverage.test.sh
         ./tests/ci-runs-every-test.test.sh

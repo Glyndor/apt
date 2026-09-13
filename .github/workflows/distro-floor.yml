@@ -1,0 +1,62 @@
+name: Distribution floor
+
+# Which Debian and Ubuntu releases can install from this archive is a fact
+# about podman, not about this repository: podup depends on podman 5, and
+# epistle needs podup to run the mail stack, so the floor is "releases that
+# ship podman 5 or newer from their own repositories" (#237). A release
+# crosses that line when its repositories change, and no event here announces
+# that. So this runs the served install line inside fresh containers and
+# asserts exactly what the README table promises: the releases listed as
+# supported install, and the one listed as unsupported is refused with a
+# message that names podman.
+#
+# Weekly and on demand, no push or pull_request: the question is about the
+# distributions and the served archive, not about a change in this tree. The
+# images are pulled by tag on purpose, since "what the release serves today"
+# is the thing being measured, and a digest would freeze the answer.
+#
+# No schedule-freshness watcher yet. A watcher added before the cron has
+# fired twice on its own is born red with nothing wrong (see freshness.yml),
+# so it comes in a later change once there is history to measure against.
+
+on:
+  schedule:
+    - cron: "15 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  floor:
+    name: ${{ matrix.image }} should ${{ matrix.expect }}
+    runs-on: ubuntu-latest
+    # Measured locally on 2026-09-12: 24 to 40 seconds per image, pull and
+    # apt-get update included. Fifteen minutes leaves room for a slow mirror
+    # without sitting for six hours on a hang.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:trixie
+            expect: install
+          - image: ubuntu:26.04
+            expect: install
+          - image: ubuntu:22.04
+            expect: refuse
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the served install line in a fresh container
+        env:
+          IMAGE: ${{ matrix.image }}
+          EXPECT: ${{ matrix.expect }}
+        run: |
+          set -euo pipefail
+          docker run --rm --pull=always \
+            -v "$PWD/scripts/distro-floor.sh:/distro-floor.sh:ro" \
+            "$IMAGE" sh /distro-floor.sh "$EXPECT" podup
