@@ -55,6 +55,8 @@ case "$expect" in
 			|| fail "the installer exited $rc on a release the README lists as supported"
 		command -v "$product" >/dev/null 2>&1 \
 			|| fail "the installer exited 0 but $product is not on PATH"
+		"$product" --version >/dev/null 2>&1 \
+			|| fail "$product is on PATH but does not start; the installer did not notice"
 		echo "distro-floor: $product installs here, as the README says"
 		;;
 	refuse)
