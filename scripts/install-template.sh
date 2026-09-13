@@ -167,21 +167,69 @@ archive_upgrade_state() { # prints: allowed | no-origin | blacklisted | unknown
 	_dump="$(apt-config dump 2>/dev/null)" || { echo unknown; return 0; }
 	[ -n "$_dump" ] || { echo unknown; return 0; }
 
-	# Match the origin name rather than the exact entry. Ours is
-	# "Glyndor:stable"; an operator may equally have written
-	# "origin=Glyndor" or "o=Glyndor,a=stable" in the other list, and all
-	# three mean this archive is covered.
-	printf '%s\n' "$_dump" \
+	# A value covers this archive when it is one of these forms, and only
+	# these:
+	#
+	#   Glyndor:stable
+	#   origin=Glyndor (with optional ,archive=stable or ,a=stable)
+	#   o=Glyndor with the same optional suite
+	#   site=apt.glyndor.net
+	#
+	# Glyndor:<other suite> does not cover it. Any other Glyndor-mentioning
+	# entry that does not match one of these forms is unknown, not allowed:
+	# the operator spelled it differently from the forms above, so what
+	# the machine does with it cannot be read from here.
+	_values="$(printf '%s\n' "$_dump" \
 		| grep -E '^Unattended-Upgrade::(Allowed-Origins|Origins-Pattern)::' \
-		| grep -q 'Glyndor' || { echo no-origin; return 0; }
+		| sed -nE 's/.*:: "([^"]*)".*/\1/p')"
 
-	# Blacklist entries are regular expressions, so this catches the plain
-	# spelling and not every pattern that could match. A miss here leaves the
-	# message as it is today rather than making it wrong, which is the right
-	# direction to be incomplete in.
-	printf '%s\n' "$_dump" \
+	_allowed_origin=0
+	_unknown_origin=0
+	for _v in $_values; do
+		case "$_v" in
+			'Glyndor:stable')
+				_allowed_origin=1
+				;;
+			'origin=Glyndor'|'origin=Glyndor,archive=stable'|'origin=Glyndor,a=stable')
+				_allowed_origin=1
+				;;
+			'o=Glyndor'|'o=Glyndor,archive=stable'|'o=Glyndor,a=stable')
+				_allowed_origin=1
+				;;
+			'site=apt.glyndor.net')
+				_allowed_origin=1
+				;;
+			*Glyndor*)
+				_unknown_origin=1
+				;;
+		esac
+	done
+
+	if [ "$_allowed_origin" = 0 ]; then
+		if [ "$_unknown_origin" = 1 ]; then
+			echo unknown
+		else
+			echo no-origin
+		fi
+		return 0
+	fi
+
+	# Blacklist entries are regular expressions. The default blacklist (and
+	# ours) is the product name as a literal, but an operator may also write
+	# "^product" or "^product$", and those still match. An entry that is not
+	# a valid regex is unknown, not a miss: if grep cannot parse what the
+	# operator wrote, what the machine does with it cannot be said either.
+	_entries="$(printf '%s\n' "$_dump" \
 		| grep -E '^Unattended-Upgrade::Package-Blacklist::' \
-		| grep -q '"@PRODUCT@"' && { echo blacklisted; return 0; }
+		| sed -nE 's/.*:: "([^"]*)".*/\1/p')"
+	for _e in $_entries; do
+		printf '%s\n' "@PRODUCT@" | grep -Eq -- "$_e" 2>/dev/null
+		_rc=$?
+		case "$_rc" in
+			0) echo blacklisted; return 0 ;;
+			2) echo unknown; return 0 ;;
+		esac
+	done
 
 	echo allowed
 }
