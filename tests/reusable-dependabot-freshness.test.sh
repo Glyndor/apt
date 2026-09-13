@@ -111,6 +111,8 @@ STUB
 
 # A workflows directory pinning the given actions. Each argument is
 # "owner/repo vX.Y.Z"; the SHA is a placeholder, the step never resolves it.
+# An argument with no space ("owner/repo") writes the pin WITHOUT the
+# version comment, so a case can exercise the unannotated branch.
 fixture() { # $1=dir  $2..=pins
 	local dir="$1"; shift
 	rm -rf "$dir"; mkdir -p "$dir"
@@ -119,7 +121,11 @@ fixture() { # $1=dir  $2..=pins
 		echo "  t:"
 		echo "    steps:"
 		for pin in "$@"; do
-			echo "      - uses: ${pin% *}@0000000000000000000000000000000000000000 # ${pin#* }"
+			if [ "${pin#* }" = "$pin" ]; then
+				echo "      - uses: $pin@0000000000000000000000000000000000000000"
+			else
+				echo "      - uses: ${pin% *}@0000000000000000000000000000000000000000 # ${pin#* }"
+			fi
 		done
 	} > "$dir/ci.yml"
 }
@@ -303,6 +309,23 @@ printf '%s\n' "$(ago 1)" > "$WORK/recent.resp"
 rc=0; run_step "$MAX_AGE_DAYS" "$WORK/recent.resp" "$WORK/wf-unreadable" >/dev/null || rc=$?
 check "within the limit passes without asking upstream, even with an unreadable pin" "0" "$rc"
 check "and made no git call" "0" "$(git_calls | tr -d ' ')"
+
+# An unannotated pin (`uses: ...@<sha>` with no `# vX.Y.Z` comment) cannot
+# be compared to a tag, so it must not be silently current. The previous
+# form of pins_behind_upstream only matched pins that carried the comment,
+# while the success line below still counted every `uses: ...@<sha>` pin,
+# so one annotated pin plus one unannotated pin exited 0 and said "every
+# one of the 2 pinned action(s) is at its newest upstream tag" after
+# asking upstream for only one.
+fixture "$WORK/wf-unannotated" "actions/checkout v7.0.1" "example/unannotated"
+upstream actions/checkout v7.0.0 v7.0.1
+printf '%s\n' "$(ago 20)" > "$WORK/old20.resp"
+out="$(run_step "$MAX_AGE_DAYS" "$WORK/old20.resp" "$WORK/wf-unannotated")"; rc=$?
+check "an unannotated pin is not counted as current" "1" "$rc"
+check "and names the pin it could not read" "1" \
+	"$(printf '%s' "$out" | grep -q 'example/unannotated pinned without a version comment: cannot tell whether it is behind' && echo 1 || echo 0)"
+check "and upstream was asked for the annotated pin only" "1" \
+	"$(git_calls | tr -d ' ')"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

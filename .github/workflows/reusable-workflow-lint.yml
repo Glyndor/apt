@@ -340,6 +340,24 @@ jobs:
                               + GRAMMAR + "."
                           ))
                           continue
+                      # A literal block scalar (`|`) keeps newlines, so each
+                      # line of the YAML value becomes its own shell
+                      # statement. `bash -c "$TEST_COMMAND"` then returns the
+                      # LAST statement's exit code, and an early failing
+                      # suite would not fail the required check. This is
+                      # checked against the RAW value, before `normalize()`
+                      # folds newlines to spaces.
+                      if "\n" in tc:
+                          violations.append((
+                              path, job_id,
+                              f"job `{job_id}` in {path} has a literal "
+                              "block scalar (`|`) in its test-command, "
+                              "which splits the command into separate "
+                              "shell statements whose failures the job "
+                              "would not see. The folded form (`>-`) or "
+                              "`&&` is the accepted shape. " + GRAMMAR + "."
+                          ))
+                          continue
                       err = check_test_command(normalize(tc), path, job_id)
                       if err is not None:
                           violations.append((path, job_id, err))

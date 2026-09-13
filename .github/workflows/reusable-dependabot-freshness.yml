@@ -31,12 +31,15 @@ name: Dependabot freshness (reusable)
 #    upstream tag, so the silence was the correct output of a live Dependabot
 #    with nothing to bump, and three days later this gate would have gone red
 #    in three repositories for it. So when the newest pull request is over
-#    the limit, the step reads every `uses: owner/repo@<sha> # vX.Y.Z` pin in
-#    the caller's workflows and asks upstream (plain `git ls-remote`, no API)
-#    for the newest exact-semver tag. Over the limit AND a pin behind, or a
-#    pin whose tag cannot be read, is the failure; over the limit with every
-#    pin current passes and says why. A pin nobody could read is never a pass:
-#    "cannot read it" is a failure, not a skip.
+#    the limit, the step reads every `uses: owner/repo@<sha>` pin in the
+#    caller's workflows and asks upstream (plain `git ls-remote`, no API)
+#    for the newest exact-semver tag, but only for the pins that carry a
+#    `# vX.Y.Z` comment. Over the limit AND a pin behind, or a pin whose tag
+#    cannot be read, or a pin without a version comment, is the failure;
+#    over the limit with every annotated pin current passes and says why.
+#    A pin nobody could read is never a pass: "cannot read it" is a failure,
+#    not a skip, and an unannotated pin is a failure for the same reason,
+#    not a silent current.
 #
 # The caller is responsible for granting `contents: read`; a called workflow
 # cannot elevate beyond the permissions of the workflow that calls it, and
@@ -98,14 +101,24 @@ jobs:
           WORKFLOWS_DIR: .github/workflows
         run: |
           set -euo pipefail
-          # Every third-party pin in the caller's workflows, as "owner/repo vX.Y.Z",
-          # and for each the newest exact-semver tag upstream serves. Prints one
-          # line per pin that is behind, or whose upstream could not be read;
-          # prints nothing when every pin is current.
+          # Every third-party pin in the caller's workflows, as
+          # "owner/repo vX.Y.Z" when annotated, "owner/repo" otherwise.
+          # Prints one line per pin that is behind, whose upstream could not
+          # be read, or carries no version comment; prints nothing when every
+          # pin is annotated and at its newest upstream tag. The enumeration
+          # matches every `uses: ...@<40 hex>` pin, the same shape the count
+          # below uses, so an unannotated pin cannot slip past as silent
+          # current while the success line claims it was inspected.
           pins_behind_upstream() {
-            grep -rhoE 'uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}[[:space:]]*#[[:space:]]*v[0-9][0-9A-Za-z.+-]*' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null \
-              | sed -E 's/uses:[[:space:]]*//; s/@[0-9a-f]{40}[[:space:]]*#[[:space:]]*/ /' | sort -u \
-              | while read -r action tag; do
+            grep -rhoE 'uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}.*' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null \
+              | sort -u \
+              | while read -r line; do
+                  action="$(printf '%s' "$line" | sed -E 's|uses:[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@[0-9a-f]{40}.*|\1|')"
+                  tag="$(printf '%s' "$line" | sed -nE 's|.*@[0-9a-f]{40}[[:space:]]*#[[:space:]]*(v[0-9][0-9A-Za-z.+-]*).*|\1|p')"
+                  if [ -z "$tag" ]; then
+                    echo "$action pinned without a version comment: cannot tell whether it is behind"
+                    continue
+                  fi
                   if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
                     echo "$action pinned as $tag: not an exact version, cannot tell whether it is behind"
                     continue
