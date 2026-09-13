@@ -318,31 +318,48 @@ command -v dpkg-deb >/dev/null 2>&1 || fail "no dpkg-deb found"
 
 workdir=
 installed_gnupg=
+gnupg_deps=
 
 # Leaves nothing of its own behind, on every exit path including the failures:
-# the downloaded keyring package, and gnupg if this script is what pulled it in.
+# the downloaded keyring package, and gnupg (with the deps it pulled in, and
+# only those) if this script is what pulled it in. --auto-remove would do
+# machine-wide autoremove: every auto-installed package no longer depended on,
+# not only what this script installed, so the cleanup names the packages
+# explicitly.
 cleanup() {
 	[ -n "$workdir" ] && rm -rf "$workdir"
 	if [ -n "$installed_gnupg" ]; then
 		note "removing the gnupg this script installed"
-		apt-get purge -y -qq --auto-remove gnupg >/dev/null 2>&1 || true
+		# Word splitting on $gnupg_deps is intentional: one package per line.
+		# shellcheck disable=SC2086
+		apt-get purge -y -qq gnupg $gnupg_deps >/dev/null 2>&1 || true
 	fi
 	return 0
 }
 trap cleanup EXIT
 
+# Allocate $workdir before the gnupg install so the auto-set snapshot below can
+# be written there. Cleanup removes it whether or not the snapshot ever made it
+# to disk.
+workdir=$(mktemp -d)
+
 # gpg comes from the distribution's own trusted repositories, not ours, so
 # installing it here does not widen what has to be trusted. It is needed for one
 # fingerprint read and nothing else, so it goes back out again afterwards -
-# purged with --auto-remove, and only when it was absent to begin with.
+# purged along with the deps it pulled in (and only those), and only when it
+# was absent to begin with. --auto-remove is machine-wide and would remove
+# every auto-installed package no longer depended on, which can include
+# packages the operator pulled in independently of this script; this script
+# only undoes its own install.
 if ! command -v gpg >/dev/null 2>&1; then
 	doing "installing gnupg, needed to check the archive key"
 	apt-get update -qq
+	auto_before="$(apt-mark showauto 2>/dev/null | LC_ALL=C sort)"
+	printf '%s\n' "$auto_before" > "$workdir/auto-before"
 	apt-get install -y -qq gnupg || fail "could not install gnupg"
+	gnupg_deps="$(apt-mark showauto 2>/dev/null | LC_ALL=C sort | comm -13 "$workdir/auto-before" -)"
 	installed_gnupg=yes
 fi
-
-workdir=$(mktemp -d)
 
 # Printed after the tool checks, so the message lands on a machine that can act
 # on it rather than scrolling past a "no apt-get found" a moment later.
