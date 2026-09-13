@@ -117,22 +117,11 @@ jobs:
           # `timeout-minutes: 10`: 360s leaves four minutes for the rest of
           # the job and for the script's own diagnosis, which a cancellation
           # would replace with nothing.
+          #
+          # The bootstrap keyring package and its detached signature are part of
+          # this read-back, so the download a first-time install performs is
+          # verified here, not only reached.
           ./scripts/verify-published.sh "$BASE_URL" keyring/glyndor-apt-key.asc 3 10 360
-
-      - name: Bootstrap keyring package reachable
-        run: |
-          set -euo pipefail
-          # The freshness check above only proves the *established* client path
-          # (an apt already trusting the archive key) works. A first-time install
-          # instead starts from `curl ... glyndor-archive-keyring.deb`, a
-          # different URL this check would otherwise never exercise, so a broken
-          # bootstrap path could go unnoticed indefinitely.
-          url="$BASE_URL/glyndor-archive-keyring.deb"
-          if ! curl -fsSI --retry 3 --retry-all-errors --retry-delay 5 --max-time 30 "$url" >/dev/null; then
-            echo "::error::bootstrap keyring unreachable"
-            exit 1
-          fi
-          echo "bootstrap keyring reachable"
 
       - name: Advertised installers reachable
         run: |

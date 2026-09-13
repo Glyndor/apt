@@ -289,6 +289,22 @@ check "and the job declares a timeout to fit it in" "1" \
 check "and the budget leaves at least a third of the job outside itself" "1" \
 	"$([ -n "$budget" ] && [ -n "$timeout_min" ] && [ "$budget" -le $(( timeout_min * 60 * 2 / 3 )) ] && echo 1 || echo 0)"
 
+# --- the read-back covers the bootstrap package ----------------------------
+#
+# The read-back step (verify-published.sh) downloads glyndor-archive-keyring.deb
+# from the root, checks its size and hash against the signed pool entry, and
+# verifies its detached .asc. That is the same pair a first-time install's
+# `curl ... | sudo sh` fetches; once the read-back covers it, a separate HEAD
+# step that only proves reachability is a second ask of the same URL for less
+# information, and the comment that justified it stopped being true when the
+# read-back grew the bootstrap pair.
+#
+# So the workflow contains `verify-published.sh` exactly once, and no `curl
+# -fsSI` line at all: putting one back is the regression this assertion exists
+# to close.
+check "the read-back step covers the bootstrap package, so no separate HEAD step exists" "1" \
+	"$([ "$(grep -c 'verify-published\.sh' "$WORKFLOW")" = 1 ] && [ "$(grep -c 'curl -fsSI' "$WORKFLOW")" = 0 ] && echo 1 || echo 0)"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

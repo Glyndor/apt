@@ -190,7 +190,7 @@ purge_file() { # $1=path $2=label
 		echo "$resp" | jq -e '.success == true' >/dev/null || {
 			echo "::error::Cloudflare purge failed on $2 batch $((batches + 1)): $resp"
 			if [ "$2" = "content" ]; then
-				echo "::notice::the indices were not purged, so the archive keeps serving the previous version consistently"
+				echo "::warning::the indices were not purged; edges may keep serving the previous index while the pool already lost its superseded packages, so a client on a stale edge can see a missing package until the next successful purge or cache expiry"
 			fi
 			exit 1
 		}

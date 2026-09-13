@@ -230,12 +230,16 @@ check "a rejected batch fails the purge" "1" "$rc"
 check "the error names which group and batch was rejected" \
 	"1" "$(grep -c 'failed on index batch 2' "$WORK/out")"
 
-# --- a content failure leaves the archive consistent ------------------------
+# --- a content failure can leave a stale edge pointing at a missing package --
 #
-# Failing the FIRST request means the indices were never touched, so the edge
-# still serves old indices pointing at files that are still there: the archive
-# is stale, not broken. The operator reading a red run needs to know which of
-# those it is, because they call for very different responses.
+# Failing the FIRST request means the indices were never touched. That used to
+# mean the edge still served old indices pointing at files that were still
+# there, so the archive was stale but consistent. publish.yml now syncs pool/*
+# with --delete BEFORE calling the purge, so an edge that holds the old
+# Packages index can name a package the pool no longer has: a client on that
+# edge sees a missing package until the next successful purge or cache expiry.
+# The operator reading a red run needs to know which of those it is, because
+# they call for very different responses.
 start_server fail-first
 build_archive 7 "amd64 arm64 armhf"
 rc=0
@@ -243,8 +247,8 @@ rc=0
 check "a rejected content batch fails the purge" "1" "$rc"
 check "the error names the content group" \
 	"1" "$(grep -c 'failed on content batch 1' "$WORK/out")"
-check "a content failure says the archive is still consistent" \
-	"1" "$(grep -c 'the indices were not purged' "$WORK/out")"
+check "a content failure says a stale edge may point at a missing package" \
+	"1" "$(grep -c 'may keep serving the previous index' "$WORK/out")"
 check "a content failure never reaches the indices" \
 	"1" "$(wc -l < "$REQUESTS")"
 
