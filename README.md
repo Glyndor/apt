@@ -33,6 +33,27 @@ Swap `podup` for any package below.
 apt list '?origin(Glyndor)'   # everything currently served
 ```
 
+## Which releases
+
+The floor is podman. `podup` depends on podman 5, and `epistle` needs `podup`
+to run the mail stack, so this archive installs on the Debian and Ubuntu
+releases that ship podman 5 or newer from their own repositories, and refuses
+on the ones that do not. The refusal names it:
+`podman (>= 5.0) but it is not going to be installed`.
+
+The [distribution floor workflow](.github/workflows/distro-floor.yml) runs the
+install line above in fresh containers every week and asserts exactly this:
+
+| Image | Expected |
+| --- | --- |
+| `debian:trixie` | installs |
+| `ubuntu:26.04` | installs |
+| `ubuntu:22.04` | refused, naming podman |
+
+A release missing from that table has not been measured. The check reads what
+the release serves from its own repositories; a podman added from elsewhere is
+not what the floor is about.
+
 ## Updates take care of themselves
 
 The signing key ships **as a package**, so apt owns it, and the keyring puts
