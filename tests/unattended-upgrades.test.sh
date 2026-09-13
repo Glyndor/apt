@@ -335,6 +335,65 @@ check "a blacklisted product is reported even with the origin allowed" "1" \
 check "and it does not claim things were left in order" "0" \
 	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
 
+# A fourth spelling of "this archive". The unattended-upgrades README says
+# Allowed-Origins OR Origins-Pattern, and within Origins-Pattern the
+# "origin=Glyndor" form is what the operator who follows the README most
+# often writes. A check that only knew the keyring's spelling would call
+# this machine uncovered, which is the loud direction.
+s="$WORK/origin-form"
+prepare "$s"
+write_on_file "$s"
+out="$(run_block "$s" "$ON_WITH_PATTERN")"
+check "an origin written as origin=Glyndor is covered" "1" \
+	"$(printf '%s' "$out" | grep -q 'already on, left alone' && echo 1 || echo 0)"
+
+# The other suite. This archive serves suite stable; an operator who pinned
+# Allowed-Origins to "Glyndor:testing" -- the spelling for a different suite
+# of the same archive -- has not allowed THIS archive, and the screen must
+# not pretend they did.
+OTHER_SUITE='Unattended-Upgrade::Allowed-Origins:: "Glyndor:testing";'
+ON_WITH_OTHER_SUITE="$OTHER_SUITE
+$ON_PERIODIC"
+s="$WORK/other-suite"
+prepare "$s"
+write_on_file "$s"
+out="$(run_block "$s" "$ON_WITH_OTHER_SUITE")"
+check "an origin for another suite of this archive is not reported as covered" "0" \
+	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
+
+# Blacklist entries are regular expressions. The plain spelling
+# blacklists the product; "^product$" and "^product" do too, and the
+# screen reports the archive as blacklisted in each case.
+REGEX_BLACKLIST='Unattended-Upgrade::Package-Blacklist:: "^testproduct$";'
+ON_WITH_REGEX_BLACKLIST="$ALLOWED
+$REGEX_BLACKLIST
+$ON_PERIODIC"
+s="$WORK/regex-blacklist"
+prepare "$s"
+write_on_file "$s"
+out="$(run_block "$s" "$ON_WITH_REGEX_BLACKLIST")"
+check "a blacklist written as a regular expression is honoured" "1" \
+	"$(printf '%s' "$out" | grep -q 'is blacklisted' && echo 1 || echo 0)"
+
+# An invalid regex is unknown, not allowed. The operator wrote something
+# grep cannot parse, and what the machine does with it is what we cannot
+# read here either. The screen falls through to the unknown branch, not
+# the green "already on" arm.
+MALFORMED_BLACKLIST='Unattended-Upgrade::Package-Blacklist:: "[";'
+ON_WITH_MALFORMED_BLACKLIST="$ALLOWED
+$MALFORMED_BLACKLIST
+$ON_PERIODIC"
+s="$WORK/malformed-blacklist"
+prepare "$s"
+write_on_file "$s"
+out="$(run_block "$s" "$ON_WITH_MALFORMED_BLACKLIST")"
+check "a malformed blacklist pattern is reported as unknown, not as covered" "0" \
+	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
+check "and does not claim the product is blacklisted" "0" \
+	"$(printf '%s' "$out" | grep -c 'is blacklisted')"
+check "and says the allowlist could not be verified" "1" \
+	"$(printf '%s' "$out" | grep -q 'could not be verified' && echo 1 || echo 0)"
+
 # --- #6: an unreadable apt-config means unknown, full stop ------------------
 #
 # A machine whose apt-config cannot be read is not "on" and not "off", and
