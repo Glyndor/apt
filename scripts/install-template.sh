@@ -513,7 +513,20 @@ fi
 # that unpacked but cannot start; this is the one step that proves what landed
 # actually runs. Its last field is the version, and an empty result is left
 # empty rather than guessed -- a blank column is honest, an invented one is not.
-version_line="$(@PRODUCT@ --version 2>/dev/null || true)"
+#
+# Capturing stdout and stderr together, then checking the exit code, is what
+# makes this a check rather than a print. A binary on PATH that cannot start
+# (missing loader, wrong arch, missing library) exits non-zero, and the form
+# that ended in `|| true` reported it as installed anyway. Without the exit
+# check the step below says "installed" about a program that does nothing.
+if version_line="$("@PRODUCT@" --version 2>&1)"; then
+	:
+else
+	rc=$?
+	first_line="$(printf '%s\n' "$version_line" | head -n 1)"
+	[ -n "$first_line" ] || first_line="no output"
+	fail "@PRODUCT@ is installed but does not start (exit $rc): $first_line"
+fi
 version="${version_line##* }"
 step "@PRODUCT@ installed" "$version"
 

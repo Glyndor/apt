@@ -68,16 +68,27 @@ installer() { # $1=text  $2=exit code
 }
 
 # Run the script as it ships. With $3=present a fake product binary sits on
-# PATH, which is what "the product installed" looks like to `command -v`. The
-# product name is one no machine has: the real podup is installed on the box
-# this was written on, and `command -v podup` found it, so the "exit 0 but
-# nothing installed" case passed for the wrong reason until the name changed.
-run_floor() { # $1=expect  $2=installer path  $3=present|absent
+# PATH, which is what "the product installed" looks like to `command -v`. With
+# $3=broken the binary exits non-zero on --version, which is what a file on
+# PATH that cannot start looks like. The product name is one no machine has:
+# the real podup is installed on the box this was written on, and `command -v
+# podup` found it, so the "exit 0 but nothing installed" case passed for the
+# wrong reason until the name changed.
+run_floor() { # $1=expect  $2=installer path  $3=present|absent|broken
 	local expect="$1" fixture="$2" binary="$3"
 	rm -rf "$WORK/prod"; mkdir -p "$WORK/prod"
-	if [ "$binary" = present ]; then
-		printf '#!/bin/sh\nexit 0\n' > "$WORK/prod/$PRODUCT"; chmod +x "$WORK/prod/$PRODUCT"
-	fi
+	case "$binary" in
+		present)
+			# `exit 0` on every argument is what the previous check needed;
+			# the new `--version` check needs it to keep doing that.
+			printf '#!/bin/sh\nexit 0\n' > "$WORK/prod/$PRODUCT"
+			;;
+		broken)
+			printf '#!/bin/sh\necho "cannot execute: required file not found" >&2\nexit 126\n' \
+				> "$WORK/prod/$PRODUCT"
+			;;
+	esac
+	[ "$binary" != absent ] && chmod +x "$WORK/prod/$PRODUCT"
 	STUB_INSTALLER="$fixture" PATH="$WORK/bin:$WORK/prod:/usr/bin:/bin" \
 		sh "$SCRIPT" "$expect" "$PRODUCT" 2>&1
 }
@@ -110,6 +121,18 @@ out="$(run_floor install "$(installer 'nothing to do' 0)" absent)"; rc=$?
 check "install: exit 0 but no binary on PATH fails" "1" "$rc"
 check "and says the binary is missing" "1" \
 	"$(printf '%s' "$out" | grep -c "exited 0 but $PRODUCT is not on PATH")"
+
+# --- a binary on PATH that cannot start fails ------------------------------
+#
+# `command -v` admits a file on PATH that exits non-zero on --version, and
+# the installer that put it there did not notice: dpkg records the package
+# the binary came from, not whether the binary itself runs. The second check
+# is what turns "on PATH" into "runs", and the assertion below is what keeps
+# it that way.
+out="$(run_floor install "$(installer 'unused' 0)" broken)"; rc=$?
+check "install: a binary on PATH that cannot start fails" "1" "$rc"
+check "and says it does not start" "1" \
+	"$(printf '%s' "$out" | grep -c 'does not start')"
 
 # --- an unsupported release: refused, and the refusal names podman ---------
 

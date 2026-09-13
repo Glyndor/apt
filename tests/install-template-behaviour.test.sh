@@ -188,6 +188,12 @@ esac
 exit 0
 STUB
 chmod +x "$BIN/dpkg"
+# The installer runs `@PRODUCT@ --version` after `apt-get install` and refuses
+# when that exits non-zero, so every case below needs a stub on PATH that
+# starts. The version string matches what run_tty prints later, so a case that
+# overrides it can be told apart by the stub it overwrites with.
+printf '#!/bin/sh\necho "testpkg version v9.9.9"\n' > "$BIN/testpkg"
+chmod +x "$BIN/testpkg"
 
 # $1=deb path  $2=expected fingerprint  -> exit code, output in $WORK/out,
 # marker in $WORK/marker
@@ -609,6 +615,30 @@ check "an apt failure fails the install" "1" "$rc"
 check "and apt's captured output is shown, since it is the diagnosis" "1" \
 	"$(grep -c 'E: fixture-apt-failure' "$WORK/out")"
 printf '%s' "$saved_apt" > "$BIN/apt-get"; chmod +x "$BIN/apt-get"
+
+# --- a product that cannot start is refused --------------------------------
+#
+# The previous form ended `@PRODUCT@ --version 2>/dev/null || true`, which
+# meant a binary on PATH that exits non-zero was reported as installed: dpkg
+# had unpacked it, the installer said "installed", and the user was left with a
+# program that does nothing. The check the installer runs now is the one that
+# turns "installed" into "runs", and the assertion below is what makes that
+# check survivable against the original `|| true` regression.
+#
+# The stub exits 126 and writes its message to stderr. The installer captures
+# stdout and stderr together, so the line the user sees is the one that
+# reached fail().
+cat > "$BIN/testpkg" <<'STUB'
+#!/bin/sh
+echo "cannot execute: required file not found" >&2
+exit 126
+STUB
+chmod +x "$BIN/testpkg"
+DEB="$(mkdeb good good no)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a product that exits non-zero on --version fails the install" "1" "$rc"
+check "and names the exit code" "1" "$(said 'does not start (exit 126)')"
+check "and quotes the first line of its output" "1" "$(said 'required file not found')"
 
 echo
 echo "$pass passed, $fail failed"
