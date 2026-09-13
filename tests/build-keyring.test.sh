@@ -99,24 +99,26 @@ fi
 before_version="$(dpkg-deb --field "$first" Version)"
 
 bump_input() {
-	local path="$1" line="$2" out="$3"
+	local path="$1" line="$2" out="$3" date="$4"
 	printf '%s\n' "$line" >> "$REPO/$path"
 	git -C "$REPO" add -A
-	# A distinct, later commit date, so the suffix must move if the input is
-	# tracked at all. Fixed rather than "now" so the case cannot race the clock.
+	# A distinct, strictly later commit date per call. The two edits move
+	# through 2030-01-02 and 2030-01-03, so the suffix must move only when
+	# the input that changed at that date is in PACKAGED_INPUTS. Fixed
+	# rather than "now" so the case cannot race the clock.
 	git -C "$REPO" -c user.name=test -c user.email=test@example.invalid \
 		-c "commit.gpgsign=false" \
-		commit -qm "touch $path" --date="2030-01-02T03:04:05+00:00"
-	GIT_COMMITTER_DATE="2030-01-02T03:04:05+00:00" \
+		commit -qm "touch $path" --date="$date"
+	GIT_COMMITTER_DATE="$date" \
 		git -C "$REPO" -c user.name=test -c user.email=test@example.invalid \
-		commit -q --amend --no-edit --date="2030-01-02T03:04:05+00:00"
+		commit -q --amend --no-edit --date="$date"
 	mkdir -p "$WORK/$out"
 	"$BUILD" "$WORK/$out" >/dev/null
 	dpkg-deb --field "$WORK/$out/glyndor-archive-keyring.deb" Version
 }
 
-after_sources="$(bump_input keyring/glyndor.sources "# tracked-input probe" sources-bump)"
-if [ "$after_sources" != "$before_version" ]; then
+after_sources="$(bump_input keyring/glyndor.sources "# tracked-input probe" sources-bump "2030-01-02T03:04:05+00:00")"
+if dpkg --compare-versions "$after_sources" gt "$before_version"; then
 	ok "editing the sources list moves the version ($before_version -> $after_sources)"
 else
 	no "editing the sources list moves the version (stayed $before_version)"
@@ -125,11 +127,14 @@ fi
 # Same guarantee for the unattended-upgrades allowlist. Shipping a changed
 # allowlist under a version apt has already installed means apt never offers it,
 # so the file would be correct in the archive and absent on every machine.
-after_unattended="$(bump_input keyring/glyndor-unattended-upgrades "// tracked-input probe" unattended-bump)"
-if [ "$after_unattended" != "$before_version" ]; then
-	ok "editing the unattended-upgrades config moves the version ($before_version -> $after_unattended)"
+# Compare against the build immediately before, not the original: a fix that
+# removes this input from PACKAGED_INPUTS would leave the first edit in place
+# and the second assertion would still pass against the original.
+after_unattended="$(bump_input keyring/glyndor-unattended-upgrades "// tracked-input probe" unattended-bump "2030-01-03T03:04:05+00:00")"
+if dpkg --compare-versions "$after_unattended" gt "$after_sources"; then
+	ok "editing the unattended-upgrades config moves the version ($after_sources -> $after_unattended)"
 else
-	no "editing the unattended-upgrades config moves the version (stayed $before_version)"
+	no "editing the unattended-upgrades config moves the version (stayed $after_sources)"
 fi
 
 # apt refuses to move a client backwards, so a version that changes but does not

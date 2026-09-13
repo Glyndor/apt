@@ -533,58 +533,129 @@ fpr_pw="$(GNUPGHOME="$SIGNHOME_PW" gpg --batch --with-colons --list-secret-keys 
 	| awk -F: '/^fpr:/{print $10; exit}')"
 check "the fingerprint extract reads the only key (40 hex chars)" "40" "${#fpr_pw}"
 
-# Same sign command the workflow step runs.
-GNUPGHOME="$SIGNHOME_PW" gpg --batch --local-user "$fpr_pw" --armor --detach-sign \
-	--output "$DEB_PW.asc" "$DEB_PW"
-check "the sign command produces a non-empty .asc" "1" \
-	"$( [ -s "$DEB_PW.asc" ] && echo 1 || echo 0 )"
+# Read the signing step body, dedented to the columning it would have
+# inside a workflow (same shape as the helper that extracts the download
+# step body above). The cut point -- immediately before the line that
+# imports a GitHub Actions secret the test has no source for -- is the
+# documented exception, not a stubbed gpg. Everything after the cut runs
+# against our pre-imported keyring and the pre-computed fingerprint.
+python3 - "$WF" "Sign the keyring package" > "$WORK_PW/sign_step.sh" <<'PY'
+import sys
+lines = open(sys.argv[1]).read().splitlines()
+start = next(i for i, l in enumerate(lines) if "name: " + sys.argv[2] in l)
+run = next(i for i, l in enumerate(lines) if i > start and l.strip() == "run: |")
+body = []
+for line in lines[run + 1:]:
+	if not line.strip():
+		body.append("")
+		continue
+	if not line.startswith(" " * 10):
+		break
+	body.append(line[10:])
+print("\n".join(body))
+PY
+awk '/^unset GLYNDOR_APT_GPG_PRIVATE_KEY$/{found=1} found' \
+	"$WORK_PW/sign_step.sh" > "$WORK_PW/sign_body.sh"
 
-# Detached check: --armor + --detach-sign gives a standalone signature, not
-# the data plus signature. A fixture whose first line appears in the .asc
-# means the sign was made without --detach-sign.
-check "the .asc is detached (does not embed the signed data)" "0" \
-	"$( grep -q 'fake keyring package body' "$DEB_PW.asc" && echo 1 || echo 0 )"
-check "and it carries the armoured PGP signature header" "1" \
-	"$( head -1 "$DEB_PW.asc" | grep -q -- '-----BEGIN PGP SIGNATURE-----' && echo 1 || echo 0 )"
+# A scratch tree mirroring what the step sees at run time: a served
+# keyring .deb under public/, and keyring/glyndor-apt-key.asc carrying
+# alpha's public key so the step's fingerprint-membership check (the
+# "signing key is not present in keyring/glyndor-apt-key.asc" guard)
+# passes against the same key the body just selected.
+SIGN_TREE="$WORK_PW/tree"
+mkdir -p "$SIGN_TREE/public" "$SIGN_TREE/keyring"
+cp "$DEB_PW" "$SIGN_TREE/public/glyndor-archive-keyring.deb"
+printf '%s' "$PUB_A_PW" > "$SIGN_TREE/keyring/glyndor-apt-key.asc"
 
-# Verify with the matching public key: must succeed. Use a separate GNUPGHOME
-# so the signing keyring never leaks into the verifier and a passing check
-# here is the verifier alone admitting the signature.
-VRF_PW="$WORK_PW/vrf"
-mkdir -p "$VRF_PW"; chmod 700 "$VRF_PW"
-printf '%s' "$PUB_A_PW" | GNUPGHOME="$VRF_PW" gpg --batch --quiet --import
-if GNUPGHOME="$VRF_PW" gpg --batch --verify "$DEB_PW.asc" "$DEB_PW" >/dev/null 2>&1; then
-	echo "ok    the .asc verifies against the matching public key"
-	pass=$((pass + 1))
+(
+	cd "$SIGN_TREE" || exit 1
+	GNUPGHOME="$SIGNHOME_PW" FPR="$fpr_pw" \
+		bash "$WORK_PW/sign_body.sh"
+)
+
+ASC="$SIGN_TREE/public/glyndor-archive-keyring.deb.asc"
+DEB="$SIGN_TREE/public/glyndor-archive-keyring.deb"
+
+# All crypto cases below read $ASC, the artifact the step produced. Gate
+# them on a real .asc existing: without the gate, the file-reading
+# assertions would error out (counted as red) while the verify-fails
+# assertions would pass by accident, because verifying a missing .asc
+# always fails for the wrong reason.
+if [ ! -s "$ASC" ]; then
+	check "the sign command produces a non-empty .asc (no .asc written)" "1" "0"
+	check "the .asc is detached (does not embed the signed data) (no .asc written)" "1" "0"
+	check "and it carries the armoured PGP signature header (no .asc written)" "1" "0"
+	check "the .asc verifies against the matching public key (no .asc written)" "1" "0"
+	check "the .asc does not verify against a non-matching public key (no .asc written)" "1" "0"
+	check "the .asc does not verify against a tampered .deb (no .asc written)" "1" "0"
+	check "the extracted signing step produces a signature gpgv accepts (no .asc written)" "1" "0"
 else
-	echo "FAIL  the .asc did not verify against the matching public key"
-	fail=$((fail + 1))
-fi
+	check "the sign command produces a non-empty .asc" "1" \
+		"$( [ -s "$ASC" ] && echo 1 || echo 0 )"
 
-# Verify with a different public key: must fail (the whole point).
-VRF2_PW="$WORK_PW/vrf2"
-mkdir -p "$VRF2_PW"; chmod 700 "$VRF2_PW"
-printf '%s' "$PUB_B_PW" | GNUPGHOME="$VRF2_PW" gpg --batch --quiet --import
-if GNUPGHOME="$VRF2_PW" gpg --batch --verify "$DEB_PW.asc" "$DEB_PW" >/dev/null 2>&1; then
-	echo "FAIL  the .asc verified against a non-matching public key"
-	fail=$((fail + 1))
-else
-	echo "ok    the .asc does not verify against a non-matching public key"
-	pass=$((pass + 1))
-fi
+	# Detached check: --armor + --detach-sign gives a standalone signature, not
+	# the data plus signature. A fixture whose first line appears in the .asc
+	# means the sign was made without --detach-sign.
+	check "the .asc is detached (does not embed the signed data)" "0" \
+		"$( grep -q 'fake keyring package body' "$ASC" && echo 1 || echo 0 )"
+	check "and it carries the armoured PGP signature header" "1" \
+		"$( head -1 "$ASC" | grep -q -- '-----BEGIN PGP SIGNATURE-----' && echo 1 || echo 0 )"
 
-# Tampered .deb must fail verification against the matching key. The
-# fingerprint check stops an attacker who swapped the key; this is the
-# separate property that the .asc catches an attacker who swapped the
-# bytes after the signature was made.
-cp "$DEB_PW" "$DEB_PW.tampered"
-printf 'injected bytes\n' >> "$DEB_PW.tampered"
-if GNUPGHOME="$VRF_PW" gpg --batch --verify "$DEB_PW.asc" "$DEB_PW.tampered" >/dev/null 2>&1; then
-	echo "FAIL  the .asc verified against a tampered .deb"
-	fail=$((fail + 1))
-else
-	echo "ok    the .asc does not verify against a tampered .deb"
-	pass=$((pass + 1))
+	# Verify with the matching public key: must succeed. Use a separate GNUPGHOME
+	# so the signing keyring never leaks into the verifier and a passing check
+	# here is the verifier alone admitting the signature.
+	VRF_PW="$WORK_PW/vrf"
+	mkdir -p "$VRF_PW"; chmod 700 "$VRF_PW"
+	printf '%s' "$PUB_A_PW" | GNUPGHOME="$VRF_PW" gpg --batch --quiet --import
+	if GNUPGHOME="$VRF_PW" gpg --batch --verify "$ASC" "$DEB" >/dev/null 2>&1; then
+		echo "ok    the .asc verifies against the matching public key"
+		pass=$((pass + 1))
+	else
+		echo "FAIL  the .asc did not verify against the matching public key"
+		fail=$((fail + 1))
+	fi
+
+	# Verify with a different public key: must fail (the whole point).
+	VRF2_PW="$WORK_PW/vrf2"
+	mkdir -p "$VRF2_PW"; chmod 700 "$VRF2_PW"
+	printf '%s' "$PUB_B_PW" | GNUPGHOME="$VRF2_PW" gpg --batch --quiet --import
+	if GNUPGHOME="$VRF2_PW" gpg --batch --verify "$ASC" "$DEB" >/dev/null 2>&1; then
+		echo "FAIL  the .asc verified against a non-matching public key"
+		fail=$((fail + 1))
+	else
+		echo "ok    the .asc does not verify against a non-matching public key"
+		pass=$((pass + 1))
+	fi
+
+	# Tampered .deb must fail verification against the matching key. The
+	# fingerprint check stops an attacker who swapped the key; this is the
+	# separate property that the .asc catches an attacker who swapped the
+	# bytes after the signature was made.
+	cp "$DEB" "$DEB.tampered"
+	printf 'injected bytes\n' >> "$DEB.tampered"
+	if GNUPGHOME="$VRF_PW" gpg --batch --verify "$ASC" "$DEB.tampered" >/dev/null 2>&1; then
+		echo "FAIL  the .asc verified against a tampered .deb"
+		fail=$((fail + 1))
+	else
+		echo "ok    the .asc does not verify against a tampered .deb"
+		pass=$((pass + 1))
+	fi
+
+	# The structural grep cases above prove the workflow step NAMES the right
+	# paths; the gpg cases above prove the same gpg flags produce a verifying
+	# signature. The closing case proves the step's body, as written, actually
+	# produces one. A regression that drops --detach-sign, swaps --local-user
+	# for --default-key, or writes the .asc next to debs/ instead of public/
+	# changes the body the step runs and this assertion goes red, regardless
+	# of whether the typed copy still looks correct.
+	if GNUPGHOME="$VRF_PW" gpgv --keyring "$VRF_PW/pubring.kbx" \
+		"$ASC" "$DEB" >/dev/null 2>&1; then
+		echo "ok    the extracted signing step produces a signature gpgv accepts"
+		pass=$((pass + 1))
+	else
+		echo "FAIL  the extracted signing step produces a signature gpgv accepts"
+		fail=$((fail + 1))
+	fi
 fi
 
 # === behaviour: the download step against a stubbed gh ==============
