@@ -112,6 +112,7 @@ run_step() { # $1=MAX_AGE_DAYS  $2=responses file  $3=JSON page (optional)
 	local max="$1" resp="$2" json="${3:-}"
 	rm -f "$WORK/gh.log"
 	STUB_LOG="$WORK/gh.log" STUB_RESPONSES="$resp" STUB_JSON="$json" \
+	ANY_CONCLUSION="${ANY_CONCLUSION:-}" \
 	PATH="$WORK/bin:$PATH" \
 	GH_TOKEN=dummy REPO="$REPO" WORKFLOW="$WF" MAX_AGE_DAYS="$max" \
 	bash "$WORK/step.sh" 2>&1
@@ -191,6 +192,38 @@ out="$(run_step 3 "$WORK/unordered.resp.unused" "$WORK/empty-page.json")"; rc=$?
 check "an empty page is still the missing-schedule error" "1" "$rc"
 check "and says 'No successful scheduled run'" "1" \
 	"$(printf '%s' "$out" | grep -c 'No successful scheduled run')"
+
+# --- a workflow watching itself counts any conclusion ----------------------
+#
+# freshness.yml has a job that watches freshness.yml. With the success-only
+# query that job can never recover once it fires: the run it fails is not a
+# success, so the next query still finds only the old one, and so on with the
+# cron alive the whole time. The caller passes count-any-conclusion and the
+# query changes to status=completed, so a recent failed scheduled run is
+# evidence the cron fires. The messages change with it, so a reader of the
+# log is told which question was answered.
+
+printf '%s\n' "$(ago 1)" > "$WORK/any.resp"
+out="$(ANY_CONCLUSION=true run_step "$MAX_AGE_DAYS" "$WORK/any.resp")"; rc=$?
+check "with count-any-conclusion a recent run of any conclusion passes" "0" "$rc"
+check "and the URL asks for completed runs" "1" \
+	"$(grep -acz 'status=completed' "$WORK/gh.log" | tr -d ' ')"
+check "and not for successful ones" "0" \
+	"$(grep -acz 'status=success' "$WORK/gh.log" | tr -d ' ')"
+check "and the report says completed, not successful" "1" \
+	"$(printf '%s' "$out" | grep -c 'Newest completed scheduled run')"
+
+printf '%s\n' "$(ago 11)" > "$WORK/any-old.resp"
+out="$(ANY_CONCLUSION=true run_step "$MAX_AGE_DAYS" "$WORK/any-old.resp")"; rc=$?
+check "with count-any-conclusion an old run still fails" "1" "$rc"
+check "and the error says it last ran, not last succeeded" "1" \
+	"$(printf '%s' "$out" | grep -c 'last ran on a schedule 11 days ago')"
+
+printf '\n' > "$WORK/any-none.resp"
+out="$(ANY_CONCLUSION=true run_step "$MAX_AGE_DAYS" "$WORK/any-none.resp")"; rc=$?
+check "with count-any-conclusion no run on record still fails" "1" "$rc"
+check "and says no completed run" "1" \
+	"$(printf '%s' "$out" | grep -c 'No completed scheduled run')"
 
 # --- boundary: exactly MAX_AGE_DAYS days old PASSES (the comparison is -gt)
 
