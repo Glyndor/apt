@@ -72,9 +72,14 @@ jobs:
         run: |
           set -euo pipefail
 
+          # The first item of a filtered page is not always the newest run. On
+          # 2026-09-08 a one-item page came back with a run thirteen days old
+          # while that morning's success existed, and this gate went red over
+          # nothing (Glyndor/apt#249). So read a page and take the newest
+          # created_at; the order the API chooses then does not matter.
           latest=$(gh api \
-            "repos/${REPO}/actions/workflows/${WORKFLOW}/runs?event=schedule&status=success&per_page=1" \
-            --jq '.workflow_runs[0].created_at // empty')
+            "repos/${REPO}/actions/workflows/${WORKFLOW}/runs?event=schedule&status=success&per_page=30" \
+            --jq '[.workflow_runs[].created_at] | max // empty')
 
           if [ -z "$latest" ]; then
             echo "::error::No successful scheduled run on record for ${WORKFLOW}."

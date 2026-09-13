@@ -61,6 +61,11 @@ PY
 # responses file makes the contract the same as the dependabot stub so the
 # two tests stay symmetrical. An empty line is exactly what
 # `gh --jq '... // empty'` produces when nothing matched.
+#
+# With STUB_JSON set, the stub instead runs the step's own `--jq` filter over
+# that file with real jq, the way `gh api --jq` would over the response body.
+# That is the only way to test what the filter does with a page whose first
+# item is not the newest run, which is the case Glyndor/apt#249 measured.
 write_stub() {
 	mkdir -p "$WORK/bin"
 	cat > "$WORK/bin/gh" <<'STUB'
@@ -71,6 +76,15 @@ idx=$(grep -cz . "$LOG" 2>/dev/null || true)
 idx="${idx:-0}"
 idx=$((idx + 1))
 printf '%s\0' "$*" >> "$LOG"
+if [ -n "${STUB_JSON:-}" ]; then
+	filter=""; prev=""
+	for arg in "$@"; do
+		[ "$prev" = "--jq" ] && filter="$arg"
+		prev="$arg"
+	done
+	jq -r "$filter" "$STUB_JSON"
+	exit "${STUB_EXIT_CODE:-0}"
+fi
 val=$(awk -v n="$idx" 'NR==n {print; exit}' "$RESP")
 printf '%s' "$val"
 exit "${STUB_EXIT_CODE:-0}"
@@ -94,10 +108,10 @@ ago() { date -u -d "$1 days ago" +%Y-%m-%dT%H:%M:%SZ; }
 
 # Run the step with the stub on PATH. Combined stdout+stderr in `out`, exit
 # code in `rc`. The stub log is reset per call so each case starts at index 1.
-run_step() { # $1=MAX_AGE_DAYS  $2=responses file
-	local max="$1" resp="$2"
+run_step() { # $1=MAX_AGE_DAYS  $2=responses file  $3=JSON page (optional)
+	local max="$1" resp="$2" json="${3:-}"
 	rm -f "$WORK/gh.log"
-	STUB_LOG="$WORK/gh.log" STUB_RESPONSES="$resp" \
+	STUB_LOG="$WORK/gh.log" STUB_RESPONSES="$resp" STUB_JSON="$json" \
 	PATH="$WORK/bin:$PATH" \
 	GH_TOKEN=dummy REPO="$REPO" WORKFLOW="$WF" MAX_AGE_DAYS="$max" \
 	bash "$WORK/step.sh" 2>&1
@@ -153,6 +167,30 @@ check "the URL targets the right workflow file" "1" \
 	"$(grep -acz "workflows/${WF}/runs" "$WORK/gh.log" | tr -d ' ')"
 check "and it made exactly one API call (no paging here)" "1" \
 	"$(grep -acz . "$WORK/gh.log" | tr -d ' ')"
+
+# --- the newest run wins whatever order the page arrives in -------------
+#
+# Measured 2026-09-08 (Glyndor/apt#249): a one-item page returned a run from
+# thirteen days earlier while that morning's success existed, and the gate
+# reported 13 days on a cron that had fired. The step now reads a page and
+# takes the greatest created_at, so this fixture puts the newest run in the
+# middle of an unsorted page: the age reported must be the newest one's.
+# Same-format ISO timestamps compare lexically as they do chronologically.
+
+printf '{"workflow_runs":[{"created_at":"%s"},{"created_at":"%s"},{"created_at":"%s"}]}\n' \
+	"$(ago 13)" "$(ago 1)" "$(ago 5)" > "$WORK/unordered.json"
+out="$(run_step 3 "$WORK/unordered.resp.unused" "$WORK/unordered.json")"; rc=$?
+check "an unsorted page still finds the newest run" "0" "$rc"
+check "and reports the newest run's age, not the first item's" "1" \
+	"$(printf '%s' "$out" | grep -c '(1d ago)')"
+check "and the page it asked for holds more than one item" "1" \
+	"$(grep -acz 'per_page=30' "$WORK/gh.log" | tr -d ' ')"
+
+printf '{"workflow_runs":[]}\n' > "$WORK/empty-page.json"
+out="$(run_step 3 "$WORK/unordered.resp.unused" "$WORK/empty-page.json")"; rc=$?
+check "an empty page is still the missing-schedule error" "1" "$rc"
+check "and says 'No successful scheduled run'" "1" \
+	"$(printf '%s' "$out" | grep -c 'No successful scheduled run')"
 
 # --- boundary: exactly MAX_AGE_DAYS days old PASSES (the comparison is -gt)
 
