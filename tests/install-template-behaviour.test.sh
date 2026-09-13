@@ -640,6 +640,110 @@ check "a product that exits non-zero on --version fails the install" "1" "$rc"
 check "and names the exit code" "1" "$(said 'does not start (exit 126)')"
 check "and quotes the first line of its output" "1" "$(said 'required file not found')"
 
+# --- cleanup only undoes its own install ---------------------------------
+#
+# The installer installs gnupg when it is missing, then purges it on exit.
+# --auto-remove is machine-wide autoremove: every auto-installed package
+# no longer depended on, not only what this script pulled in. cleanup()
+# must name the packages explicitly so the machine is left exactly as
+# it was before.
+#
+# The gpg-absent path that exercises this cannot be reached in this
+# harness: the host's gpg lives in /usr/bin and the test is not root, so
+# neither moving the binary nor stripping /usr/bin from PATH is open.
+# `command -v gpg` would always find it. I run cleanup() directly here
+# with the stubbed binaries, which is the part of the gnupg-install flow
+# whose correctness matters for the property under test. The auto-set
+# diff (gnupg_deps = new auto packages - old) is asserted indirectly:
+# cleanup() is given $gnupg_deps as an input, and the assertion is that
+# the purge line names exactly what was in $gnupg_deps and nothing else,
+# which is the part that protects the operator's other auto packages.
+
+cleanup_fn="$(awk '/^cleanup\(\) \{/,/^\}/' "$TEMPLATE")"
+# The cleanup function calls note(), which is defined in the installer's
+# output layer. Pulling the whole layer in here would also pull the colour
+# variables, which only matter when [ -t 1 ]. A no-op that still prints
+# is what cleanup() needs.
+note() { printf '      %s\n' "$1"; }
+eval "$cleanup_fn"
+
+# An apt-get stub that logs argv. The original do-nothing stub is saved
+# and restored at the end of this block, the same shape as the earlier
+# stubs that need to see specific flags.
+saved_apt="$(cat "$BIN/apt-get")"
+cat > "$BIN/apt-get" <<'APTSTUB'
+#!/bin/sh
+printf '%s\n' "$0 $*" >> "$WORK/apt-get.log"
+exit 0
+APTSTUB
+chmod +x "$BIN/apt-get"
+
+# apt-mark showauto prints the contents of $WORK/auto-set. cleanup() never
+# calls apt-mark; the stub exists because the test infrastructure expects
+# every command the installer might run to be on PATH when the gpg-absent
+# path is exercised, and the symmetry keeps a future path here from
+# silently calling a real apt-mark.
+cat > "$BIN/apt-mark" <<'MKSTUB'
+#!/bin/sh
+case "$1" in
+	showauto) cat "$WORK/auto-set" ;;
+esac
+exit 0
+MKSTUB
+chmod +x "$BIN/apt-mark"
+
+# Make sure the stub apt-get is found by cleanup()'s PATH lookup, and the
+# stub sees $WORK when it logs to $WORK/apt-get.log.
+saved_path="$PATH"
+saved_work="$WORK"
+export PATH="$BIN:$PATH" WORK
+
+run_cleanup() { # $1=installed_gnupg  $2=gnupg_deps
+	# shellcheck disable=SC2034 # read by the eval'd cleanup() below, not by this function
+	installed_gnupg="$1"
+	# shellcheck disable=SC2034 # same: cleanup() expands it
+	gnupg_deps="$2"
+	workdir="$WORK/wd-$RANDOM"
+	mkdir -p "$workdir"
+	cleanup
+}
+
+# Case 1: cleanup never runs apt with --auto-remove.
+rm -f "$WORK/apt-get.log"
+run_cleanup yes ""
+check "the cleanup never runs apt with --auto-remove" "0" \
+	"$(grep -c -- '--auto-remove' "$WORK/apt-get.log")"
+
+# Case 2: cleanup purges gnupg plus only the packages named in $gnupg_deps.
+# The install block computes $gnupg_deps from the auto-set diff; here I
+# pass it directly to verify that cleanup() uses it verbatim and does not
+# fall back to --auto-remove or anything else. `orphan-before` is what
+# the operator had installed before; the assertion is that it does not
+# appear in the purge line, which is the property that protects the
+# operator's other auto packages from being removed by this installer.
+printf 'orphan-before\n' > "$WORK/auto-set"
+rm -f "$WORK/apt-get.log"
+run_cleanup yes "gnupg-dep-a
+gnupg-dep-b"
+purge_line="$(grep -F ' purge ' "$WORK/apt-get.log" || true)"
+check "and purges gnupg plus only the packages that became auto during its install" \
+	"1" "$(printf '%s' "$purge_line" | grep -c 'gnupg gnupg-dep-a gnupg-dep-b')"
+check "and does not name the orphan that was already auto" \
+	"0" "$(printf '%s' "$purge_line" | grep -c 'orphan-before')"
+
+# Case 3: a machine that already had gpg is left alone. No purge line at
+# all in the log, because the cleanup's apt-get purge is gated on
+# $installed_gnupg.
+printf '' > "$WORK/auto-set"
+: > "$WORK/apt-get.log"
+run_cleanup "" ""
+check "a machine that already had gpg is left alone" "0" \
+	"$(grep -c ' purge ' "$WORK/apt-get.log")"
+
+export PATH="$saved_path"
+WORK="$saved_work"
+printf '%s' "$saved_apt" > "$BIN/apt-get"; chmod +x "$BIN/apt-get"
+
 echo
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
