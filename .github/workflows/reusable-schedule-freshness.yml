@@ -67,7 +67,8 @@ jobs:
     runs-on: ubuntu-latest
     # Bound: 2 to 15s measured, and it queries the API. Ten times that,
     # rounded up, never under ten minutes; the six-hour default is what a
-    # hang would otherwise cost.
+    # hang would otherwise cost. The three attempts below add at most 40
+    # seconds of sleep, which the ten minutes already cover.
     timeout-minutes: 10
     permissions:
       actions: read # reading this repository's workflow-run history
@@ -104,12 +105,59 @@ jobs:
           # The first item of a filtered page is not always the newest run. On
           # 2026-09-08 a one-item page came back with a run thirteen days old
           # while that morning's success existed, and this gate went red over
-          # nothing (Glyndor/apt#249). So read a page and take the newest
-          # created_at; the order the API chooses then does not matter.
-          latest=$(gh api \
-            "repos/${REPO}/actions/workflows/${WORKFLOW}/runs?event=schedule&${status_filter}&per_page=30" \
-            --jq '[.workflow_runs[].created_at] | max // empty')
+          # nothing (Glyndor/apt#249). On 2026-09-17 the same shape happened
+          # with thirty items: the page had no run newer than 2026-09-10 while
+          # forty-six newer successful scheduled runs existed
+          # (Glyndor/scoop-bucket#173). Two explanations fit and the log cannot
+          # separate them: the API returned thirty runs in no useful order out
+          # of a larger set, or the listing was served from a stale index for a
+          # moment.
+          #
+          # The window asks the question the gate really has, which is
+          # whether any run exists inside the limit. A page that comes back
+          # empty inside the window cannot be trusted on its own, so the
+          # windowed query retries up to three times with twenty seconds
+          # between. A listing served stale is what the retry exists for; the
+          # cost is at most forty seconds on a job that is not a required
+          # check.
+          cutoff=$(date -u -d "$((MAX_AGE_DAYS + 1)) days ago" +%Y-%m-%dT%H:%M:%SZ)
+          now_s=$(date -u +%s)
+          base="repos/${REPO}/actions/workflows/${WORKFLOW}/runs?event=schedule&${status_filter}&per_page=30"
+          windowed_url="${base}&created=%3E%3D${cutoff}"
 
+          latest=""
+          good=""
+          for attempt in 1 2 3; do
+            latest=$(gh api "$windowed_url" \
+              --jq '[.workflow_runs[].created_at] | max // empty')
+            if [ -n "$latest" ]; then
+              age_seconds=$(( now_s - $(date -u -d "$latest" +%s) ))
+              age_days=$(( age_seconds / 86400 ))
+              if [ "$age_days" -le "$MAX_AGE_DAYS" ]; then
+                good="yes"
+                break
+              fi
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep 20
+            fi
+          done
+
+          if [ -n "$good" ]; then
+            echo "Newest ${what} scheduled run of ${WORKFLOW}: ${latest} (${age_days}d ago)."
+            echo "Within the ${MAX_AGE_DAYS}-day limit."
+            exit 0
+          fi
+
+          # Three windowed attempts saw nothing recent. Run the same query
+          # once without the window only to word the failure: empty means the
+          # cron has no record on the API at all, otherwise the run that
+          # exists is older than the limit. If the unwindowed answer is
+          # recent, that is the contradiction the next person needs to see:
+          # the run exists but three windowed pages did not include it,
+          # which is exactly what the retries exist for.
+          latest=$(gh api "$base" \
+            --jq '[.workflow_runs[].created_at] | max // empty')
           if [ -z "$latest" ]; then
             echo "::error::No ${what} scheduled run on record for ${WORKFLOW}."
             echo "Either its cron has never fired, or the schedule was dropped." >&2
@@ -118,18 +166,19 @@ jobs:
             exit 1
           fi
 
-          age_seconds=$(( $(date -u +%s) - $(date -u -d "$latest" +%s) ))
+          age_seconds=$(( now_s - $(date -u -d "$latest" +%s) ))
           age_days=$(( age_seconds / 86400 ))
 
-          echo "Newest ${what} scheduled run of ${WORKFLOW}: ${latest} (${age_days}d ago)."
-
-          if [ "$age_days" -gt "$MAX_AGE_DAYS" ]; then
-            echo "::error::${WORKFLOW} last ${verb} ${age_days} days ago, over the ${MAX_AGE_DAYS}-day limit."
-            echo "A schedule that stops firing reports nothing, so treat this as the alert it never sent." >&2
-            echo "GitHub runs crons hours late, so a small overrun right at the boundary is not the problem;" >&2
-            echo "a multiple of the period is. Toggle the workflow off and on to re-register it, then check" >&2
-            echo "the next scheduled fire rather than the next few minutes." >&2
+          if [ "$age_days" -le "$MAX_AGE_DAYS" ]; then
+            echo "::error::The windowed query saw nothing 3 times, but the unwindowed query returned ${latest}."
+            echo "The gate cannot reconcile this: a recent run exists but three windowed" >&2
+            echo "pages did not include it. Treat as a stale listing index and re-run later." >&2
             exit 1
           fi
 
-          echo "Within the ${MAX_AGE_DAYS}-day limit."
+          echo "::error::${WORKFLOW} last ${verb} ${age_days} days ago, over the ${MAX_AGE_DAYS}-day limit."
+          echo "A schedule that stops firing reports nothing, so treat this as the alert it never sent." >&2
+          echo "GitHub runs crons hours late, so a small overrun right at the boundary is not the problem;" >&2
+          echo "a multiple of the period is. Toggle the workflow off and on to re-register it, then check" >&2
+          echo "the next scheduled fire rather than the next few minutes." >&2
+          exit 1
