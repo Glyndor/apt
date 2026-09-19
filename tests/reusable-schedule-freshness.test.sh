@@ -90,6 +90,11 @@ printf '%s' "$val"
 exit "${STUB_EXIT_CODE:-0}"
 STUB
 	chmod +x "$WORK/bin/gh"
+	cat > "$WORK/bin/sleep" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\0' "$*" >> "${SLEEP_LOG:?sleep log path required}"
+STUB
+	chmod +x "$WORK/bin/sleep"
 }
 
 WORKFLOW="$HERE/.github/workflows/reusable-schedule-freshness.yml"
@@ -110,8 +115,11 @@ ago() { date -u -d "$1 days ago" +%Y-%m-%dT%H:%M:%SZ; }
 # code in `rc`. The stub log is reset per call so each case starts at index 1.
 run_step() { # $1=MAX_AGE_DAYS  $2=responses file  $3=JSON page (optional)
 	local max="$1" resp="$2" json="${3:-}"
-	rm -f "$WORK/gh.log"
+	rm -f "$WORK/gh.log" "$WORK/sleep.log"
+	: >"$WORK/gh.log"
+	: >"$WORK/sleep.log"
 	STUB_LOG="$WORK/gh.log" STUB_RESPONSES="$resp" STUB_JSON="$json" \
+	SLEEP_LOG="$WORK/sleep.log" \
 	ANY_CONCLUSION="${ANY_CONCLUSION:-}" \
 	PATH="$WORK/bin:$PATH" \
 	GH_TOKEN=dummy REPO="$REPO" WORKFLOW="$WF" MAX_AGE_DAYS="$max" \
@@ -130,7 +138,7 @@ check "and names the workflow it checked" "1" \
 
 # --- an old run fails, naming the workflow and the age ------------------
 
-printf '%s\n' "$(ago 11)" > "$WORK/old.resp"
+printf '%s\n%s\n%s\n%s\n' "$(ago 11)" "" "" "$(ago 11)" > "$WORK/old.resp"
 out="$(run_step "$MAX_AGE_DAYS" "$WORK/old.resp")"; rc=$?
 check "an 11-day-old run fails the 10-day limit" "1" "$rc"
 check "and the error names the workflow file (audit.yml)" "1" \
@@ -213,7 +221,7 @@ check "and not for successful ones" "0" \
 check "and the report says completed, not successful" "1" \
 	"$(printf '%s' "$out" | grep -c 'Newest completed scheduled run')"
 
-printf '%s\n' "$(ago 11)" > "$WORK/any-old.resp"
+printf '%s\n%s\n%s\n%s\n' "$(ago 11)" "" "" "$(ago 11)" > "$WORK/any-old.resp"
 out="$(ANY_CONCLUSION=true run_step "$MAX_AGE_DAYS" "$WORK/any-old.resp")"; rc=$?
 check "with count-any-conclusion an old run still fails" "1" "$rc"
 check "and the error says it last ran, not last succeeded" "1" \
@@ -244,6 +252,86 @@ check "a failing gh api call fails the step" "1" \
 	"$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
 check "and does not report it as a missing schedule" "0" \
 	"$(printf '%s' "$out" | grep -c 'No successful scheduled run')"
+
+# --- the URL window filter is MAX_AGE_DAYS + 1 days ago ----------------
+#
+# The window asks the question the gate really has, which is whether any
+# run exists inside the limit. Plus one day because the comparison is
+# `age_days -gt MAX_AGE_DAYS` on whole days and the window must not be
+# narrower than what that accepts.
+
+printf '\n' > "$WORK/url-window.resp"
+run_step "$MAX_AGE_DAYS" "$WORK/url-window.resp" >/dev/null
+expected=$(date -u -d "$((MAX_AGE_DAYS + 1)) days ago" +%Y-%m-%d)
+check "the first call's URL contains the window cutoff date" "1" \
+	"$(awk -v RS='\0' 'NR==1 {print; exit}' "$WORK/gh.log" | grep -q "created=%3E%3D${expected}T" && echo 1 || echo 0)"
+
+# --- three windowed attempts with 20s sleep between ---------------------
+#
+# After three bad answers the unwindowed query runs once, so the worst
+# case is four gh calls and two sleeps. The fake sleep on $WORK/bin
+# appends its argument to $WORK/sleep.log and returns at once, reset per
+# run_step, so no case really waits.
+
+# B: empty, empty, then a recent run on the third attempt.
+printf '%s\n%s\n%s\n' "" "" "$(ago 1)" > "$WORK/retry-pass.resp"
+out="$(run_step "$MAX_AGE_DAYS" "$WORK/retry-pass.resp")"; rc=$?
+check "B: empty, empty, recent passes (exit 0)" "0" "$rc"
+check "B: gh was called exactly 3 times" "3" \
+	"$(grep -acz . "$WORK/gh.log" | tr -d ' ')"
+check "B: sleep was called exactly 2 times" "2" \
+	"$(grep -acz . "$WORK/sleep.log" | tr -d ' ')"
+check "B: each sleep argument was 20" "20 20" \
+	"$(tr '\0' '\n' < "$WORK/sleep.log" | xargs)"
+
+# C: empty, empty, empty, then an old unwindowed run.
+printf '%s\n%s\n%s\n%s\n' "" "" "" "$(ago 11)" > "$WORK/retry-old.resp"
+out="$(run_step "$MAX_AGE_DAYS" "$WORK/retry-old.resp")"; rc=$?
+check "C: empty x3 then old unwindowed fails (exit 1)" "1" "$rc"
+check "C: gh was called exactly 4 times" "4" \
+	"$(grep -acz . "$WORK/gh.log" | tr -d ' ')"
+check "C: the 4th call's URL does NOT contain the window filter" "1" \
+	"$(awk -v RS='\0' 'NR==4 {print; exit}' "$WORK/gh.log" | grep -q 'created=' && echo 0 || echo 1)"
+check "C: the output names the age it measured (11 days)" "1" \
+	"$(printf '%s' "$out" | grep -q '11 days ago' && echo 1 || echo 0)"
+check "C: sleep was called exactly 2 times" "2" \
+	"$(grep -acz . "$WORK/sleep.log" | tr -d ' ')"
+
+# D: four empty responses; the unwindowed one is empty too.
+printf '%s\n%s\n%s\n%s\n' "" "" "" "" > "$WORK/all-empty.resp"
+out="$(run_step "$MAX_AGE_DAYS" "$WORK/all-empty.resp")"; rc=$?
+check "D: four empty responses fail (exit 1)" "1" "$rc"
+check "D: gh was called exactly 4 times" "4" \
+	"$(grep -acz . "$WORK/gh.log" | tr -d ' ')"
+check "D: the output says no successful scheduled run on record" "1" \
+	"$(printf '%s' "$out" | grep -q 'No successful scheduled run on record' && echo 1 || echo 0)"
+
+# E: a good answer on the first call exits without sleeping.
+printf '%s\n%s\n%s\n' "$(ago 1)" "" "" > "$WORK/first-good.resp"
+out="$(run_step "$MAX_AGE_DAYS" "$WORK/first-good.resp")"; rc=$?
+check "E: a first-call good answer passes (exit 0)" "0" "$rc"
+check "E: gh was called exactly 1 time" "1" \
+	"$(grep -acz . "$WORK/gh.log" | tr -d ' ')"
+check "E: sleep was never called" "0" \
+	"$(grep -acz . "$WORK/sleep.log" 2>/dev/null | tr -d ' ')"
+
+# F: the API ignored the filter once; an old run on line 1, recent on
+# line 2. The first answer is non-empty but too old, which the step
+# treats like an empty one.
+printf '%s\n%s\n' "$(ago 11)" "$(ago 1)" > "$WORK/filter-ignored.resp"
+out="$(run_step "$MAX_AGE_DAYS" "$WORK/filter-ignored.resp")"; rc=$?
+check "F: filter ignored once then recent passes (exit 0)" "0" "$rc"
+check "F: gh was called exactly 2 times" "2" \
+	"$(grep -acz . "$WORK/gh.log" | tr -d ' ')"
+
+# G: contradiction; windowed empty 3 times, unwindowed sees a recent run.
+printf '%s\n%s\n%s\n%s\n' "" "" "" "$(ago 1)" > "$WORK/contradiction.resp"
+out="$(run_step "$MAX_AGE_DAYS" "$WORK/contradiction.resp")"; rc=$?
+check "G: windowed-empty then unwindowed-recent fails (exit 1)" "1" "$rc"
+check "G: gh was called exactly 4 times" "4" \
+	"$(grep -acz . "$WORK/gh.log" | tr -d ' ')"
+check "G: output names both the windowed emptiness and the unwindowed timestamp" "1" \
+	"$(printf '%s' "$out" | grep -q 'saw nothing 3 times' && printf '%s' "$out" | grep -q "$(ago 1)" && echo 1 || echo 0)"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
