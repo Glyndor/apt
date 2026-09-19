@@ -16,13 +16,36 @@
 # it fired passed. A commit-author check cannot see it either: who wrote a
 # commit is not what happened to it.
 #
-# WHY THE NEWEST COMPLETED RUN RATHER THAN SIMPLY THE NEWEST:
+# WHY THIS JOB BRANCHES ON GITHUB_EVENT_NAME:
 #
-#   A run still in flight has no conclusion. Reading it as one would paint every
-#   ordinary merge red for the two minutes the suite takes, and a check that is
-#   red for a normal event is a check people learn to click past. Asking for
-#   `status=completed` makes the API skip past it to the newest run that reached
-#   a verdict, which is what the state of the branch actually is.
+#   On a push, the question is "what happened to the commit I just pushed", not
+#   "what is the newest completed run on the branch". Measured on 2026-09-19:
+#   after `main` had been red, the push that fixed it ran this job at the same
+#   instant it ran tests.yml, and the job asked the API for the newest
+#   COMPLETED tests.yml run on `main`, which at that instant was the previous
+#   commit's still-red run. The push's own tests.yml was green, and the job
+#   reported the older run as the verdict, so the developer pushing the fix saw
+#   a red cross from this job on the run that proved their fix. The same shape
+#   had happened twice before with `per_page=1`: the API did not always put the
+#   newest run at the head of the page (Glyndor/apt#249 on 2026-09-08,
+#   Glyndor/scoop-bucket#173 on 2026-09-17), and a one-item page returned a run
+#   from days earlier while a newer verdict existed.
+#
+#   The push path now lists runs of `tests.yml` on `main` with `per_page=30`,
+#   picks the newest one whose `head_sha` is `GITHUB_SHA`, and if it has no
+#   verdict yet, waits 15 seconds and looks again, for up to 32 attempts (eight
+#   minutes, inside the job's ten-minute bound). A push that lands while the
+#   suite is still running is the case this loop exists for, and the worst case
+#   it costs is the eight minutes the suite takes. A `cancelled` run for the
+#   pushed commit itself is red: nothing newer can answer for that commit, so
+#   the only honest verdict is the one the run reached.
+#
+#   On schedule and pull_request the question is the same as before: the newest
+#   completed run on the branch. The fix is to read a 30-item page and take the
+#   greatest `created_at`, because the API does not always put the newest run at
+#   the head of a filtered page. `cancelled` runs are passed over and counted:
+#   a cancelled run only means a newer push superseded it, and the next tick
+#   reads the newer verdict.
 #
 # WHY ANY CONCLUSION OTHER THAN success IS REPORTED:
 #
@@ -45,9 +68,11 @@
 #   <workflow-file>  file name of the suite workflow, e.g. tests.yml
 #   [branch]         branch whose state is read; default main
 #
-# Environment: GH_TOKEN, which on a runner is the job's own GITHUB_TOKEN. It
-# reads nothing beyond this repository's own run history, and reading that needs
-# `actions: read` alongside `contents: read`, or the call is refused.
+# Environment: GH_TOKEN, which on a runner is the job's own GITHUB_TOKEN.
+#   GITHUB_EVENT_NAME selects the path (push vs schedule/pull_request).
+#   GITHUB_SHA is the commit to look up on the push path. It reads nothing
+#   beyond this repository's own run history, and reading that needs
+#   `actions: read` alongside `contents: read`, or the call is refused.
 set -euo pipefail
 
 repo="${1:-}"
@@ -59,13 +84,88 @@ if [ -z "$repo" ] || [ -z "$workflow" ]; then
 	exit 2
 fi
 
-# One call and one run. The API returns runs newest first, so `per_page=1`
-# alongside `status=completed` is the newest run that reached a verdict.
-# `status` travels back with the rest because the filter is the API's promise
-# and the guard below is this script's own.
+event="${GITHUB_EVENT_NAME:-}"
+sha="${GITHUB_SHA:-}"
+
+# --- the push path -----------------------------------------------------------
+#
+# The job and tests.yml start at the same instant on push, so the run for
+# `GITHUB_SHA` may not have a verdict yet. The loop polls for up to 8
+# minutes (32 attempts of 15 seconds); the job's 10-minute bound is the
+# outer limit. The lookup is unfiltered by status so a run still in flight
+# is visible; only `head_sha` selects the run that answers for the push.
+# A `cancelled` run for that head_sha is red: nothing newer can answer
+# for the commit that was pushed.
+
+push_report_no_verdict() {
+	local short="${sha:0:7}"
+	echo "::error::no $workflow run for commit $short on $branch finished within 8 minutes" >&2
+	echo "  This job polled the API from the instant tests.yml for that commit started and" >&2
+	echo "  saw no completed verdict in 8 minutes, so the state of $branch for that commit is" >&2
+	echo "  unknown rather than green. A run for that commit may still be in flight, or the" >&2
+	echo "  suite never started for it. Open the workflow run list on $branch to see which." >&2
+	exit 1
+}
+
+if [ "$event" = "push" ] && [ -n "$sha" ]; then
+	url="repos/${repo}/actions/workflows/${workflow}/runs?branch=${branch}&per_page=30"
+	# Pick the newest run whose head_sha is the commit that was pushed, sort
+	# by created_at so the page order does not decide the verdict. `id` is the
+	# tie-breaker for runs created in the same second, which the API does emit.
+	filter='[.workflow_runs[] | select(.head_sha=="'"$sha"'")]
+		| sort_by(.created_at, .id) | reverse | .[0]
+		| [(.status // ""), (.conclusion // ""), (.run_number | tostring),
+		   (.head_sha // ""), (.created_at // ""), (.html_url // "")]
+		| @tsv'
+
+	run=""
+	for attempt in $(seq 1 32); do
+		run="$(gh api "$url" --jq "$filter")"
+		if [ -n "$run" ]; then
+			IFS=$'\t' read -r status _ <<<"$run"
+			if [ "$status" = "completed" ]; then
+				break
+			fi
+			run=""
+		fi
+		if [ "$attempt" -lt 32 ]; then
+			sleep 15
+		fi
+	done
+
+	if [ -z "$run" ]; then
+		push_report_no_verdict
+	fi
+
+	IFS=$'\t' read -r status conclusion number rsha created rurl <<<"$run"
+	rshort="${rsha:0:7}"
+
+	if [ "$conclusion" != "success" ]; then
+		echo "::error::$workflow concluded '$conclusion' on $branch for commit $rshort: run #$number, started $created" >&2
+		echo "  $rurl" >&2
+		echo "  The verdict is the run for $rshort, which is the commit the push brought in." >&2
+		echo "  Read that run before anything else lands on top of it: a second push onto a" >&2
+		echo "  red commit buries which change was responsible. This check is deliberately" >&2
+		echo "  not a required one, so it cannot block the push that repairs $branch." >&2
+		exit 1
+	fi
+
+	echo "$workflow on $branch for commit $rshort: run #$number concluded $conclusion (started $created)."
+	exit 0
+fi
+
+# --- the schedule and pull_request path --------------------------------------
+#
+# The newest completed run on the branch, but read from a 30-item page and
+# sorted by `created_at` here. A one-item page does not always carry the
+# newest run (Glyndor/apt#249, Glyndor/scoop-bucket#173). `cancelled` runs
+# are passed over and counted; a page where every completed run was
+# cancelled fails with a no-verdict message, distinct from an empty page
+# which keeps the unknown-state failure.
+
 run="$(gh api \
-	"repos/${repo}/actions/workflows/${workflow}/runs?branch=${branch}&status=completed&per_page=1" \
-	--jq '.workflow_runs[0] // empty
+	"repos/${repo}/actions/workflows/${workflow}/runs?branch=${branch}&status=completed&per_page=30" \
+	--jq '.workflow_runs[]
 		| [(.status // ""), (.conclusion // ""), (.run_number | tostring),
 		   (.head_sha // ""), (.created_at // ""), (.html_url // "")]
 		| @tsv')"
@@ -79,19 +179,33 @@ if [ -z "$run" ]; then
 	exit 1
 fi
 
-IFS=$'\t' read -r status conclusion number sha created url <<<"$run"
-short="${sha:0:7}"
+newest_line=""
+newest_created=""
+cancelled_count=0
+total_count=0
+while IFS=$'\t' read -r rstatus rconclusion rnumber rsha rcreated rurl; do
+	[ -z "$rstatus" ] && continue
+	total_count=$((total_count + 1))
+	if [ "$rconclusion" = "cancelled" ]; then
+		cancelled_count=$((cancelled_count + 1))
+		continue
+	fi
+	if [ -z "$newest_created" ] || [ "$rcreated" \> "$newest_created" ]; then
+		newest_created="$rcreated"
+		newest_line="$rstatus	$rconclusion	$rnumber	$rsha	$rcreated	$rurl"
+	fi
+done <<<"$run"
 
-# The request asked for completed runs only. An answer carrying anything else
-# means the query is wrong, not that the branch is broken, and the two have to
-# read differently: a reader sent to look for a failure that is really a run in
-# flight learns to distrust the check.
-if [ "$status" != "completed" ]; then
-	echo "::error::the newest run of $workflow on $branch came back with status '$status', not 'completed'" >&2
-	echo "  This is a fault in the query rather than a verdict on $branch. A run still in" >&2
-	echo "  flight has no conclusion to report, so the request must carry status=completed." >&2
+if [ -z "$newest_line" ]; then
+	echo "::error::no verdict from completed runs of $workflow on $branch: all $total_count completed runs were cancelled" >&2
+	echo "  A cancelled run is the absence of a verdict, not one, and every completed run in" >&2
+	echo "  the last 30 is absent. A newer push that superseded them will produce its own" >&2
+	echo "  completed run on the next tick; this job will read that one then." >&2
 	exit 1
 fi
+
+IFS=$'\t' read -r status conclusion number sha created url <<<"$newest_line"
+short="${sha:0:7}"
 
 if [ "$conclusion" != "success" ]; then
 	echo "::error::$workflow concluded '$conclusion' on $branch: run #$number for $short, started $created" >&2
@@ -104,4 +218,9 @@ if [ "$conclusion" != "success" ]; then
 	exit 1
 fi
 
-echo "$workflow on $branch: run #$number for $short concluded $conclusion (started $created)."
+if [ "$cancelled_count" -gt 0 ]; then
+	echo "$workflow on $branch: run #$number for $short concluded $conclusion (started $created)."
+	echo "  Passed over $cancelled_count cancelled run(s) that a newer push superseded."
+else
+	echo "$workflow on $branch: run #$number for $short concluded $conclusion (started $created)."
+fi
