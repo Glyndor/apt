@@ -156,6 +156,15 @@ jobs:
   # cannot see it: they ask for the newest SUCCESSFUL scheduled run, so a failure
   # is missing from their answer by construction.
   #
+  # Measured 2026-09-19, the second defect this job exists to catch: the push
+  # that fixed a red `main` got a red cross from this job while its own
+  # `tests.yml` was green. The job and the suite run at the same instant on
+  # `push`, so the run for the commit that was pushed had no verdict yet, and
+  # the job asked the API for the newest COMPLETED run on `main`, which was the
+  # previous commit's still-red run. The developer pushing the fix saw a red
+  # cross from this job on the run that proved their fix, and nothing else was
+  # wrong.
+  #
   # THIS MUST NOT BECOME A REQUIRED STATUS CHECK.
   #
   #   Required, `suite on main` would be red on every open pull request for as
@@ -165,10 +174,13 @@ jobs:
   #   problem must never be the thing standing in front of its fix. It reports;
   #   a person acts on it.
   #
-  # Both triggers in the `on:` block above are load-bearing here. The schedule
-  # reports a red main on the next tick rather than the next time somebody
-  # happens to push, and `push: main` reports it on the landing itself, which is
-  # the event that creates the run in question.
+  # Both triggers in the `on:` block above are load-bearing here, and the script
+  # branches on GITHUB_EVENT_NAME to answer the question each one asks. The
+  # schedule reports a red main on the next tick rather than the next time
+  # somebody happens to push, and `push: main` reports on the run for the
+  # commit that was pushed: it polls the API for up to eight minutes so the
+  # verdict comes from that commit's run, not from an older one that the API
+  # happened to return first.
   #
   # The comparison lives in scripts/check-suite-on-main.sh rather than in this
   # step, so its three answers can be planted and tested off the network; a step
@@ -182,11 +194,12 @@ jobs:
   suite-on-main:
     name: suite on main
     runs-on: ubuntu-latest
-    # Bound: the script measures under 0.01s against a stubbed API, so what a
-    # run costs is a checkout plus the single API call, and the identical call
-    # in reusable-schedule-freshness measures 2 to 15s. Ten times that, rounded
-    # up, never under ten minutes; the six-hour default is what a hang would
-    # otherwise cost.
+    # Bound: on the schedule path one API call plus a checkout measures 2 to
+    # 15s (the identical call in reusable-schedule-freshness). On the push
+    # path the script polls the API for up to eight minutes (32 attempts of
+    # 15 seconds), so the ten-minute bound is the outer limit: it covers the
+    # worst case plus a checkout, and a hang would otherwise cost the six-hour
+    # default.
     timeout-minutes: 10
     permissions:
       contents: read
