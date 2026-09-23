@@ -87,6 +87,19 @@ fi
 event="${GITHUB_EVENT_NAME:-}"
 sha="${GITHUB_SHA:-}"
 
+# Refuse a push event with no SHA. Falling through to the schedule path here
+# would answer green for a different commit: the newest completed run on the
+# branch is not the run for the push that was just made, and reporting it as
+# the verdict for the push would bury which commit is actually broken.
+if [ "$event" = "push" ] && [ -z "$sha" ]; then
+	echo "::error::push event received but GITHUB_SHA is empty; refusing to fall back to the schedule path" >&2
+	echo "  The push path needs the commit SHA to look up the run that answers for it, and" >&2
+	echo "  the schedule path would report the newest run on the branch, which may be for a" >&2
+	echo "  different commit. Wire GITHUB_SHA from the runner environment or run on" >&2
+	echo "  schedule/pull_request instead." >&2
+	exit 1
+fi
+
 # --- the push path -----------------------------------------------------------
 #
 # The job and tests.yml start at the same instant on push, so the run for

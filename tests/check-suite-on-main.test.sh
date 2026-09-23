@@ -598,6 +598,22 @@ check "R6: and does not name the older run's id (100)" "0" \
 check "R6: and does not report the older run as red main" "0" \
 	"$(says "$out" 'main is red')"
 
+# --- R7: push with empty GITHUB_SHA refuses rather than falls back ---------
+#
+# A push event without a commit SHA would otherwise fall through to the
+# schedule path, which answers the question for the newest run on the
+# branch, not the run for the push that just landed. That is a verdict
+# for a different commit, and the contract says refuse with a clear
+# ::error:: and a non-zero exit before any API call is made.
+out="$(GITHUB_EVENT_NAME=push GITHUB_SHA='' run_gate_json_dir push '')"; rc=$?
+check "R7: push with empty GITHUB_SHA fails the check" "1" "$rc"
+check "R7: and prints an ::error:: line" "1" \
+	"$(says "$out" '::error::')"
+check "R7: and the message says GITHUB_SHA is empty" "1" \
+	"$(says "$out" 'GITHUB_SHA is empty')"
+check "R7: and did not call gh (no fallback to schedule)" "0" \
+	"$(logged .)"
+
 # --- the push URL filters by head_sha and not by status ---------------------
 #
 # Reading the URL from the log: the push path asks for a 30-item page on
