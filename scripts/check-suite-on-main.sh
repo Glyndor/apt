@@ -121,10 +121,14 @@ push_report_no_verdict() {
 }
 
 if [ "$event" = "push" ] && [ -n "$sha" ]; then
-	url="repos/${repo}/actions/workflows/${workflow}/runs?branch=${branch}&per_page=30"
+	url="repos/${repo}/actions/workflows/${workflow}/runs?branch=${branch}&head_sha=${sha}&per_page=30"
 	# Pick the newest run whose head_sha is the commit that was pushed, sort
 	# by created_at so the page order does not decide the verdict. `id` is the
 	# tie-breaker for runs created in the same second, which the API does emit.
+	# The head_sha query parameter narrows the page server-side: with 30 or
+	# more newer runs in flight the API would otherwise return a 30-item page
+	# that does not contain this commit's run, and the jq select below would
+	# only see that absence, not the missing runs.
 	filter='[.workflow_runs[] | select(.head_sha=="'"$sha"'")]
 		| sort_by(.created_at, .id) | reverse | .[0]
 		| [(.status // ""), (.conclusion // ""), (.run_number | tostring),

@@ -617,10 +617,10 @@ check "R7: and did not call gh (no fallback to schedule)" "0" \
 # --- the push URL filters by head_sha and not by status ---------------------
 #
 # Reading the URL from the log: the push path asks for a 30-item page on
-# the branch and selects the run with the right head_sha in the script,
-# because the API has no filter for head_sha on the runs endpoint. The
-# status filter is omitted on purpose, so a run still in flight is visible
-# to the next attempt.
+# the branch narrowed to the pushed commit by `head_sha=`, and keeps the
+# jq select as a second guard for a listing that did not honour the
+# filter. The status filter is omitted on purpose, so a run still in
+# flight is visible to the next attempt.
 rm -rf "$WORK/json"; mkdir -p "$WORK/json"
 json_page \
 	"$(json_run 9501 9501 completed success "$PUSH_SHA" "$OLD_TS" "$PUSH_NEW_URL")" \
@@ -629,6 +629,8 @@ run_gate_json_dir push "$PUSH_SHA" >/dev/null
 check "the push URL asks for a 30-item page" "1" "$(logged 'per_page=30')"
 check "the push URL asks for the branch it was given" "1" \
 	"$(logged "branch=$BRANCH")"
+check "the push URL asks for the head_sha of the pushed commit" "1" \
+	"$(logged "head_sha=$PUSH_SHA")"
 check "the push URL targets the right workflow file" "1" \
 	"$(logged "workflows/$WF/runs")"
 check "the push URL targets the repository it was given" "1" \
