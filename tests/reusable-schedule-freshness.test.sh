@@ -261,10 +261,15 @@ check "and does not report it as a missing schedule" "0" \
 # narrower than what that accepts.
 
 printf '\n' > "$WORK/url-window.resp"
-run_step "$MAX_AGE_DAYS" "$WORK/url-window.resp" >/dev/null
+# Capture the cutoff date before running the step: a run that straddles
+# midnight UTC would otherwise compute a different `expected` after the
+# step ran and fail on the right answer. The step's own `date` runs in
+# the same window, so accept the day on either side of the boundary.
 expected=$(date -u -d "$((MAX_AGE_DAYS + 1)) days ago" +%Y-%m-%d)
+run_step "$MAX_AGE_DAYS" "$WORK/url-window.resp" >/dev/null
+expected_alt=$(date -u -d "$expected -1 day" +%Y-%m-%d)
 check "the first call's URL contains the window cutoff date" "1" \
-	"$(awk -v RS='\0' 'NR==1 {print; exit}' "$WORK/gh.log" | grep -q "created=%3E%3D${expected}T" && echo 1 || echo 0)"
+	"$(awk -v RS='\0' 'NR==1 {print; exit}' "$WORK/gh.log" | grep -qE "created=%3E%3D(${expected}|${expected_alt})T" && echo 1 || echo 0)"
 
 # --- three windowed attempts with 20s sleep between ---------------------
 #
