@@ -430,6 +430,47 @@ check "S5: and is not the 08:00 run's verdict" "0" \
 check "schedule URL does not omit status=completed" "1" \
 	"$(logged 'status=completed')"
 
+# --- S6: identical created_at, different ids, verdict is the higher id -----
+#
+# Two runs created in the same second. The API does not promise any order
+# inside that second, and a script that compares created_at as a string
+# would tie, fall back to page order, and report whatever the API
+# happened to list first. The schedule path sorts by created_at then id
+# in jq and reverses, so the higher id wins whatever order the page
+# arrives in. The page is fed in both orders so a script that only
+# looked correct on one of them still has to defend the other.
+TIE_TS="2026-09-08T11:14:09Z"
+TIE_LO_URL="https://github.com/Glyndor/apt/actions/runs/5000"
+TIE_HI_URL="https://github.com/Glyndor/apt/actions/runs/6000"
+SHA_TIE_LO="1111111111111111111111111111111111111111"
+SHA_TIE_HI="2222222222222222222222222222222222222222"
+# Lower id success first, higher id failure second.
+json_page \
+	"$(json_run 5000 5000 completed success "$SHA_TIE_LO" "$TIE_TS" "$TIE_LO_URL")" \
+	"$(json_run 6000 6000 completed failure "$SHA_TIE_HI" "$TIE_TS" "$TIE_HI_URL")" \
+	> "$WORK/s6-low-first.json"
+out="$(run_gate_json "$WORK/s6-low-first.json")"; rc=$?
+check "S6: identical ts, lower id first, verdict is higher id (failure)" "1" "$rc"
+check "S6: and names the higher id run's conclusion" "1" \
+	"$(says "$out" "concluded 'failure'")"
+check "S6: and names the higher id run's number (#6000)" "1" \
+	"$(says "$out" 'run #6000')"
+check "S6: and is not the lower id run's verdict" "0" \
+	"$(says "$out" 'run #5000')"
+# Higher id failure first, lower id success second.
+json_page \
+	"$(json_run 6000 6000 completed failure "$SHA_TIE_HI" "$TIE_TS" "$TIE_HI_URL")" \
+	"$(json_run 5000 5000 completed success "$SHA_TIE_LO" "$TIE_TS" "$TIE_LO_URL")" \
+	> "$WORK/s6-high-first.json"
+out="$(run_gate_json "$WORK/s6-high-first.json")"; rc=$?
+check "S6: identical ts, higher id first, verdict is higher id (failure)" "1" "$rc"
+check "S6: and names the higher id run's conclusion" "1" \
+	"$(says "$out" "concluded 'failure'")"
+check "S6: and names the higher id run's number (#6000)" "1" \
+	"$(says "$out" 'run #6000')"
+check "S6: and is not the lower id run's verdict" "0" \
+	"$(says "$out" 'run #5000')"
+
 # ===========================================================================
 # PUSH PATH
 #
@@ -598,13 +639,70 @@ check "R6: and does not name the older run's id (100)" "0" \
 check "R6: and does not report the older run as red main" "0" \
 	"$(says "$out" 'main is red')"
 
+# --- R8: identical created_at, different ids, verdict is the higher id -----
+#
+# Same race as S6, but on the push path. Two runs for GITHUB_SHA created
+# in the same second: a script that only compared created_at would tie,
+# fall back to page order, and pick whatever the API happened to list
+# first. The push path sorts by created_at then id and reverses, then
+# takes the first row, so the higher id wins whatever order the page
+# arrives in. The page is fed in both orders so a script that only
+# looked correct on one of them still has to defend the other.
+PUSH_TIE_TS="2026-09-08T11:14:09Z"
+PUSH_TIE_LO_URL="https://github.com/Glyndor/apt/actions/runs/7000"
+PUSH_TIE_HI_URL="https://github.com/Glyndor/apt/actions/runs/7100"
+# Lower id success first, higher id failure second.
+rm -rf "$WORK/json"; mkdir -p "$WORK/json"
+json_page \
+	"$(json_run 7000 7000 completed success "$PUSH_SHA" "$PUSH_TIE_TS" "$PUSH_TIE_LO_URL")" \
+	"$(json_run 7100 7100 completed failure "$PUSH_SHA" "$PUSH_TIE_TS" "$PUSH_TIE_HI_URL")" \
+	> "$WORK/json/1"
+out="$(run_gate_json_dir push "$PUSH_SHA")"; rc=$?
+check "R8: push identical ts, lower id first, verdict is higher id (failure)" "1" "$rc"
+check "R8: and names the higher id run's conclusion" "1" \
+	"$(says "$out" "concluded 'failure'")"
+check "R8: and names the higher id run's number (#7100)" "1" \
+	"$(says "$out" 'run #7100')"
+check "R8: and is not the lower id run's verdict" "0" \
+	"$(says "$out" 'run #7000')"
+# Higher id failure first, lower id success second.
+rm -rf "$WORK/json"; mkdir -p "$WORK/json"
+json_page \
+	"$(json_run 7100 7100 completed failure "$PUSH_SHA" "$PUSH_TIE_TS" "$PUSH_TIE_HI_URL")" \
+	"$(json_run 7000 7000 completed success "$PUSH_SHA" "$PUSH_TIE_TS" "$PUSH_TIE_LO_URL")" \
+	> "$WORK/json/1"
+out="$(run_gate_json_dir push "$PUSH_SHA")"; rc=$?
+check "R8: push identical ts, higher id first, verdict is higher id (failure)" "1" "$rc"
+check "R8: and names the higher id run's conclusion" "1" \
+	"$(says "$out" "concluded 'failure'")"
+check "R8: and names the higher id run's number (#7100)" "1" \
+	"$(says "$out" 'run #7100')"
+check "R8: and is not the lower id run's verdict" "0" \
+	"$(says "$out" 'run #7000')"
+
+# --- R7: push with empty GITHUB_SHA refuses rather than falls back ---------
+#
+# A push event without a commit SHA would otherwise fall through to the
+# schedule path, which answers the question for the newest run on the
+# branch, not the run for the push that just landed. That is a verdict
+# for a different commit, and the contract says refuse with a clear
+# ::error:: and a non-zero exit before any API call is made.
+out="$(GITHUB_EVENT_NAME=push GITHUB_SHA='' run_gate_json_dir push '')"; rc=$?
+check "R7: push with empty GITHUB_SHA fails the check" "1" "$rc"
+check "R7: and prints an ::error:: line" "1" \
+	"$(says "$out" '::error::')"
+check "R7: and the message says GITHUB_SHA is empty" "1" \
+	"$(says "$out" 'GITHUB_SHA is empty')"
+check "R7: and did not call gh (no fallback to schedule)" "0" \
+	"$(logged .)"
+
 # --- the push URL filters by head_sha and not by status ---------------------
 #
 # Reading the URL from the log: the push path asks for a 30-item page on
-# the branch and selects the run with the right head_sha in the script,
-# because the API has no filter for head_sha on the runs endpoint. The
-# status filter is omitted on purpose, so a run still in flight is visible
-# to the next attempt.
+# the branch narrowed to the pushed commit by `head_sha=`, and keeps the
+# jq select as a second guard for a listing that did not honour the
+# filter. The status filter is omitted on purpose, so a run still in
+# flight is visible to the next attempt.
 rm -rf "$WORK/json"; mkdir -p "$WORK/json"
 json_page \
 	"$(json_run 9501 9501 completed success "$PUSH_SHA" "$OLD_TS" "$PUSH_NEW_URL")" \
@@ -613,6 +711,8 @@ run_gate_json_dir push "$PUSH_SHA" >/dev/null
 check "the push URL asks for a 30-item page" "1" "$(logged 'per_page=30')"
 check "the push URL asks for the branch it was given" "1" \
 	"$(logged "branch=$BRANCH")"
+check "the push URL asks for the head_sha of the pushed commit" "1" \
+	"$(logged "head_sha=$PUSH_SHA")"
 check "the push URL targets the right workflow file" "1" \
 	"$(logged "workflows/$WF/runs")"
 check "the push URL targets the repository it was given" "1" \

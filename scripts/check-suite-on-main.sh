@@ -87,6 +87,19 @@ fi
 event="${GITHUB_EVENT_NAME:-}"
 sha="${GITHUB_SHA:-}"
 
+# Refuse a push event with no SHA. Falling through to the schedule path here
+# would answer green for a different commit: the newest completed run on the
+# branch is not the run for the push that was just made, and reporting it as
+# the verdict for the push would bury which commit is actually broken.
+if [ "$event" = "push" ] && [ -z "$sha" ]; then
+	echo "::error::push event received but GITHUB_SHA is empty; refusing to fall back to the schedule path" >&2
+	echo "  The push path needs the commit SHA to look up the run that answers for it, and" >&2
+	echo "  the schedule path would report the newest run on the branch, which may be for a" >&2
+	echo "  different commit. Wire GITHUB_SHA from the runner environment or run on" >&2
+	echo "  schedule/pull_request instead." >&2
+	exit 1
+fi
+
 # --- the push path -----------------------------------------------------------
 #
 # The job and tests.yml start at the same instant on push, so the run for
@@ -108,10 +121,14 @@ push_report_no_verdict() {
 }
 
 if [ "$event" = "push" ] && [ -n "$sha" ]; then
-	url="repos/${repo}/actions/workflows/${workflow}/runs?branch=${branch}&per_page=30"
+	url="repos/${repo}/actions/workflows/${workflow}/runs?branch=${branch}&head_sha=${sha}&per_page=30"
 	# Pick the newest run whose head_sha is the commit that was pushed, sort
 	# by created_at so the page order does not decide the verdict. `id` is the
 	# tie-breaker for runs created in the same second, which the API does emit.
+	# The head_sha query parameter narrows the page server-side: with 30 or
+	# more newer runs in flight the API would otherwise return a 30-item page
+	# that does not contain this commit's run, and the jq select below would
+	# only see that absence, not the missing runs.
 	filter='[.workflow_runs[] | select(.head_sha=="'"$sha"'")]
 		| sort_by(.created_at, .id) | reverse | .[0]
 		| [(.status // ""), (.conclusion // ""), (.run_number | tostring),
@@ -165,7 +182,9 @@ fi
 
 run="$(gh api \
 	"repos/${repo}/actions/workflows/${workflow}/runs?branch=${branch}&status=completed&per_page=30" \
-	--jq '.workflow_runs[]
+	--jq '.workflow_runs
+		| sort_by(.created_at, .id) | reverse
+		| .[]
 		| [(.status // ""), (.conclusion // ""), (.run_number | tostring),
 		   (.head_sha // ""), (.created_at // ""), (.html_url // "")]
 		| @tsv')"
