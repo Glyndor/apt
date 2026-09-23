@@ -182,7 +182,9 @@ fi
 
 run="$(gh api \
 	"repos/${repo}/actions/workflows/${workflow}/runs?branch=${branch}&status=completed&per_page=30" \
-	--jq '.workflow_runs[]
+	--jq '.workflow_runs
+		| sort_by(.created_at, .id) | reverse
+		| .[]
 		| [(.status // ""), (.conclusion // ""), (.run_number | tostring),
 		   (.head_sha // ""), (.created_at // ""), (.html_url // "")]
 		| @tsv')"
