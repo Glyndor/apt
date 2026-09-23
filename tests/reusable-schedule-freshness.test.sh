@@ -261,15 +261,15 @@ check "and does not report it as a missing schedule" "0" \
 # narrower than what that accepts.
 
 printf '\n' > "$WORK/url-window.resp"
-# Capture the cutoff date before running the step: a run that straddles
-# midnight UTC would otherwise compute a different `expected` after the
-# step ran and fail on the right answer. The step's own `date` runs in
-# the same window, so accept the day on either side of the boundary.
-expected=$(date -u -d "$((MAX_AGE_DAYS + 1)) days ago" +%Y-%m-%d)
+# The step reads the clock itself, so a run that crosses midnight UTC while
+# the step runs builds its cutoff from either day. Read the cutoff on both
+# sides of the step and accept either; reading it only afterwards failed a
+# correct step whenever the date turned in between.
+before=$(date -u -d "$((MAX_AGE_DAYS + 1)) days ago" +%Y-%m-%d)
 run_step "$MAX_AGE_DAYS" "$WORK/url-window.resp" >/dev/null
-expected_alt=$(date -u -d "$expected -1 day" +%Y-%m-%d)
+after=$(date -u -d "$((MAX_AGE_DAYS + 1)) days ago" +%Y-%m-%d)
 check "the first call's URL contains the window cutoff date" "1" \
-	"$(awk -v RS='\0' 'NR==1 {print; exit}' "$WORK/gh.log" | grep -qE "created=%3E%3D(${expected}|${expected_alt})T" && echo 1 || echo 0)"
+	"$(awk -v RS='\0' 'NR==1 {print; exit}' "$WORK/gh.log" | grep -qE "created=%3E%3D(${before}|${after})T" && echo 1 || echo 0)"
 
 # --- three windowed attempts with 20s sleep between ---------------------
 #
