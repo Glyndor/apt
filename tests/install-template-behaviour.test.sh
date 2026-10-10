@@ -208,7 +208,7 @@ run_installer() {
 	# happened -- green here, seven failures on the runner -- and the difference
 	# was the host, not the installer.
 	mkdir -p "$WORK/apt.conf.d"
-	env -i PATH="$BIN:$PATH" HOME="$WORK" \
+	env -i PATH="${INSTALLER_PATH:-$BIN:$PATH}" HOME="$WORK" WORK="$WORK" \
 		DPKG_MARKER="$WORK/marker" \
 		KEYRING_URL="file://$1" \
 		GLYNDOR_APT_FPR="$2" \
@@ -642,24 +642,21 @@ check "and quotes the first line of its output" "1" "$(said 'required file not f
 
 # --- cleanup only undoes its own install ---------------------------------
 #
-# The installer installs gnupg when it is missing, then purges it on exit.
+# The installer installs gnupg when it is missing, then purges it after
+# verification or on an earlier failure.
 # --auto-remove is machine-wide autoremove: every auto-installed package
 # no longer depended on, not only what this script pulled in. cleanup()
 # must name the packages explicitly so the machine is left exactly as
 # it was before.
 #
-# The gpg-absent path that exercises this cannot be reached in this
-# harness: the host's gpg lives in /usr/bin and the test is not root, so
-# neither moving the binary nor stripping /usr/bin from PATH is open.
-# `command -v gpg` would always find it. I run cleanup() directly here
-# with the stubbed binaries, which is the part of the gnupg-install flow
-# whose correctness matters for the property under test. The auto-set
-# diff (gnupg_deps = new auto packages - old) is asserted indirectly:
-# cleanup() is given $gnupg_deps as an input, and the assertion is that
+# Run cleanup() directly with stubbed binaries to check the trap's explicit
+# package list. The full gpg-absent run below also checks the install order
+# and auto-set diff. Here cleanup() is given $gnupg_deps as an input, and
+# the assertion is that
 # the purge line names exactly what was in $gnupg_deps and nothing else,
 # which is the part that protects the operator's other auto packages.
 
-cleanup_fn="$(awk '/^cleanup\(\) \{/,/^\}/' "$TEMPLATE")"
+cleanup_fn="$(awk '/^(cleanup|purge_gnupg)\(\) \{/,/^\}/' "$TEMPLATE")"
 # The cleanup function calls note(), which is defined in the installer's
 # output layer. Pulling the whole layer in here would also pull the colour
 # variables, which only matter when [ -t 1 ]. A no-op that still prints
@@ -743,6 +740,55 @@ check "a machine that already had gpg is left alone" "0" \
 export PATH="$saved_path"
 WORK="$saved_work"
 printf '%s' "$saved_apt" > "$BIN/apt-get"; chmod +x "$BIN/apt-get"
+
+# Exercise the whole gpg-absent flow without hiding any host binaries. The
+# restricted PATH includes tar because dpkg-deb invokes it during extraction.
+INSTALLER_PATH="$WORK/no-gpg"
+mkdir -p "$INSTALLER_PATH"
+for tool in tr rm mktemp sort comm curl mkdir dpkg-deb tar awk grep sed chmod cat ln head; do
+	ln -s "$(command -v "$tool")" "$INSTALLER_PATH/$tool"
+done
+# Key authentication has its own cases above. Stub it here so this case
+# measures package operations without needing a gpg-agent socket.
+cleanup_fpr=0123456789ABCDEF0123456789ABCDEF01234567
+cat > "$WORK/gpg-stub" <<'GPGSTUB'
+#!/bin/sh
+case "$1" in
+	--show-keys) printf 'pub::::::::::\nfpr:::::::::0123456789ABCDEF0123456789ABCDEF01234567:\n' ;;
+	--no-default-keyring) exit 0 ;;
+	*) exit 1 ;;
+esac
+GPGSTUB
+chmod +x "$WORK/gpg-stub"
+cp "$BIN/id" "$BIN/dpkg" "$INSTALLER_PATH/"
+printf '#!/bin/sh\necho "testpkg version v9.9.9"\n' > "$INSTALLER_PATH/testpkg"
+cat > "$INSTALLER_PATH/apt-get" <<'APTSTUB'
+#!/bin/sh
+printf '%s\n' "$*" >> "$WORK/apt-get.log"
+case "$*" in
+	'install -y -qq gnupg')
+		ln -s "$WORK/gpg-stub" "${0%/*}/gpg"
+		printf 'orphan-before\ngnupg-dep-a\ngnupg-dep-b\n' > "$WORK/auto-set"
+		;;
+	purge*) rm -f "${0%/*}/gpg" ;;
+esac
+exit 0
+APTSTUB
+cp "$BIN/apt-mark" "$INSTALLER_PATH/apt-mark"
+chmod +x "$INSTALLER_PATH/testpkg" "$INSTALLER_PATH/apt-get"
+printf 'orphan-before\n' > "$WORK/auto-set"
+: > "$WORK/apt-get.log"
+printf 'fixture signature\n' > "$DEB_GOOD.asc"
+rc=0; run_installer "$DEB_GOOD" "$cleanup_fpr" || rc=$?
+check "a full install with gpg initially missing succeeds" "0" "$rc"
+check "gnupg and its new dependencies are purged before the product install" \
+	"install -y -qq gnupg
+purge -y -qq gnupg gnupg-dep-a gnupg-dep-b
+install -y testpkg" \
+	"$(grep -E '^(install|purge) ' "$WORK/apt-get.log")"
+check "no purge runs after the product install" "0" \
+	"$(awk '/^install -y testpkg$/{installed=1} /^purge /{if(installed) n++} END{print n+0}' "$WORK/apt-get.log")"
+unset INSTALLER_PATH
 
 echo
 echo "$pass passed, $fail failed"
