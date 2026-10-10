@@ -320,20 +320,26 @@ workdir=
 installed_gnupg=
 gnupg_deps=
 
-# Leaves nothing of its own behind, on every exit path including the failures:
-# the downloaded keyring package, and gnupg (with the deps it pulled in, and
-# only those) if this script is what pulled it in. --auto-remove would do
-# machine-wide autoremove: every auto-installed package no longer depended on,
+# Remove gnupg and only the dependencies this script pulled in. --auto-remove
+# would remove every auto-installed package no longer depended on,
 # not only what this script installed, so the cleanup names the packages
 # explicitly.
-cleanup() {
-	[ -n "$workdir" ] && rm -rf "$workdir"
+purge_gnupg() {
 	if [ -n "$installed_gnupg" ]; then
 		note "removing the gnupg this script installed"
 		# Word splitting on $gnupg_deps is intentional: one package per line.
 		# shellcheck disable=SC2086
 		apt-get purge -y -qq gnupg $gnupg_deps >/dev/null 2>&1 || true
+		installed_gnupg=
 	fi
+	return 0
+}
+
+# The trap covers failures before signature verification. On success gnupg
+# is purged before installing packages that may need the same libraries.
+cleanup() {
+	[ -n "$workdir" ] && rm -rf "$workdir"
+	purge_gnupg
 	return 0
 }
 trap cleanup EXIT
@@ -344,8 +350,8 @@ trap cleanup EXIT
 workdir=$(mktemp -d)
 
 # gpg comes from the distribution's own trusted repositories, not ours, so
-# installing it here does not widen what has to be trusted. It is needed for one
-# fingerprint read and nothing else, so it goes back out again afterwards -
+# installing it here does not widen what has to be trusted. It is needed for the
+# fingerprint read and archive-signature check, so it goes back out afterwards,
 # purged along with the deps it pulled in (and only those), and only when it
 # was absent to begin with. --auto-remove is machine-wide and would remove
 # every auto-installed package no longer depended on, which can include
@@ -501,9 +507,10 @@ doing "checking the archive signature"
 # signature over the substituted bytes here.
 #
 # gpg and not gpgv, although gpgv is the narrower tool. gpg is already
-# guaranteed: the block near the top installs gnupg when it is missing and the
-# exit trap purges it again. gpgv is a separate binary that apt declares as
-# `gpgv | gpgv2 | gpgv1` on some releases, and Debian trixie's apt depends on
+# guaranteed: the block near the top installs gnupg when it is missing and it is
+# purged after verification (or by the exit trap on failure). gpgv is a separate
+# binary that apt declares as `gpgv | gpgv2 | gpgv1` on some releases,
+# and Debian trixie's apt depends on
 # sqv instead, so requiring it would mean provisioning and removing a second
 # package for one call.
 #
@@ -537,6 +544,11 @@ GNUPGHOME="$workdir/gnupg" gpg --no-default-keyring \
 	|| fail "the downloaded package is not signed by the archive key it carries; nothing was installed"
 
 step "Package signature verified"
+
+# The product may depend on libraries gnupg pulled in. Purge those packages
+# before installing the keyring or product, or apt can remove the product too.
+# Clearing installed_gnupg prevents the exit trap from purging them again.
+purge_gnupg
 
 doing "installing the keyring"
 dpkg -i "$workdir/glyndor-archive-keyring.deb" >/dev/null \
