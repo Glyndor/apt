@@ -17,9 +17,10 @@ curl -fsSL https://apt.glyndor.net/install/podup | sudo sh
 ```
 
 It adds the archive, installs the signing key after checking its fingerprint,
-installs the package, and switches on automatic security upgrades. Anything but
-`Installing the keyring` after the fingerprint line means it refused: it exits
-before `dpkg -i`, so nothing ran as root.
+installs the package, and reports whether automatic security upgrades are on.
+It never changes that setting. Anything but `Installing the keyring` after the
+fingerprint line means it refused: it exits before `dpkg -i`, so no script from
+the downloaded package ran.
 
 Swap `podup` for any package below.
 
@@ -92,6 +93,7 @@ installed, or if you would rather not pipe a network response into a shell.
 
 ```bash
 curl -fsSLO https://apt.glyndor.net/glyndor-archive-keyring.deb
+curl -fsSLO https://apt.glyndor.net/glyndor-archive-keyring.deb.asc
 dpkg-deb -x glyndor-archive-keyring.deb keyring-check
 gpg --show-keys keyring-check/usr/share/keyrings/glyndor.gpg
 ```
@@ -111,7 +113,18 @@ itself. Same value for a copy already installed, at
 > download and report it via the **Security** tab. `dpkg -r` does not undo
 > what a maintainer script already did.
 
-Only once it matches:
+The fingerprint authenticates the key, not the package that carried it: a
+substituted `.deb` can ship the genuine key next to a hostile maintainer
+script. So also check the detached signature over the whole package with that
+key, which must exit 0 (the keyring path has to be absolute):
+
+```bash
+GNUPGHOME="$(mktemp -d)" gpg --no-default-keyring \
+  --keyring "$PWD/keyring-check/usr/share/keyrings/glyndor.gpg" \
+  --verify glyndor-archive-keyring.deb.asc glyndor-archive-keyring.deb
+```
+
+Only once both pass:
 
 ```bash
 sudo dpkg -i glyndor-archive-keyring.deb
