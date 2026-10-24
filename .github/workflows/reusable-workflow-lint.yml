@@ -53,6 +53,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: actionlint-cache
+        with:
+          path: ~/go/bin/actionlint
+          key: actionlint-${{ runner.os }}-${{ env.ACTIONLINT_VERSION }}
+
       # `stable` rather than a number, and this is the one pin in this file that
       # is deliberately absent.
       #
@@ -67,19 +73,19 @@ jobs:
       # supported: Go keeps the last two releases, so a frozen number silently
       # becomes an unsupported compiler while the job stays green. It sat at
       # 1.26 with 1.27 out, which is how this was noticed.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - if: steps.actionlint-cache.outputs.cache-hit != 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: actionlint-cache
-        with:
-          path: ~/go/bin/actionlint
-          key: actionlint-${{ runner.os }}-${{ env.ACTIONLINT_VERSION }}
 
       - name: Install actionlint
         if: steps.actionlint-cache.outputs.cache-hit != 'true'
         run: go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
+
+      # A cache hit skips setup-go, which is what used to put the Go bin
+      # directory on PATH, so say where the restored binary is.
+      - name: Put actionlint on PATH
+        run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
 
       - name: Install shellcheck
         env:
@@ -416,6 +422,13 @@ jobs:
           )
 
 
+          # An action runs with the job's secrets in reach, so one from an
+          # owner outside this list is third-party code in a secret-holding
+          # job, the same exposure as `go install` above. Local reusables
+          # (`./`) are this repository's own and are skipped by the caller.
+          FIRST_PARTY_OWNERS = {"actions", "github"}
+
+
           def normalize_run(value):
               # `run:` is either a single string or a list of strings. Split
               # each into lines so the install scan is per-line: a
@@ -458,6 +471,11 @@ jobs:
                   for step in (job.get("steps") or []):
                       if not isinstance(step, dict):
                           continue
+                      uses = step.get("uses")
+                      if isinstance(uses, str) and not uses.startswith("./"):
+                          owner = uses.split("/", 1)[0].lower()
+                          if owner not in FIRST_PARTY_OWNERS:
+                              violations.append((spec_path, job_id, f"uses: {uses}"))
                       run = step.get("run")
                       if run is None:
                           continue

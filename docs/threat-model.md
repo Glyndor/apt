@@ -69,7 +69,7 @@ Not considered: an adversary holding the archive signing key, an adversary holdi
 
 | Threat | Control | Evidence |
 |---|---|---|
-| A dependency installed by the job alters the workspace the signing step then executes | the job installs only from Debian's archive, which the runner image already trusts; no `pip`, `cargo`, `npm` or `go install` runs beside the signing key | gate: `workflow-lint`'s tooling-isolation assertion, on every pull request; test: `tests/reusable-workflow-lint.test.sh` |
+| A dependency installed by the job alters the workspace the signing step then executes | the job installs only from Debian's archive, which the runner image already trusts; no `pip`, `cargo`, `npm` or `go install` runs beside the signing key, and no action from an owner other than `actions` or `github` is used | gate: `workflow-lint`'s tooling-isolation assertion, on every pull request; test: `tests/reusable-workflow-lint.test.sh` |
 | The job token outlives the checkout beside the signing key | `persist-credentials: false` on every checkout | measurement: read off every checkout in `.github/workflows/` on 2026-09-02; no test holds it |
 | A change to the publish workflow ships untested | the workflow's shell is extracted and linted, and its steps are exercised by the workflow suites, on every pull request | gate: `shell / test`, `shell / shellcheck`, `workflow-lint / workflow-lint`, all required on `main` |
 | A test exists and no workflow runs it | a watcher fails when a suite under `tests/` is not invoked by any workflow, and another fails when a script has no suite | test: `tests/ci-runs-every-test.test.sh`, `tests/check-test-coverage.test.sh`, each including itself |

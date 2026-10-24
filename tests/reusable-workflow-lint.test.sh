@@ -319,6 +319,35 @@ d="$(new)"; tooling_case "$d" 'PLAIN: value' 'cargo install --locked cargo-cyclo
 rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
 check "the same install in a job holding no secret passes" "0" "$rc"
 
+# --- a third-party action in a secret-holding job is refused ---------------
+action_case() { # $1=dir $2=env line  $3=uses value
+	cat > "$1/.github/workflows/job.yml" <<EOF
+name: Job
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      $2
+    steps:
+      - uses: $3
+EOF
+}
+d="$(new)"; action_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'someone/tool@0123456789abcdef0123456789abcdef01234567'
+out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
+check "an action from outside actions/ and github/ in a job holding a secret is refused" "1" "$rc"
+check "and the message names the job and the action" "1" \
+	"$(said "$out" 'job `build` installs third-party tooling while holding a secret: `uses: someone/tool@')"
+d="$(new)"; action_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'actions/checkout@0123456789abcdef0123456789abcdef01234567'
+rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
+check "a GitHub-owned action in a job holding a secret passes" "0" "$rc"
+d="$(new)"; action_case "$d" 'PLAIN: value' 'someone/tool@0123456789abcdef0123456789abcdef01234567'
+rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
+check "a third-party action in a job holding no secret passes" "0" "$rc"
+d="$(new)"; action_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' './.github/workflows/reusable-x.yml'
+rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
+check "a local reusable in a job holding a secret passes" "0" "$rc"
+
 # --- a commented-out install is not an install ---------------------------
 d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' '# pip install requests'
 rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
