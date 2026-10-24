@@ -48,7 +48,7 @@ Not considered: an adversary holding the archive signing key, an adversary holdi
 
 | Threat | Control | Evidence |
 |---|---|---|
-| The signed index declares a file the bucket does not have (a race inside the sync) | the sync runs in three ordered passes, the metadata pass carries no `--delete`, and the run ends by reading the live archive back: signature first, then every declared size and hash, down to the pool | test: `tests/verify-published.test.sh`, 20 cases against a synthetic archive over a local HTTP server; measurement: the read-back caught the race on run 29718989917 before the fix |
+| The signed index declares a file the bucket does not have (a race inside the sync) | the sync runs in three ordered passes, the metadata pass carries no `--delete`, and the run ends by reading the live archive back: signature first, then every declared size and hash, down to the pool | test: `tests/verify-published.test.sh`, against a synthetic archive over a local HTTP server; measurement: the read-back caught the race on run 29718989917 before the fix |
 | An index that verified but declares too much turns the read-back into an unbounded download | the read-back caps entries, per-object size and total pool bytes | test: the caps are exercised by lowering them below what the fixture declares |
 | A stale object at the edge under an immutable name | the purge list is derived from the `Release` and `Packages` files the run built, pool included, and split to Cloudflare's per-request limit | test: `tests/purge-cache.test.sh`; measurement: 14 URLs in one request today, 36 in two for the full roster |
 | The keyring package changes bytes under the same name and the size-only sync skips it | the package is built byte-reproducibly from the key's commit date, so equal bytes are equal by construction and different inputs move the version | test: two builds a moment apart must be identical; the version must track every packaged input |
@@ -59,7 +59,7 @@ Not considered: an adversary holding the archive signing key, an adversary holdi
 
 | Threat | Control | Evidence |
 |---|---|---|
-| The bootstrap keyring is substituted on the way to the client | the generated installer extracts the package without running it, reads every fingerprint in it, and refuses unless every one is a fingerprint it was told to expect; nothing is installed before that | test: `tests/install-template-behaviour.test.sh`, 48 cases with a real `gpg` and a sandboxed `PATH`, including a keyring carrying the published key beside an attacker's |
+| The bootstrap keyring is substituted on the way to the client | the generated installer extracts the package without running it, reads every fingerprint in it, and refuses unless every one is a fingerprint it was told to expect; nothing is installed before that | test: `tests/install-template-behaviour.test.sh`, with a real `gpg` and a sandboxed `PATH`, including a keyring carrying the published key beside an attacker's |
 | A hostile package's maintainer script runs before the key is checked | the check happens on the extracted tree, and `dpkg -i` is reached only after it passes | test: the "dpkg -i was never reached" assertions in the same suite |
 | An endless body at the download | `curl --max-filesize` bounds the keyring download; the `.deb` admission bounds the signature read | test: the oversized-download case |
 | The template loses its placeholder and serves a script that installs the wrong thing | the generator fails closed on a missing placeholder, a leftover placeholder, and output that does not pass `sh -n` | test: `tests/build-installers.test.sh` |
@@ -97,6 +97,13 @@ all. The pull requests that closed them carry the before-and-after runs.
   and the freshness watchers all run on GitHub Actions. An outage there stops
   the archive and its alarms at once, silently, bounded only by the fourteen-day
   `Valid-Until`. An external watcher was considered and declined.
+- **A superseded package disappears at once.** The archive is latest-only, and
+  the third sync pass deletes superseded `.deb`s from `pool/` right after the new
+  metadata lands. A client that fetched the index before the publish and
+  installs after it asks for a file that is gone and gets a 404 until its next
+  `apt update`. It fails closed and the fix is the command apt already suggests;
+  keeping the previous version for a grace period was weighed against the
+  evergreen policy and declined.
 - **The read-back is detection, not preservation.** By the time it runs the old
   metadata is gone; a red run means a known-broken archive for as long as it
   takes to publish again. Forward-fix is the policy; there is no rollback.
