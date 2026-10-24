@@ -51,6 +51,7 @@ fail=0
 for t in tests/*.test.sh; do "./$t" || { echo "FAILED: $t"; fail=1; }; done
 shellcheck scripts/*.sh tests/*.sh || fail=1
 [ "$fail" -eq 0 ] && echo "all green" || echo "SOMETHING FAILED"
+[ "$fail" -eq 0 ]
 ```
 
 The `fail` flag is not decoration. The loop runs every test instead of stopping

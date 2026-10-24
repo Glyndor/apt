@@ -183,8 +183,8 @@ distribution rather than from here: a release that does not carry it can add the
 archive and still fail to install. Each product's own documentation is where to
 look for which releases carry what it asks for.</p>
 <p>The script adds this archive, checks the archive key's fingerprint before
-anything runs as root, installs the package, and switches on automatic security
-upgrades.</p>
+anything from the package runs as root, installs the package, and reports
+whether automatic security upgrades are on. It never changes that setting.</p>
 <p>To check the archive key by hand before trusting it, or to verify a copy
 already installed, see
 <a href="https://github.com/Glyndor/apt#verify-the-signing-key">the repository
