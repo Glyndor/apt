@@ -200,19 +200,10 @@ chmod +x "$BIN/testpkg"
 run_installer() {
 	rm -f "$WORK/marker"
 	sed 's/@PRODUCT@/testpkg/g' "$TEMPLATE" > "$WORK/install.sh"
-	# APT_CONF_D points into the sandbox so the installer's last block writes
-	# there instead of into /etc. Without it this suite reads the machine it
-	# runs on: a host that already has 20auto-upgrades takes the do-nothing
-	# branch and every case passes, while one without it tries to write to /etc
-	# as a non-root user and every acceptance case fails. That is exactly what
-	# happened -- green here, seven failures on the runner -- and the difference
-	# was the host, not the installer.
-	mkdir -p "$WORK/apt.conf.d"
 	env -i PATH="${INSTALLER_PATH:-$BIN:$PATH}" HOME="$WORK" WORK="$WORK" \
 		DPKG_MARKER="$WORK/marker" \
 		KEYRING_URL="file://$1" \
 		GLYNDOR_APT_FPR="$2" \
-		APT_CONF_D="$WORK/apt.conf.d" \
 		/bin/sh "$WORK/install.sh" >"$WORK/out" 2>&1
 }
 said() { grep -qF "$1" "$WORK/out" && echo 1 || echo 0; }
@@ -495,7 +486,7 @@ run_tty() { # <env assignments...> -- output in $WORK/tty
 	chmod +x "$BIN/testpkg"
 	script -qec "env -i PATH='$BIN:$PATH' HOME='$WORK' \
 		DPKG_MARKER='$WORK/marker' KEYRING_URL='file://$DEB_GOOD' \
-		GLYNDOR_APT_FPR='$FPR_GOOD' APT_CONF_D='$WORK/apt.conf.d' \
+		GLYNDOR_APT_FPR='$FPR_GOOD' \
 		$* /bin/sh '$WORK/install.sh'" /dev/null >"$WORK/tty" 2>&1 || true
 }
 # grep -c always prints a count, and exits 1 when that count is zero. Adding

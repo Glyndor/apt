@@ -50,17 +50,6 @@ KEYRING_SIG_URL="$KEYRING_URL.asc"
 DEFAULT_FPR="9ADF04EA8C3139CDB67303CFA6705C2EA153F3D6"
 GLYNDOR_APT_FPR="${GLYNDOR_APT_FPR:-$DEFAULT_FPR}"
 
-# Where the automatic-upgrade settings are written. Overridable so the tests can
-# exercise the block for real instead of against a copy of it, which is how the
-# block came to have no test at all: it writes as root into /etc, so a suite
-# that is not root could only skip it.
-#
-# This one carries none of the risk the two overrides above carry. They decide
-# what is trusted; this only decides where two config files land, and anyone who
-# can set it can already run anything. It is still worth naming rather than
-# leaving as an undocumented seam.
-APT_CONF_D="${APT_CONF_D:-/etc/apt/apt.conf.d}"
-
 # Both overrides above exist for forks and both are silent, which is the part
 # worth changing. The attack they enable is not "someone controls your shell" --
 # anyone who does needs no override. It is a copied command line:

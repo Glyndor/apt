@@ -76,6 +76,19 @@ jobs:
       workflow: publish.yml
       max-age-days: 3
 
+  # Weekly cron, so ten days: one missed Monday firing plus the usual lateness
+  # still passes, two do not. Added once the workflow had a run history to
+  # measure against; before that the watcher would have opened red with
+  # nothing wrong.
+  freshness-distro-floor:
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/reusable-schedule-freshness.yml
+    with:
+      workflow: distro-floor.yml
+      max-age-days: 10
+
   freshness-health-check:
     permissions:
       contents: read

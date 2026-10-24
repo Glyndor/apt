@@ -15,9 +15,8 @@ name: Distribution floor
 # images are pulled by tag on purpose, since "what the release serves today"
 # is the thing being measured, and a digest would freeze the answer.
 #
-# No schedule-freshness watcher yet. A watcher added before the cron has
-# fired twice on its own is born red with nothing wrong (see freshness.yml),
-# so it comes in a later change once there is history to measure against.
+# freshness.yml watches this cron (`freshness-distro-floor`, ten days): a
+# weekly schedule that stops firing would otherwise read as silence.
 
 on:
   schedule:

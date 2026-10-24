@@ -134,8 +134,7 @@ prepare() { # $1 = sandbox
 		> "$1/block.sh"
 }
 
-# APT_CONF_D is the script's own override, so the block runs unmodified in the
-# part that matters. `apt-config` is stubbed because this test is about what
+# The block runs unmodified. `apt-config` is stubbed because this test is about what
 # the installer does with what it reads, not about apt reading it.
 #
 # $2 is what the stubbed `apt-config` prints. Without a stub the function
@@ -151,7 +150,7 @@ run_block() { # $1=sandbox  $2=apt-config dump output
 		echo 'DUMP'
 	} > "$1/bin/apt-config"
 	chmod +x "$1/bin/apt-config"
-	( cd "$1" && PATH="$1/bin:$PATH" APT_CONF_D="$1/apt.conf.d" sh block.sh 2>&1 )
+	( cd "$1" && PATH="$1/bin:$PATH" sh block.sh 2>&1 )
 }
 
 # What apt-config dump returns for each scenario. Each stub has the right
@@ -405,7 +404,7 @@ s="$WORK/aptbroken"
 prepare "$s"
 mkdir -p "$s/bin"
 printf '#!/bin/sh\nexit 1\n' > "$s/bin/apt-config"; chmod +x "$s/bin/apt-config"
-out="$( cd "$s" && PATH="$s/bin:$PATH" APT_CONF_D="$s/apt.conf.d" sh block.sh 2>&1 )"
+out="$( cd "$s" && PATH="$s/bin:$PATH" sh block.sh 2>&1 )"
 check "an unreadable apt-config does not claim on" "0" \
 	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
 check "and does not claim off" "0" \
@@ -431,7 +430,7 @@ for variant in with-dpkg without-dpkg; do
 		printf '#!/bin/sh\nexit 0\n' > "$s/bin/dpkg"
 		chmod +x "$s/bin/dpkg"
 	fi
-	( cd "$s" && PATH="$s/bin:$PATH" APT_CONF_D="$s/apt.conf.d" sh block.sh >/dev/null 2>&1 )
+	( cd "$s" && PATH="$s/bin:$PATH" sh block.sh >/dev/null 2>&1 )
 	check "with no APT::Periodic keys, no file is written regardless of dpkg ($variant)" "0" \
 		"$([ -f "$s/apt.conf.d/20auto-upgrades" ] && echo 1 || echo 0)"
 done
