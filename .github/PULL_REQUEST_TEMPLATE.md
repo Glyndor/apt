@@ -27,7 +27,7 @@ See standards/testing, "Three ways a sabotage lies to you".
 - [ ] Targets `main` (this repository has no `develop` branch)
 - [ ] Commits are signed off (DCO, `git commit -s`)
 - [ ] Labels applied (`type:`, `prio:`, `effort:`, `area:` where applicable)
-- [ ] Every script under `scripts/` still has a test (`./scripts/check-test-coverage.sh`)
+- [ ] Every script under `scripts/` still has a test (`./scripts/quality/check-test-coverage.sh`)
 - [ ] No secrets, keys or credentials in code, logs or fixtures
 - [ ] Docs updated if behaviour changed
 

@@ -121,7 +121,7 @@ jobs:
           # The bootstrap keyring package and its detached signature are part of
           # this read-back, so the download a first-time install performs is
           # verified here, not only reached.
-          ./scripts/verify-published.sh "$BASE_URL" keyring/glyndor-apt-key.asc 3 10 360
+          ./scripts/verify/verify-published.sh "$BASE_URL" keyring/glyndor-apt-key.asc 3 10 360
 
       - name: Advertised installers reachable
         run: |

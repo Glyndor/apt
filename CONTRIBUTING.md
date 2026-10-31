@@ -63,7 +63,7 @@ so it stops at the first failure and the job goes red.
 
 Two rules matter more than coverage:
 
-**Every script in `scripts/` needs a test.** `scripts/check-test-coverage.sh`
+**Every script in `scripts/` needs a test.** `scripts/quality/check-test-coverage.sh`
 fails when one does not, itself included: it lives in `scripts/`, so deleting
 its test makes it report itself.
 
@@ -79,7 +79,7 @@ under `set -euo pipefail`, so almost any mistake exits non-zero and a bare
 non-zero assertion is satisfied by the failure you did not mean.
 
 New test files must be added to `test-command` in `.github/workflows/tests.yml`.
-`tests/ci-runs-every-test.test.sh` fails when one is not. An unregistered test
+`tests/ci/suites/ci-runs-every-test.test.sh` fails when one is not. An unregistered test
 sits in `tests/`, passes by hand, and reads as coverage while CI never runs it.
 That happened here.
 

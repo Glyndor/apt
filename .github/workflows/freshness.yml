@@ -195,7 +195,7 @@ jobs:
   # verdict comes from that commit's run, not from an older one that the API
   # happened to return first.
   #
-  # The comparison lives in scripts/check-suite-on-main.sh rather than in this
+  # The comparison lives in scripts/monitoring/check-suite-on-main.sh rather than in this
   # step, so its three answers can be planted and tested off the network; a step
   # body only a runner can execute is covered by nothing. This file decides when
   # it runs and what it may reach.
@@ -226,4 +226,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-        run: ./scripts/check-suite-on-main.sh "$REPO" tests.yml main
+        run: ./scripts/monitoring/check-suite-on-main.sh "$REPO" tests.yml main

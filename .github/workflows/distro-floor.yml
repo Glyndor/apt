@@ -57,5 +57,5 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm --pull=always \
-            -v "$PWD/scripts/distro-floor.sh:/distro-floor.sh:ro" \
+            -v "$PWD/scripts/verify/distro-floor.sh:/distro-floor.sh:ro" \
             "$IMAGE" sh /distro-floor.sh "$EXPECT" podup

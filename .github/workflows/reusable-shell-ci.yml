@@ -143,11 +143,11 @@ jobs:
       - name: Lint the shell embedded in workflows
         run: |
           set -euo pipefail
-          script=./scripts/lint-workflow-shell.sh
+          script=./scripts/quality/lint-workflow-shell.sh
           if [ ! -e "$script" ]; then
             echo "no $script in this repository; skipping"
           elif [ ! -x "$script" ]; then
-            echo "::error file=scripts/lint-workflow-shell.sh::$script exists but git records it non-executable, so it would be silently skipped. Fix with: git update-index --chmod=+x scripts/lint-workflow-shell.sh" >&2
+            echo "::error file=scripts/quality/lint-workflow-shell.sh::$script exists but git records it non-executable, so it would be silently skipped. Fix with: git update-index --chmod=+x scripts/quality/lint-workflow-shell.sh" >&2
             exit 1
           else
             "$script" "$SEVERITY"
@@ -160,10 +160,10 @@ jobs:
       # is why it costs a round trip to diagnose every time.
       #
       # This happened twice in one day in Glyndor/apt (2026-08-23): once on
-      # scripts/build-installers.sh, once on tests/build-installers.test.sh.
+      # scripts/build/build-installers.sh, once on tests/build/build-installers.test.sh.
       #
       # Deliberately narrow. It does NOT assert that every `.sh` is 0755; that
-      # would be wrong. `apt/scripts/install-template.sh` is a template that is
+      # would be wrong. `apt/scripts/installer/install-template.sh` is a template that is
       # read and substituted, never executed, and is correctly 0644; and repos
       # that invoke their scripts as `bash path` (podup, helmly, unitpm, with 21
       # non-executable scripts between them) have nothing to fix. The check is
