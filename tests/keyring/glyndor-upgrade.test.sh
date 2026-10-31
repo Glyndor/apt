@@ -37,25 +37,48 @@ mkdir -p "$WORK/bin" "$WORK/lists" "$WORK/run"
 cat > "$WORK/bin/apt-get" <<STUB
 #!/bin/sh
 case "\$*" in
+	*indextargets*) ls "$WORK"/lists/* 2>/dev/null ;;
 	*--only-upgrade*) [ -f "$WORK/sim-fails" ] && { echo "E: Unable to lock the administration directory" >&2; exit 100; }
 		cat "$WORK/plan.txt" 2>/dev/null; echo "\$*" > "$WORK/sim-args" ;;
 esac
 exit 0
 STUB
+# apt-helper cat-file reads whichever form apt kept the index in.
+cat > "$WORK/bin/apt-helper" <<'STUB'
+#!/bin/sh
+[ "$1" = cat-file ] || exit 2
+case "$2" in
+	*.gz) zcat "$2" ;;
+	*) cat "$2" ;;
+esac
+STUB
+chmod +x "$WORK/bin/apt-helper"
+# Like the real one in the one respect that matters here: \${Package} is the bare
+# name, \${binary:Package} keeps the ":arch" of a foreign-architecture package.
 cat > "$WORK/bin/dpkg-query" <<STUB
 #!/bin/sh
-cat "$WORK/installed.txt" 2>/dev/null
+fmt=""
+while [ \$# -gt 0 ]; do
+	case "\$1" in -f) fmt="\$2"; shift ;; -f*) fmt="\${1#-f}" ;; esac
+	shift
+done
+case "\$fmt" in
+	*binary:Package*) cat "$WORK/installed.txt" 2>/dev/null ;;
+	*) sed 's/:[a-z0-9-]*\$//' "$WORK/installed.txt" 2>/dev/null ;;
+esac
 STUB
 cat > "$WORK/bin/unattended-upgrade" <<STUB
 #!/bin/sh
 cp "\$APT_CONFIG" "$WORK/seen.conf"
+echo "\$APT_CONFIG" >> "$WORK/seen.paths"
+stat -c %a "\$APT_CONFIG" > "$WORK/mode"
 STUB
 chmod +x "$WORK/bin/apt-get" "$WORK/bin/dpkg-query" "$WORK/bin/unattended-upgrade"
 
 run_upgrade() {
 	rm -f "$WORK/seen.conf"
 	env PATH="$WORK/bin:$PATH" GNUPGHOME=/nonexistent \
-		GLYNDOR_APT_LISTS="$WORK/lists" GLYNDOR_RUN_DIR="$WORK/run" \
+		GLYNDOR_APT_HELPER="$WORK/bin/apt-helper" GLYNDOR_RUN_DIR="$WORK/run" \
 		GLYNDOR_UNATTENDED="$WORK/bin/unattended-upgrade" \
 		sh "$HERE/keyring/upgrade/glyndor-upgrade" 2>&1
 }
@@ -152,54 +175,135 @@ check "nothing outside the plan is named" "0" \
 check "the archive's own origin is allowed" "1" \
 	"$(printf '%s' "$conf" | grep -c 'Allowed-Origins { "Glyndor:stable"; }')"
 
+# A compressed index, as apt keeps it with Acquire::GzipIndexes, is read too.
+mkdir -p "$WORK/gz"
+rm -f "$WORK/lists/"*
+printf 'Package: podup\nVersion: 1\n' | gzip > "$WORK/lists/apt.glyndor.net_dists_stable_main_binary-amd64_Packages.gz"
+printf 'ii  podup\n' > "$WORK/installed.txt"
+printf 'Inst podup [1] (2 stable)\n' > "$WORK/plan.txt"
+run_upgrade >/dev/null; rc=$?
+check "a compressed index is read" "0" "$rc"
+check "and the engine runs on it" "1" "$(ran)"
+check "an index apt cannot read is a failure, not an empty plan" "1" \
+	"$(rm -f "$WORK/lists/"*; : > "$WORK/lists/empty_Packages"; run_upgrade >/dev/null; echo $?)"
+
+# A foreign-architecture package keeps its architecture all the way to apt, or
+# apt looks at the native package of that name and reports the foreign one current.
+cp "$WORK/index.good" "$index"
+printf 'ii  podup:arm64\n' > "$WORK/installed.txt"
+printf 'Inst podup:arm64 [1] (2 stable)\n' > "$WORK/plan.txt"
+run_upgrade >/dev/null; rc=$?
+check "a foreign-architecture package is upgraded" "0" "$rc"
+check "apt is asked about it with its architecture" "1" "$(grep -c 'install podup:arm64' "$WORK/sim-args")"
+check "and the whitelist names it with its architecture" "1" "$(grep -cF '"^podup:arm64$";' "$WORK/seen.conf")"
+
+# One private config per invocation, removed afterwards.
+rm -f "$WORK/seen.paths"
+printf 'ii  podup\n' > "$WORK/installed.txt"
+printf 'Inst podup [1] (2 stable)\n' > "$WORK/plan.txt"
+run_upgrade >/dev/null
+run_upgrade >/dev/null
+check "each run hands the engine its own file" "2" "$(sort -u "$WORK/seen.paths" | wc -l)"
+check "and leaves none behind" "0" "$(find "$WORK/run" -maxdepth 1 -name 'apt.conf*' | wc -l)"
+check "the file is private to its owner" "600" "$(cat "$WORK/mode" 2>/dev/null)"
+
 # --- maintainer scripts -------------------------------------------------------
 
 mkdir -p "$WORK/sbin" "$WORK/state"
+# A systemctl that remembers: enable and disable change the state that is-enabled
+# reads, so the cases below can tell a timer the package switched off from one the
+# operator did.
 cat > "$WORK/sbin/systemctl" <<STUB
 #!/bin/sh
 echo "\$*" >> "$WORK/systemctl.log"
+case "\$1" in
+	enable) [ -f "$WORK/enable-fails" ] && exit 1; echo enabled > "$WORK/unit-state" ;;
+	disable) echo disabled > "$WORK/unit-state" ;;
+	is-enabled) [ "\$(cat "$WORK/unit-state" 2>/dev/null)" = enabled ]; exit \$? ;;
+esac
+exit 0
 STUB
 chmod +x "$WORK/sbin/systemctl"
 
 # The scripts hard-code /run/systemd/system and /var/lib; both move into the
 # sandbox so this never touches the machine running the test.
 mkdir -p "$WORK/run/systemd/system"
-postinst="$WORK/postinst"
-sed -e "s|/run/systemd/system|$WORK/run/systemd/system|g" \
-	-e "s|/var/lib/glyndor-archive-keyring|$WORK/state|g" \
-	"$HERE/keyring/upgrade/maintainer-postinst" > "$postinst"
+sandboxed() { # $1 = maintainer script name
+	sed -e "s|/run/systemd/system|$WORK/run/systemd/system|g" \
+		-e "s|/var/lib/glyndor-archive-keyring|$WORK/state|g" \
+		"$HERE/keyring/upgrade/maintainer-$1" > "$WORK/$1"
+}
+for s in postinst prerm postrm; do sandboxed "$s"; done
+post() { PATH="$WORK/sbin:$PATH" sh "$WORK/postinst" "$@"; }
+pre() { PATH="$WORK/sbin:$PATH" sh "$WORK/prerm" "$@"; }
+gone() { PATH="$WORK/sbin:$PATH" sh "$WORK/postrm" "$@"; }
+reset() { rm -rf "$WORK/state" "$WORK/systemctl.log" "$WORK/unit-state" "$WORK/enable-fails"; mkdir -p "$WORK/state"; }
+unit() { cat "$WORK/unit-state" 2>/dev/null || echo none; }
+logged() { grep -c "$1" "$WORK/systemctl.log" 2>/dev/null || true; }
 
-run_post() { PATH="$WORK/sbin:$PATH" sh "$postinst" "$@"; }
-
-rm -f "$WORK/systemctl.log" "$WORK/state/timer-offered"
-run_post configure
-check "a first install enables and starts the timer" "1" \
-	"$(grep -c 'enable --now glyndor-upgrade.timer' "$WORK/systemctl.log")"
+reset
+post configure
+check "a first install enables and starts the timer" "enabled" "$(unit)"
 check "and leaves the marker" "1" "$([ -f "$WORK/state/timer-offered" ] && echo 1 || echo 0)"
+check "after reloading systemd, so the new units are known" "1" \
+	"$(grep -n 'daemon-reload' "$WORK/systemctl.log" | head -1 | cut -d: -f1)"
 
-rm -f "$WORK/systemctl.log"
-run_post configure 1.0.0+pkg20260101000000
-check "a later upgrade does not enable it again" "0" \
-	"$(grep -c enable < <(cat "$WORK/systemctl.log" 2>/dev/null))"
+: > "$WORK/systemctl.log"
+post configure 1.0.0+pkg20260101000000
+check "a later upgrade does not enable it again" "0" "$(logged 'enable')"
+check "but still reloads systemd, because it can install new units" "1" "$(logged 'daemon-reload')"
 
-rm -f "$WORK/state/timer-offered" "$WORK/systemctl.log"
-run_post configure 1.0.0+pkg20250101000000
-check "a machine from before the timer existed gets it on upgrade" "1" \
-	"$(grep -c 'enable --now glyndor-upgrade.timer' "$WORK/systemctl.log")"
+reset
+post configure 1.0.0+pkg20250101000000
+check "a machine from before the timer existed gets it on upgrade" "enabled" "$(unit)"
 
-rm -rf "$WORK/run/systemd" "$WORK/state/timer-offered" "$WORK/systemctl.log"
-run_post configure
-check "without systemd nothing is started" "0" \
-	"$([ -f "$WORK/systemctl.log" ] && echo 1 || echo 0)"
+reset
+rm -rf "$WORK/run/systemd"
+post configure
+check "without systemd nothing is started" "0" "$([ -f "$WORK/systemctl.log" ] && echo 1 || echo 0)"
 check "and no marker is written, so a later configure tries again" "0" \
 	"$([ -f "$WORK/state/timer-offered" ] && echo 1 || echo 0)"
-
 mkdir -p "$WORK/run/systemd/system"
-printf '#!/bin/sh\ncase "$*" in *enable*) exit 1 ;; esac\n' > "$WORK/sbin/systemctl"
-rm -f "$WORK/state/timer-offered"
-run_post configure
-check "an enable that fails leaves no marker" "0" \
-	"$([ -f "$WORK/state/timer-offered" ] && echo 1 || echo 0)"
+
+reset
+: > "$WORK/enable-fails"
+post configure
+check "an enable that fails leaves no marker" "0" "$([ -f "$WORK/state/timer-offered" ] && echo 1 || echo 0)"
+
+# What the package switches off it switches back on; what the operator disabled stays.
+reset
+post configure
+pre deconfigure
+check "deconfiguring the package switches the timer off" "disabled" "$(unit)"
+post configure
+check "configuring it again switches the timer back on" "enabled" "$(unit)"
+check "and forgets that it had suspended it" "0" \
+	"$([ -f "$WORK/state/suspended-by-package" ] && echo 1 || echo 0)"
+
+reset
+post configure
+pre remove
+post abort-remove
+check "a removal that is aborted gives the timer back" "enabled" "$(unit)"
+
+reset
+post configure
+echo disabled > "$WORK/unit-state"
+pre deconfigure
+post configure
+check "a timer the operator disabled stays disabled across deconfigure and configure" "disabled" "$(unit)"
+post abort-remove
+check "and across an aborted removal" "disabled" "$(unit)"
+
+reset
+post configure
+pre remove
+gone remove
+check "removing the package clears what it remembered" "0" "$([ -d "$WORK/state" ] && echo 1 || echo 0)"
+reset
+post configure
+gone purge
+check "and so does purging it, so a reinstall offers the timer again" "0" "$([ -d "$WORK/state" ] && echo 1 || echo 0)"
 
 for f in postinst prerm postrm; do
 	check "maintainer-$f is valid shell" "0" "$(sh -n "$HERE/keyring/upgrade/maintainer-$f"; echo $?)"

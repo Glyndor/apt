@@ -11,15 +11,36 @@ set -e
 # not running (an image build, a container) nothing is enabled and no marker is
 # written, so the next configure on a machine that has systemd tries again
 # instead of recording a switch-on that never happened.
+#
+# A timer the package itself switched off (prerm on remove or deconfigure) is
+# switched back on when the operation is aborted or the package is configured
+# again; one the operator disabled is left alone.
+state=/var/lib/glyndor-archive-keyring
+restore() {
+	if [ -e "$state/suspended-by-package" ]; then
+		rm -f "$state/suspended-by-package"
+		systemctl enable --now glyndor-upgrade.timer || true
+	fi
+}
 case "$1" in
 	configure)
-		state=/var/lib/glyndor-archive-keyring
-		if [ ! -e "$state/timer-offered" ] && [ -d /run/systemd/system ]; then
+		if [ -d /run/systemd/system ]; then
+			# Always: an upgrade can install new unit files, and systemd has to
+			# read them before anything is enabled or started.
 			systemctl daemon-reload || true
-			if systemctl enable --now glyndor-upgrade.timer; then
-				mkdir -p "$state"
-				: > "$state/timer-offered"
+			if [ -e "$state/suspended-by-package" ]; then
+				restore
+			elif [ ! -e "$state/timer-offered" ]; then
+				if systemctl enable --now glyndor-upgrade.timer; then
+					mkdir -p "$state"
+					: > "$state/timer-offered"
+				fi
 			fi
+		fi
+		;;
+	abort-remove | abort-deconfigure | abort-upgrade)
+		if [ -d /run/systemd/system ]; then
+			restore
 		fi
 		;;
 esac
