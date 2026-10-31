@@ -18,8 +18,13 @@ set -e
 state=/var/lib/glyndor-archive-keyring
 restore() {
 	if [ -e "$state/suspended-by-package" ]; then
-		rm -f "$state/suspended-by-package"
-		systemctl enable --now glyndor-upgrade.timer || true
+		# The mark goes only once the timer is really back on, so a failed
+		# enable is retried by the next configure instead of being forgotten.
+		if systemctl enable --now glyndor-upgrade.timer; then
+			rm -f "$state/suspended-by-package"
+		else
+			echo "glyndor-upgrade: could not switch the timer back on" >&2
+		fi
 	fi
 }
 case "$1" in
