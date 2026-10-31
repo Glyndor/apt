@@ -41,7 +41,10 @@ permissions:
 
 concurrency:
   group: shell-ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working-directory }}
-  cancel-in-progress: true
+  # Only a pull request supersedes its own earlier run. A push to main is a
+  # distinct commit that has to be judged on its own, and the suite-on-main
+  # watcher reads those verdicts; a cron run is never replaced by the next.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   shellcheck:
@@ -207,11 +210,50 @@ jobs:
       TEST_COMMAND: ${{ inputs.test-command }}
       APT_PACKAGES: ${{ inputs.apt-packages }}
     steps:
+      # Two commits: on a pull request the checkout is the merge commit, whose
+      # first parent is the base branch tip, so HEAD^1..HEAD is exactly what the
+      # pull request changes.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
+
+      # A pull request that only touches prose cannot change what the suite
+      # measures, so it skips the dependency install and the run and keeps the
+      # job, and therefore the required `shell / test` check, green. This is a
+      # step condition on purpose: a path filter on the workflow, or an `if` on
+      # the calling job, makes GitHub never report `shell / test` and the
+      # required check waits forever.
+      #
+      # It fails open. Anything that is not clearly a pull request touching only
+      # these names -- a push, a schedule, an unreadable diff, a path outside
+      # the list -- runs the suite. A rename counts as both paths, so moving a
+      # script into docs/ cannot hide the script.
+      - name: Decide whether the suite is needed
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          docs_only=false
+          if [ "$EVENT" = pull_request ] \
+            && files="$(git diff --name-only --no-renames HEAD^1 HEAD 2>/dev/null)" \
+            && [ -n "$files" ]; then
+            docs_only=true
+            while IFS= read -r f; do
+              case "$f" in
+                README.md | CONTRIBUTING.md | docs/*.md) ;;
+                *) docs_only=false ;;
+              esac
+            done <<< "$files"
+          fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          if [ "$docs_only" = true ]; then
+            echo "Only prose changed, so the test suite was skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Install test dependencies
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
           if [ -n "$APT_PACKAGES" ]; then
@@ -231,6 +273,7 @@ jobs:
       # that fixes that, since a `set -e` above this line never reaches the
       # child.
       - name: Run tests
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
           bash -e -o pipefail -c "$TEST_COMMAND"
