@@ -65,6 +65,15 @@ Not considered: an adversary holding the archive signing key, an adversary holdi
 | The template loses its placeholder and serves a script that installs the wrong thing | the generator fails closed on a missing placeholder, a leftover placeholder, and output that does not pass `sh -n` | test: `tests/build/build-installers.test.sh` |
 | The published fingerprint and the served keyring disagree | the fingerprint is published in this repository, not on the archive host, so a tampered archive cannot vouch for itself | measurement: `9ADF 04EA 8C31 39CD B673 03CF A670 5C2E A153 F3D6`, checked by hand in the README's own steps |
 
+### Automatic upgrades on the client
+
+| Threat | Control | Evidence |
+|---|---|---|
+| The daily upgrade job touches packages that are not Glyndor's | the job asks `apt-get -s --only-upgrade install` what upgrading the installed Glyndor packages would change and gives exactly that set to `unattended-upgrade` as a strict whitelist; everything else stays pending | test: `tests/keyring/glyndor-upgrade.test.sh`; measurement: on Debian 13 with a fake old `podup`, 12 unrelated Debian upgrades were pending before and 12 after, 2026-10-31 |
+| A package name in the index or in the plan reaches the job's configuration and injects a line of its own | every name is checked against Debian's name rules before it is written, and an invalid one fails the unit and is named in the journal instead of being dropped | test: the hostile-name cases in the same suite, including a name with a quote and one in the index |
+| An apt that cannot plan the upgrade is read as "nothing to do" | the simulation's exit status is checked; a failure fails the unit | test: the stubbed failing `apt-get -s` case |
+| The operator's choice to switch the job off is undone by an upgrade of the keyring | the timer is enabled once per machine, recorded by a marker written only after `systemctl enable --now` succeeded, so a later `systemctl disable` stands | test: the maintainer-script cases; measurement: disable, reinstall the keyring, still disabled, Debian 13, 2026-10-31 |
+
 ### The publish job itself
 
 | Threat | Control | Evidence |
@@ -115,6 +124,14 @@ all. The pull requests that closed them carry the before-and-after runs.
   against a moving base image can acquire a glibc floor that bookworm and jammy
   do not meet, and the archive has no gate for it. It has happened, and it is a
   property of the products, tracked with them.
+- **Automatic upgrades widen the reach of a compromised archive.** Before the
+  upgrade timer a bad package waited for someone to run `apt upgrade`; now it is
+  installed as root within a day on every machine that kept the timer on. The
+  controls on admission, the signed index and its fourteen-day `Valid-Until`
+  are what stand in front of that, and the timer adds only a narrower trigger,
+  not a new way in. The opt-out is `systemctl disable --now
+  glyndor-upgrade.timer`. A staged rollout (a delay or a canary cohort) was not
+  built; it would be the next control if the cost of a bad release grows.
 - **The signature libraries are not a validated cryptographic module.** Ed25519
   is an approved algorithm; `python3-cryptography` and `gpg` here are not
   validated modules. An assessment that requires one needs a validated
