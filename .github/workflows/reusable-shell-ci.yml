@@ -16,7 +16,7 @@ on:
         type: string
         default: "style"
       shellcheck-version:
-        description: Exact shellcheck release tag to install from koalaman/shellcheck; bumped via .github releases
+        description: Exact shellcheck release tag to install from koalaman/shellcheck; bumped here and in the sibling channels together
         type: string
         default: "v0.11.0"
       shellcheck-sha256:

@@ -1,7 +1,7 @@
 name: Line limit
 
 # Enforces the org file-size standard (soft 300 / hard 500 code lines) via the
-# shared reusable, as every product repo already does.
+# repository-local reusable. Keep its policy aligned with the sibling channels.
 
 on:
   pull_request:
