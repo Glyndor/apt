@@ -38,41 +38,41 @@ Not considered: an adversary holding the archive signing key, an adversary holdi
 
 | Threat | Control | Evidence |
 |---|---|---|
-| An unsigned or tampered `.deb` is served | every `.deb` must carry a detached Ed25519 signature that verifies against the release key file; a missing, invalid, oversized or malformed signature fails the publish | test: `tests/verify-debs.test.sh`, each refusal asserting which refusal |
+| An unsigned or tampered `.deb` is served | every `.deb` must carry a detached Ed25519 signature that verifies against the release key file; a missing, invalid, oversized or malformed signature fails the publish | test: `tests/verify/verify-debs.test.sh`, each refusal asserting which refusal |
 | A release of product A ships a `.deb` whose control field says it is product B | each product is downloaded into its own directory and verified against its own name: the control `Package:` field and the filename prefix must both match the product that released it | test: the control-field case uses a fixture that breaks only that rule, so the filename check cannot answer for it |
 | A product ships a package under the keyring's reserved name | `glyndor-archive-keyring` is refused by both the control field and the filename | test: two cases in the same suite |
 | A trust file with no key, or one that does not exist, verifies against nothing | both are refused as such, with the reason named | test: cases 14 and 15 |
-| A keyring package with no usable key is built and served | the build refuses an armoured file that dearmors cleanly but carries no public key | test: `tests/build-keyring.test.sh`, fixture is a detached signature block |
+| A keyring package with no usable key is built and served | the build refuses an armoured file that dearmors cleanly but carries no public key | test: `tests/build/build-keyring.test.sh`, fixture is a detached signature block |
 
 ### Publication: what is served, and whether it is what was built
 
 | Threat | Control | Evidence |
 |---|---|---|
-| The signed index declares a file the bucket does not have (a race inside the sync) | the sync runs in three ordered passes, the metadata pass carries no `--delete`, and the run ends by reading the live archive back: signature first, then every declared size and hash, down to the pool | test: `tests/verify-published.test.sh`, against a synthetic archive over a local HTTP server; measurement: the read-back caught the race on run 29718989917 before the fix |
+| The signed index declares a file the bucket does not have (a race inside the sync) | the sync runs in three ordered passes, the metadata pass carries no `--delete`, and the run ends by reading the live archive back: signature first, then every declared size and hash, down to the pool | test: `tests/verify/verify-published.test.sh`, against a synthetic archive over a local HTTP server; measurement: the read-back caught the race on run 29718989917 before the fix |
 | An index that verified but declares too much turns the read-back into an unbounded download | the read-back caps entries, per-object size and total pool bytes | test: the caps are exercised by lowering them below what the fixture declares |
-| A stale object at the edge under an immutable name | the purge list is derived from the `Release` and `Packages` files the run built, pool included, and split to Cloudflare's per-request limit | test: `tests/purge-cache.test.sh`; measurement: 14 URLs in one request today, 36 in two for the full roster |
+| A stale object at the edge under an immutable name | the purge list is derived from the `Release` and `Packages` files the run built, pool included, and split to Cloudflare's per-request limit | test: `tests/publish/purge-cache.test.sh`; measurement: 14 URLs in one request today, 36 in two for the full roster |
 | The keyring package changes bytes under the same name and the size-only sync skips it | the package is built byte-reproducibly from the key's commit date, so equal bytes are equal by construction and different inputs move the version | test: two builds a moment apart must be identical; the version must track every packaged input |
-| A clock- or locale-dependent build ships a page missing a package | `LC_ALL=C` wherever a script sorts or compares | test: `tests/locale-pinned.test.sh`, behavioural half under a UTF-8 locale that does collapse the names |
+| A clock- or locale-dependent build ships a page missing a package | `LC_ALL=C` wherever a script sorts or compares | test: `tests/ci/policy/locale-pinned.test.sh`, behavioural half under a UTF-8 locale that does collapse the names |
 | The archive silently stops refreshing | `Valid-Until` of fourteen days on the signed index, so a stalled publish expires rather than freezes; a health check every six hours fails on a stale or unreachable index; a freshness watcher fails when the publish cron itself stops | gate: `health-check.yml`, `freshness.yml`; measurement: the schedule watchers fired for their reason before promotion |
 
 ### The client's first step
 
 | Threat | Control | Evidence |
 |---|---|---|
-| The bootstrap keyring is substituted on the way to the client | the generated installer extracts the package without running it, reads every fingerprint in it, and refuses unless every one is a fingerprint it was told to expect; nothing is installed before that | test: `tests/install-template-behaviour.test.sh`, with a real `gpg` and a sandboxed `PATH`, including a keyring carrying the published key beside an attacker's |
+| The bootstrap keyring is substituted on the way to the client | the generated installer extracts the package without running it, reads every fingerprint in it, and refuses unless every one is a fingerprint it was told to expect; nothing is installed before that | test: `tests/installer/install-template-behaviour.test.sh`, with a real `gpg` and a sandboxed `PATH`, including a keyring carrying the published key beside an attacker's |
 | A hostile package's maintainer script runs before the key is checked | the check happens on the extracted tree, and `dpkg -i` is reached only after it passes | test: the "dpkg -i was never reached" assertions in the same suite |
 | An endless body at the download | `curl --max-filesize` bounds the keyring download; the `.deb` admission bounds the signature read | test: the oversized-download case |
-| The template loses its placeholder and serves a script that installs the wrong thing | the generator fails closed on a missing placeholder, a leftover placeholder, and output that does not pass `sh -n` | test: `tests/build-installers.test.sh` |
+| The template loses its placeholder and serves a script that installs the wrong thing | the generator fails closed on a missing placeholder, a leftover placeholder, and output that does not pass `sh -n` | test: `tests/build/build-installers.test.sh` |
 | The published fingerprint and the served keyring disagree | the fingerprint is published in this repository, not on the archive host, so a tampered archive cannot vouch for itself | measurement: `9ADF 04EA 8C31 39CD B673 03CF A670 5C2E A153 F3D6`, checked by hand in the README's own steps |
 
 ### The publish job itself
 
 | Threat | Control | Evidence |
 |---|---|---|
-| A dependency installed by the job alters the workspace the signing step then executes | the job installs only from Debian's archive, which the runner image already trusts; no `pip`, `cargo`, `npm` or `go install` runs beside the signing key, and no action from an owner other than `actions` or `github` is used | gate: `workflow-lint`'s tooling-isolation assertion, on every pull request; test: `tests/reusable-workflow-lint.test.sh` |
+| A dependency installed by the job alters the workspace the signing step then executes | the job installs only from Debian's archive, which the runner image already trusts; no `pip`, `cargo`, `npm` or `go install` runs beside the signing key, and no action from an owner other than `actions` or `github` is used | gate: `workflow-lint`'s tooling-isolation assertion, on every pull request; test: `tests/ci/reusable/reusable-workflow-lint.test.sh` |
 | The job token outlives the checkout beside the signing key | `persist-credentials: false` on every checkout | measurement: read off every checkout in `.github/workflows/` on 2026-09-02; no test holds it |
 | A change to the publish workflow ships untested | the workflow's shell is extracted and linted, and its steps are exercised by the workflow suites, on every pull request | gate: `shell / test`, `shell / shellcheck`, `workflow-lint / workflow-lint`, all required on `main` |
-| A test exists and no workflow runs it | a watcher fails when a suite under `tests/` is not invoked by any workflow, and another fails when a script has no suite | test: `tests/ci-runs-every-test.test.sh`, `tests/check-test-coverage.test.sh`, each including itself |
+| A test exists and no workflow runs it | a watcher fails when a suite under `tests/` is not invoked by any workflow, and another fails when a script has no suite | test: `tests/ci/suites/ci-runs-every-test.test.sh`, `tests/quality/check-test-coverage.test.sh`, each including itself |
 | A hung publish holds the archive a day | `timeout-minutes` from a measured 31 to 50 seconds | measurement: the last ten runs, 2026-09-01 |
 
 ## How the evidence is kept honest

@@ -1,0 +1,290 @@
+#!/usr/bin/env bash
+#
+# Tests for scripts/publish/purge-cache.sh, the step that clears the mutable, fixed-name
+# files from Cloudflare after a publish.
+#
+# The property under test is that the purge covers EVERY URL the run just
+# published, in as many requests as Cloudflare's per-request limit needs. Before
+# this script the step refused to send more than 30 and said the list "needs to
+# be sent in batches" without ever doing so, which would have failed the publish
+# after the sync had already landed: a fresh archive behind a stale edge cache.
+#
+# A fake Cloudflare API is served locally and records each request body, so the
+# assertions are on what was actually sent rather than on the script's own log.
+#
+# Requires: python3, curl, jq.
+
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PURGE="$HERE/scripts/publish/purge-cache.sh"
+WORK="$(mktemp -d)"
+BUILT="$WORK/public"
+REQUESTS="$WORK/requests"
+
+SERVER_PID=""
+cleanup() {
+	[ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null
+	rm -rf "$WORK"
+}
+trap cleanup EXIT
+
+pass=0
+fail=0
+
+check() { # <description> <expected> <actual>
+	if [ "$2" = "$3" ]; then
+		echo "ok    $1"
+		pass=$((pass + 1))
+	else
+		echo "FAIL  $1"
+		echo "        expected: $2"
+		echo "        actual:   $3"
+		fail=$((fail + 1))
+	fi
+}
+
+# Build a synthetic archive: <products> × <arches>, plus the keyring, laid out
+# the way build-repo.sh leaves it. Only the fields purge-cache.sh reads matter.
+build_archive() { # $1=product count $2=arch list
+	local products="$1" arches="$2" arch i path
+	rm -rf "$BUILT"
+	mkdir -p "$BUILT/dists/stable"
+
+	{
+		echo "Origin: Glyndor"
+		echo "SHA256:"
+		for arch in $arches; do
+			printf ' %s %s main/binary-%s/Packages\n' "deadbeef" 100 "$arch"
+			printf ' %s %s main/binary-%s/Packages.gz\n' "deadbeef" 100 "$arch"
+			printf ' %s %s main/binary-%s/Release\n' "deadbeef" 100 "$arch"
+		done
+		echo "Description: synthetic"
+	} > "$BUILT/dists/stable/Release"
+
+	for arch in $arches; do
+		mkdir -p "$BUILT/dists/stable/main/binary-$arch"
+		: > "$BUILT/dists/stable/main/binary-$arch/Packages"
+		for ((i = 1; i <= products; i++)); do
+			path="pool/main/p/prod$i/prod${i}_1.0.0_${arch}.deb"
+			printf 'Package: prod%s\nFilename: %s\n\n' "$i" "$path" \
+				>> "$BUILT/dists/stable/main/binary-$arch/Packages"
+		done
+		printf 'Package: glyndor-archive-keyring\nFilename: %s\n\n' \
+			"pool/main/g/glyndor-archive-keyring/glyndor-archive-keyring_1.0.0_all.deb" \
+			>> "$BUILT/dists/stable/main/binary-$arch/Packages"
+	done
+
+	# One bootstrap installer per product, as build-installers.sh writes them.
+	mkdir -p "$BUILT/install"
+	for ((i = 1; i <= products; i++)); do
+		printf '#!/bin/sh\n' > "$BUILT/install/prod$i"
+	done
+
+	# The root of the archive: the landing page build-index-page.sh writes, the
+	# keyring package publish.yml copies in, and the detached signature it makes
+	# over that package. The script reads this directory now rather than naming
+	# the files, so a fixture that omits one is a fixture the publish could not
+	# have produced.
+	printf '<!doctype html>\n' > "$BUILT/index.html"
+	printf 'not a real package\n' > "$BUILT/glyndor-archive-keyring.deb"
+	printf -- '-----BEGIN PGP SIGNATURE-----\n' > "$BUILT/glyndor-archive-keyring.deb.asc"
+}
+
+# A fake Cloudflare purge endpoint. Appends each request body as one line to
+# $REQUESTS and answers the shape the script parses.
+mkdir -p "$WORK/srv"
+cat > "$WORK/srv/api.py" <<'PY'
+import json, os, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+LOG = os.environ["REQUESTS"]
+MODE = os.environ.get("MODE", "ok")
+
+class Handler(BaseHTTPRequestHandler):
+	def do_POST(self):
+		body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+		with open(LOG, "a") as fh:
+			fh.write(body.decode() + "\n")
+		seen = sum(1 for _ in open(LOG))
+		if (MODE == "fail-second" and seen == 2) or (MODE == "fail-first" and seen == 1):
+			payload = {"success": False, "errors": [{"message": "too many files"}]}
+		else:
+			payload = {"success": True, "errors": []}
+		out = json.dumps(payload).encode()
+		self.send_response(200)
+		self.send_header("Content-Type", "application/json")
+		self.send_header("Content-Length", str(len(out)))
+		self.end_headers()
+		self.wfile.write(out)
+
+	def log_message(self, *args):
+		pass
+
+HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
+PY
+
+PORT="$(python3 -c 'import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()')"
+
+start_server() { # $1=mode
+	# `wait` on a process we just killed reports its signal, which errexit would
+	# take for a test failure.
+	if [ -n "$SERVER_PID" ]; then
+		kill "$SERVER_PID" 2>/dev/null || true
+		wait "$SERVER_PID" 2>/dev/null || true
+	fi
+	: > "$REQUESTS"
+	REQUESTS="$REQUESTS" MODE="$1" python3 "$WORK/srv/api.py" "$PORT" >/dev/null 2>&1 &
+	SERVER_PID=$!
+	for _ in $(seq 1 50); do
+		curl -fsS -X POST -d '{}' "http://127.0.0.1:$PORT/ping" >/dev/null 2>&1 && break
+		sleep 0.1
+	done
+	: > "$REQUESTS"
+}
+
+export CF_TOKEN="fake-token"
+export CF_ZONE="fake-zone"
+export CF_API_BASE="http://127.0.0.1:$PORT/client/v4"
+
+# --- one product, two architectures: today's archive ------------------------
+# 3 root + 3 fixed indices + 6 derived indices (3 per arch) + 3 pool (1 per
+# arch, plus the keyring, which both indices declare and the list deduplicates)
+# + 1 installer = 16 URLs.
+#
+# Two requests, not one: content first, then the indices on their own. A
+# partial purge is not degradation for apt but a signature that does not
+# verify, so the indices have to move together and last. See purge-cache.sh.
+start_server ok
+build_archive 1 "amd64 arm64"
+"$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 \
+	|| { echo "FAIL  the one-product case exited non-zero"; cat "$WORK/out"; exit 1; }
+
+check "one product on two arches sends content and indices separately" \
+	"2" "$(wc -l < "$REQUESTS")"
+check "one product on two arches purges 16 URLs in total" \
+	"16" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
+check "the pool object is deduplicated across the two indices" \
+	"1" "$(jq -s -r '[.[].files[] | select(endswith("_all.deb"))] | length' < "$REQUESTS")"
+check "the per-architecture Release files are purged" \
+	"2" "$(jq -s -r '[.[].files[] | select(endswith("binary-amd64/Release") or endswith("binary-arm64/Release"))] | length' < "$REQUESTS")"
+
+# The signature is the file this list forgot. It is served from the root under a
+# fixed name with `max-age=86400`, next to a package that is rebuilt every run,
+# so an unpurged one is the edge handing out a new package with the previous
+# signature over it. Named individually because the installer refuses to install
+# the package without a signature that verifies over those exact bytes.
+check "the keyring package and its signature are purged together" \
+	"2" "$(jq -s -r '[.[].files[] | select(test("glyndor-archive-keyring[.]deb([.]asc)?$"))] | length' < "$REQUESTS")"
+check "the landing page is purged" \
+	"1" "$(jq -s -r '[.[].files[] | select(endswith("/index.html"))] | length' < "$REQUESTS")"
+
+# The ordering is the whole point: an InRelease purged before the Packages it
+# names leaves the edge serving a new signature over stale indices, which is a
+# hard error on the updating machine. Purged the other way round, a failure
+# just leaves the archive on its previous version.
+check "no index is purged in the first request" \
+	"0" "$(head -1 "$REQUESTS" | jq -r '[.files[] | select(contains("/dists/stable/"))] | length')"
+check "every index is purged in the last request" \
+	"9" "$(tail -1 "$REQUESTS" | jq -r '[.files[] | select(contains("/dists/stable/"))] | length')"
+check "the last request carries nothing but indices" \
+	"9" "$(tail -1 "$REQUESTS" | jq -r '.files | length')"
+
+# --- the roster on three architectures: the case that used to fail ----------
+# 3 root + 12 index (3 fixed, 3 per arch) + (7 products + keyring) × 3 arches
+# deduplicated to 22 pool objects + 7 installers = 44 URLs. The old step refused
+# a list this long outright.
+#
+# Three requests now, not two: content is 32 URLs against a BATCH_SIZE of 30, so
+# it splits, and the indices still go on their own and last.
+start_server ok
+build_archive 7 "amd64 arm64 armhf"
+"$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 \
+	|| { echo "FAIL  the seven-product case exited non-zero"; cat "$WORK/out"; exit 1; }
+
+total="$(jq -rs '[.[].files[]] | length' < "$REQUESTS")"
+check "seven products on three arches needs three requests" \
+	"3" "$(wc -l < "$REQUESTS")"
+check "seven products on three arches purges 44 URLs" \
+	"44" "$total"
+check "no request exceeds Cloudflare's 30-file limit" \
+	"" "$(jq -rs '[.[] | select((.files | length) > 30)] | length | select(. > 0) | "\(.) oversized"' < "$REQUESTS")"
+check "every URL is sent exactly once" \
+	"$total" "$(jq -rs '[.[].files[]] | unique | length' < "$REQUESTS")"
+
+# --- a failing batch fails the run ------------------------------------------
+#
+# One product, so content is nine URLs and fits in one batch: the second request
+# is the index one, which is the failure this case is about. The seven-product
+# archive above splits content across two batches, and there the second request
+# would be content, a different case, covered below.
+start_server fail-second
+build_archive 1 "amd64 arm64"
+rc=0
+"$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 || rc=$?
+check "a rejected batch fails the purge" "1" "$rc"
+check "the error names which group and batch was rejected" \
+	"1" "$(grep -c 'failed on index batch 2' "$WORK/out")"
+
+# --- a content failure can leave a stale edge pointing at a missing package --
+#
+# Failing the FIRST request means the indices were never touched. That used to
+# mean the edge still served old indices pointing at files that were still
+# there, so the archive was stale but consistent. publish.yml now syncs pool/*
+# with --delete BEFORE calling the purge, so an edge that holds the old
+# Packages index can name a package the pool no longer has: a client on that
+# edge sees a missing package until the next successful purge or cache expiry.
+# The operator reading a red run needs to know which of those it is, because
+# they call for very different responses.
+start_server fail-first
+build_archive 7 "amd64 arm64 armhf"
+rc=0
+"$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 || rc=$?
+check "a rejected content batch fails the purge" "1" "$rc"
+check "the error names the content group" \
+	"1" "$(grep -c 'failed on content batch 1' "$WORK/out")"
+check "a content failure says a stale edge may point at a missing package" \
+	"1" "$(grep -c 'may keep serving the previous index' "$WORK/out")"
+check "a content failure never reaches the indices" \
+	"1" "$(wc -l < "$REQUESTS")"
+
+# --- fail closed on missing inputs ------------------------------------------
+start_server ok
+rm -rf "$BUILT"
+rc=0
+"$PURGE" "https://apt.example" "$BUILT" >/dev/null 2>&1 || rc=$?
+check "a missing Release fails rather than purging nothing" "1" "$rc"
+
+# The pair the installer depends on. A publish that produced the package but no
+# signature is broken before this step, and purging the shorter list quietly
+# would leave the edge to be discovered later by whoever runs the installer.
+build_archive 1 "amd64 arm64"
+rm -f "$BUILT/glyndor-archive-keyring.deb.asc"
+rc=0
+"$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 || rc=$?
+check "a missing keyring signature fails the purge" "1" "$rc"
+check "the error names the file that is missing" \
+	"1" "$(grep -c 'glyndor-archive-keyring.deb.asc is missing' "$WORK/out")"
+
+build_archive 1 "amd64 arm64"
+rm -f "$BUILT/glyndor-archive-keyring.deb"
+rc=0
+"$PURGE" "https://apt.example" "$BUILT" >/dev/null 2>&1 || rc=$?
+check "a missing keyring package fails the purge" "1" "$rc"
+
+rc=0
+CF_TOKEN="" "$PURGE" "https://apt.example" "$BUILT" >/dev/null 2>&1 || rc=$?
+check "an absent CF_TOKEN fails closed" "1" "$rc"
+
+rc=0
+"$PURGE" >/dev/null 2>&1 || rc=$?
+check "no arguments is a usage error" "2" "$rc"
+
+echo
+echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
+[ "$fail" -eq 0 ]

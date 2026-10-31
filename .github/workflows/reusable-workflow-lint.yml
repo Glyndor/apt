@@ -201,12 +201,12 @@ jobs:
           # every assertion from one that exited early having run a few, and
           # both look like success. A caller using it names the runner first
           # and the suites after it, whitespace separated.
-          RUNNER_RE = re.compile(r"^(?:bash )?\./tests/check-suite-completeness\.test\.sh$")
+          RUNNER_RE = re.compile(r"^(?:bash )?\./tests/ci/suites/check-suite-completeness\.test\.sh$")
 
           GRAMMAR = (
               "The accepted grammar is either a list of `./tests/<name>.test.sh` "
               "or `bash ./tests/<name>.test.sh` invocations joined by `&&`, or "
-              "`./tests/check-suite-completeness.test.sh` followed by one or "
+              "`./tests/ci/suites/check-suite-completeness.test.sh` followed by one or "
               "more such invocations as its arguments; either form may be "
               "spread over lines with YAML block scalars"
           )

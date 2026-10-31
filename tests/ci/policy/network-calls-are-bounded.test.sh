@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+# Every curl invocation under scripts/ carries a --max-time deadline.
+#
+# The drift scripts and the install-template.sh both hit the network. The
+# scripts run on a runner or, in install-template.sh's case, on a user's
+# machine: a connection that opens but never finishes its response can hold
+# the runner or the user indefinitely. --max-time is the deadline that closes
+# that hole, and the deadline that turns the wait into a FETCH FAILURE in the
+# drift script's classification -- which is the property the script's own
+# header argues for.
+#
+# A curl invocation is `curl` in COMMAND POSITION: at the start of a line, or
+# straight after one of the characters that open one, `| ; & ( { !` or `$(`.
+# That covers every shape a real call takes here, including the one inside a
+# command substitution that the first version of this scanner could not see.
+#
+# The rule is positive on purpose. The obvious alternative, stripping quoted
+# text and then looking for the word anywhere, was written first and had a
+# hole exactly where it mattered: `a="$(curl ...)"` closed on its own line was
+# stripped along with the quotes and never counted, which is the shape of the
+# one call in this repository that had no deadline at all. Command position
+# excludes prose without having to parse quoting, because a curl inside a
+# sentence follows a letter or a colon rather than an operator.
+#
+# The rule is strict and the cases are written against the real tree first,
+# then against planted violations. A gate that inspected nothing prints the
+# same success line as one that did, so the planted-violation case seeds a
+# script with a missing deadline and the test names the file and the line
+# that lost it.
+#
+# Requires: bash.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+SCRIPTS="$HERE/scripts"
+
+pass=0
+fail=0
+
+check() { # $1=description $2=expected $3=actual
+	if [ "$2" = "$3" ]; then
+		echo "ok    $1"
+		pass=$((pass + 1))
+	else
+		echo "FAIL  $1"
+		echo "        expected: $2"
+		echo "        actual:   $3"
+		fail=$((fail + 1))
+	fi
+}
+
+# Walk every script. The trigger requires `curl` to sit in command position
+# and to be followed by whitespace or end of line, so `curlrc` and `curl.err`
+# fall out on the trailing side and prose falls out on the leading one.
+#
+# Measured against the three mentions in this repository that must NOT count:
+# `PACKAGE_ITEMS="...<code>curl ...</code>..."` in build-index-page.sh follows
+# a `>`, the `fail` argument in install-template.sh's `id -u` guard follows a
+# `:`, and `sed 's/^/  curl: /' "$tmp/curl.err"` follows a `/`. None of the
+# three is an operator that opens a command.
+#
+# A curl invocation can span continuation lines (a `\` at the end of a line
+# joins it to the next). The scanner stitches continuations together and
+# inspects the joined text for `--max-time`, so a curl whose deadline sits
+# on the next line is not falsely flagged.
+#
+# Returns: <file>:<line>:<trimmed-invocation>, one per violation (a curl
+# invocation without --max-time). Empty when the tree is clean.
+violations() {
+	local -a files
+	mapfile -t files < <(find "$SCRIPTS" -type f -name '*.sh' | LC_ALL=C sort)
+	# awk with no file operands reads stdin, which hangs a run that has none.
+	[ "${#files[@]}" -gt 0 ] || return 0
+	awk -v dir="$SCRIPTS" '
+		function flush() {
+			if (cmd == "") return
+			if (cmd ~ /--max-time/) { cmd = ""; return }
+			sub(/[[:space:]]+\\$/, "", cmd)
+			printf "%s:%d:%s\n", file, startline, orig
+			cmd = ""
+		}
+		FNR == 1 { file = FILENAME; sub(".*/", "", file); next }
+		{
+			t = $0
+			sub(/^[[:space:]]+/, "", t)
+			if (t == "") { flush(); next }
+			if (t ~ /^#/) { flush(); next }
+			if (cmd == "" && t !~ /(^|[|;&({!]|\$\()[[:space:]]*curl([[:space:]]|$)/) next
+			# Close the invocation here when the line does not continue.
+			# Without this a curl line that ends without a backslash stayed
+			# open and swallowed the NEXT line, so two invocations in a row
+			# were reported as one. It never showed while every real call in
+			# the tree spanned continuations and no two sat together;
+			# the six-shape case below is what surfaced it.
+			if (cmd == "") {
+				orig = $0; startline = FNR; cmd = t
+				if (t !~ /\\$/) flush()
+				next
+			}
+			cmd = cmd " " t
+			if (t !~ /\\$/) flush()
+		}
+		END { flush() }
+	' \
+		"${files[@]}" \
+		2>/dev/null || true
+}
+
+says() { # $1=output  $2=pattern
+	printf '%s' "$1" | grep -q -- "$2" && echo 1 || echo 0
+}
+
+# --- the real tree passes --------------------------------------------------
+
+list="$(violations)"
+check "every real curl invocation under scripts/ carries --max-time" "" "$list"
+
+# --- a planted curl without --max-time is caught and named -----------------
+#
+# The same scanner runs against a temporary tree that carries one curl
+# invocation without a deadline. The test must name the file and the line.
+# A scanner that returns nothing on this tree is the failure the planted
+# case exists to close: it reads as "no violations found" on a tree that
+# has one.
+
+plant="$(mktemp -d)"
+trap 'rm -rf "$plant"' EXIT
+mkdir -p "$plant/scripts"
+
+cat >"$plant/scripts/planted.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+curl -fsSL "https://example.invalid/file"
+SH
+
+list="$(SCRIPTS="$plant/scripts" violations)"
+check "a planted curl without --max-time is named" \
+	"planted.sh:3:curl -fsSL \"https://example.invalid/file\"" "$list"
+
+# scripts/ is organised in folders, so a curl three levels down has to be seen
+# too; a scanner that only globbed scripts/*.sh would pass this tree.
+mkdir -p "$plant/scripts/area/sub"
+cat >"$plant/scripts/area/sub/deep.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+curl -fsSL "https://example.invalid/deep"
+SH
+list="$(SCRIPTS="$plant/scripts" violations | LC_ALL=C sort)"
+check "a planted curl in a nested folder is named too" \
+	"deep.sh:3:curl -fsSL \"https://example.invalid/deep\"
+planted.sh:3:curl -fsSL \"https://example.invalid/file\"" "$list"
+rm -r "$plant/scripts/area"
+
+# --- every shape a real invocation takes ----------------------------------
+#
+# The scanner used to require the line to START with curl, so the only call in
+# this repository with no deadline at all -- inside a command substitution in
+# purge-cache.sh -- was invisible to the gate that names it. One shape is not
+# enough to prove the widening: a rule can be widened in a way that gains one
+# shape and loses another, and the first attempt here did exactly that, seeing
+# `b=$(curl ...)` while missing `a="$(curl ...)"`.
+#
+# So plant all six and require all six.
+
+cat >"$plant/scripts/shapes.sh" <<'SH'
+#!/usr/bin/env bash
+curl -fsSL "https://example.invalid/bare"
+a="$(curl -fsSL https://example.invalid/quoted-substitution)"
+b=$(curl -fsSL https://example.invalid/substitution)
+if ! curl -fsSL https://example.invalid/conditional; then :; fi
+echo z | curl -fsSL https://example.invalid/pipeline
+c=$(true && curl -fsSL https://example.invalid/after-operator)
+SH
+
+list="$(SCRIPTS="$plant/scripts" violations)"
+check "every shape of a deadline-less curl is caught" "6" \
+	"$(printf '%s' "$list" | grep -c '^shapes\.sh:')"
+check "and the quoted command substitution is one of them" "1" \
+	"$(printf '%s' "$list" | grep -c 'quoted-substitution')"
+rm -f "$plant/scripts/shapes.sh"
+
+# --- a comment line is not an invocation ----------------------------------
+#
+# A `curl` token inside a comment is prose, not a shell command. The
+# scanner must walk it past without flagging it. The first draft of this
+# rule used to claim it ignored comments while actually only ignoring the
+# leading `#`, which trips on indented comments; the case below pins the
+# indented shape so a regression here turns red rather than going silent.
+
+rm -f "$plant/scripts/planted.sh"
+cat >"$plant/scripts/with-comments.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+# this is the line shellcheck is meant to never see, with curl -fsSL in it
+	# an indented comment with curl -fsSL "https://example.invalid/file"
+curl -fsSL --max-time 30 "https://example.invalid/ok"
+SH
+
+list="$(SCRIPTS="$plant/scripts" violations)"
+check "a curl mentioned only in a comment is not flagged" "0" \
+	"$(says "$list" 'with-comments.sh')"
+check "and the real invocation on the next line still passes" "" \
+	"$(printf '%s\n' "$list" | sed -n '/with-comments.sh/p')"
+
+# --- a curl mentioned inside a string is not an invocation ----------------
+#
+# The same shape covers the existing files: build-index-page.sh prints an
+# HTML <code> snippet containing `curl` and install-template.sh passes
+# `curl` as the argument of `fail`. Both are not invocations; both must
+# not turn this test red.
+
+rm -f "$plant/scripts/with-comments.sh"
+cat >"$plant/scripts/with-strings.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+PACKAGE_ITEMS="$PACKAGE_ITEMS<li><code>curl -fsSL https://example.invalid/install | sudo sh</code></li>"
+[ "$(id -u)" -eq 0 ] || fail "run this as root: curl -fsSL https://example.invalid/install | sudo sh"
+SH
+
+list="$(SCRIPTS="$plant/scripts" violations)"
+check "a curl mentioned only inside a string is not flagged" "0" \
+	"$(says "$list" 'with-strings.sh')"
+
+echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
+[ "$fail" -eq 0 ]

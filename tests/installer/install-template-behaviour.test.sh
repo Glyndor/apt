@@ -1,0 +1,791 @@
+#!/usr/bin/env bash
+#
+# tests/installer/install-template.test.sh asserts the ORDER of the installer's steps:
+# extract, then check the fingerprint, then install. That is a structural
+# property, and it is not enough.
+#
+# Replacing `grep -qx "$GLYNDOR_APT_FPR"` with `grep -q ""` leaves the order
+# untouched and makes the installer accept any key at all. The ordering suite
+# stays green through that mutation. It was green through it when I tried.
+#
+# So this file runs the installer. It serves a keyring package over file://
+# (KEYRING_URL is overridable) and asserts what the installer DOES with keys
+# that are right, wrong, and hostile.
+#
+# `dpkg` is stubbed to record that it was called rather than to install
+# anything, which is what lets "nothing was installed" be asserted rather than
+# assumed: the marker file is absent exactly when the installer refused before
+# reaching `dpkg -i`. `id` is stubbed to report uid 0, since the installer
+# checks for root before anything else and this test is not root -- the fixture
+# has to be valid in every respect except the one under test.
+#
+# Requires: gpg, dpkg-deb, curl with the file:// protocol.
+set -u
+
+HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+TEMPLATE="$HERE/scripts/installer/install-template.sh"
+WORK="$(mktemp -d)"
+trap 'gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK"' EXIT
+pass=0; fail=0
+
+check() { # <description> <expected> <actual>
+	if [ "$2" = "$3" ]; then
+		echo "ok    $1"; pass=$((pass + 1))
+	else
+		echo "FAIL  $1"; echo "        expected: $2"; echo "        actual:   $3"
+		fail=$((fail + 1))
+	fi
+}
+
+for tool in gpg dpkg-deb curl; do
+	command -v "$tool" >/dev/null 2>&1 || {
+		echo "NOTE  $tool is not installed here, so nothing below could run."
+		echo "      This is not a pass. Install $tool and run again."
+		exit 1
+	}
+done
+curl --version | grep -q '\bfile\b' || {
+	echo "NOTE  this curl has no file:// protocol, so the fixtures cannot be served."
+	echo "      This is not a pass."
+	exit 1
+}
+
+# --- key material -----------------------------------------------------------
+
+mkkey() { # $1=uid -> prints the 40-char fingerprint
+	local home="$WORK/gnupg-$1"
+	mkdir -p "$home"; chmod 700 "$home"
+	GNUPGHOME="$home" gpg --batch --quiet --passphrase '' \
+		--quick-generate-key "$1 <$1@test.invalid>" default default never \
+		>/dev/null 2>&1
+	GNUPGHOME="$home" gpg --batch --with-colons --list-keys "$1" \
+		| awk -F: '/^fpr:/{print $10; exit}'
+}
+export_ring() { # $1=uid $2=output file  (binary keyring, as the package ships)
+	GNUPGHOME="$WORK/gnupg-$1" gpg --batch --export "$1" > "$2"
+}
+
+FPR_GOOD="$(mkkey good)"
+# The incoming key of a rotation: legitimate, and published alongside the old
+# one during the overlap.
+FPR_NEW="$(mkkey new)"
+# Needed for the keyring it creates, not for the value.
+mkkey evil >/dev/null
+
+# --- fixture packages -------------------------------------------------------
+
+# $1=name  $2=uids whose keys go into the shipped keyring  $3=postinst? (yes|no)
+mkdeb() {
+	local name="$1" uids="$2" postinst="$3"
+	local root="$WORK/pkg-$name"
+	rm -rf "$root"
+	mkdir -p "$root/DEBIAN" "$root/usr/share/keyrings"
+	printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' \
+		> "$root/DEBIAN/control"
+	: > "$root/usr/share/keyrings/glyndor.gpg"
+	local u
+	for u in $uids; do
+		export_ring "$u" "$WORK/ring-$u.gpg"
+		cat "$WORK/ring-$u.gpg" >> "$root/usr/share/keyrings/glyndor.gpg"
+	done
+	if [ "$postinst" = yes ]; then
+		# What a hostile keyring package would do: rewrite the installed keyring
+		# from its maintainer script, so that a check reading the INSTALLED file
+		# would find the expected fingerprint. `dpkg-deb -x` never runs this.
+		cat > "$root/DEBIAN/postinst" <<POST
+#!/bin/sh
+cat "$WORK/ring-good.gpg" "$WORK/ring-evil.gpg" > /usr/share/keyrings/glyndor.gpg
+POST
+		chmod 755 "$root/DEBIAN/postinst"
+	fi
+	dpkg-deb --root-owner-group --build "$root" "$WORK/$name.deb" >/dev/null 2>&1
+	# Every fixture is signed by a key its own keyring carries, so a refusal
+	# below is the one the case is about. Defaulting to the first of $2 is what
+	# keeps that true without every call site having to say it: the evil-keyring
+	# fixture is signed by evil, the rotation fixture by good, and both are then
+	# correct in every respect except the one under test.
+	sign_deb "${4:-${uids%% *}}" "$WORK/$name.deb"
+	echo "$WORK/$name.deb"
+}
+
+# $1=uid whose key signs  $2=package to sign, written to <package>.asc
+sign_deb() {
+	# --yes matters more than it looks. Without it gpg refuses to overwrite an
+	# existing .asc, --batch turns that refusal into a silent non-zero, and the
+	# PREVIOUS signature stays on disk next to a package that was just rebuilt
+	# with new timestamps. Measured: six cases went green against a stale
+	# signature, including the one asserting that a signature by an outside key
+	# is refused, which was passing because no outside key had signed anything.
+	GNUPGHOME="$WORK/gnupg-$1" gpg --batch --yes --quiet --pinentry-mode loopback \
+		--passphrase '' --local-user "$1" --armor --detach-sign \
+		--output "$2.asc" "$2" >/dev/null 2>&1
+}
+
+# A package that keeps a signature made over DIFFERENT bytes.
+#
+# This is what the fingerprint check cannot see, and it needs no stolen key.
+# The attacker takes the published package, which carries the genuine archive
+# key, adds a payload, and serves the published signature next to it. The key
+# inside is the real one, so every check that reads only the key passes.
+#
+# Both payloads reach root. `postinst` is executed by `dpkg -i`. `sources` needs
+# no maintainer script at all: `Trusted: yes` switches off verification for
+# everything apt then fetches from that source.
+#
+# $1=name  $2=postinst|sources
+mktampered() {
+	local name="$1" payload="$2"
+	local root="$WORK/pkg-$name"
+	rm -rf "$root"
+	mkdir -p "$root/DEBIAN" "$root/usr/share/keyrings"
+	printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' \
+		> "$root/DEBIAN/control"
+	export_ring good "$root/usr/share/keyrings/glyndor.gpg"
+
+	# The legitimate pair first: this is what the archive publishes, and the
+	# signature the attacker keeps.
+	dpkg-deb --root-owner-group --build "$root" "$WORK/$name.deb" >/dev/null 2>&1
+	sign_deb good "$WORK/$name.deb"
+
+	# Now the payload, and rebuild over the same path. Same keyring, same genuine
+	# key, different bytes, and the signature from a moment ago left in place.
+	case "$payload" in
+		postinst)
+			printf '#!/bin/sh\ntouch /tmp/pwned\n' > "$root/DEBIAN/postinst"
+			chmod 755 "$root/DEBIAN/postinst"
+			;;
+		sources)
+			mkdir -p "$root/etc/apt/sources.list.d"
+			printf 'Types: deb\nURIs: http://attacker.test.invalid\nSuites: stable\nComponents: main\nTrusted: yes\n' \
+				> "$root/etc/apt/sources.list.d/glyndor.sources"
+			;;
+	esac
+	dpkg-deb --root-owner-group --build "$root" "$WORK/$name.deb" >/dev/null 2>&1
+	echo "$WORK/$name.deb"
+}
+
+# --- the sandbox the installer runs in --------------------------------------
+
+# The stub directory goes FIRST on PATH and shadows the three commands that
+# must not do their real work. Whitelisting the rest instead of shadowing was
+# the first attempt and it was wrong: `dpkg-deb -x` shells out to `tar`, which
+# was not on the list, so every case failed extraction -- including the one that
+# should have been accepted, and the hostile one, which then "passed" for the
+# wrong reason. The assertion that names WHICH refusal fired is what caught it.
+BIN="$WORK/bin"
+mkdir -p "$BIN"
+# uid 0 without being root: the root check runs first and is not what is tested.
+printf '#!/bin/sh\necho 0\n' > "$BIN/id"; chmod +x "$BIN/id"
+# apt-get must exist and succeed; nothing here installs a package.
+printf '#!/bin/sh\nexit 0\n' > "$BIN/apt-get"; chmod +x "$BIN/apt-get"
+# dpkg records that it was reached instead of installing. Its absence is the
+# assertion that the installer refused before `dpkg -i`.
+cat > "$BIN/dpkg" <<'STUB'
+#!/bin/sh
+case "$1" in
+	-i) echo "$*" >> "$DPKG_MARKER" ;;
+esac
+exit 0
+STUB
+chmod +x "$BIN/dpkg"
+# The installer runs `@PRODUCT@ --version` after `apt-get install` and refuses
+# when that exits non-zero, so every case below needs a stub on PATH that
+# starts. The version string matches what run_tty prints later, so a case that
+# overrides it can be told apart by the stub it overwrites with.
+printf '#!/bin/sh\necho "testpkg version v9.9.9"\n' > "$BIN/testpkg"
+chmod +x "$BIN/testpkg"
+
+# $1=deb path  $2=expected fingerprint  -> exit code, output in $WORK/out,
+# marker in $WORK/marker
+run_installer() {
+	rm -f "$WORK/marker"
+	sed 's/@PRODUCT@/testpkg/g' "$TEMPLATE" > "$WORK/install.sh"
+	env -i PATH="${INSTALLER_PATH:-$BIN:$PATH}" HOME="$WORK" WORK="$WORK" \
+		DPKG_MARKER="$WORK/marker" \
+		KEYRING_URL="file://$1" \
+		GLYNDOR_APT_FPR="$2" \
+		/bin/sh "$WORK/install.sh" >"$WORK/out" 2>&1
+}
+said() { grep -qF "$1" "$WORK/out" && echo 1 || echo 0; }
+installed() { [ -f "$WORK/marker" ] && echo 1 || echo 0; }
+
+# --- the expected key is accepted -------------------------------------------
+#
+# Without this, every refusal below is satisfied by an installer that refuses
+# everything.
+DEB="$(mkdeb good good no)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a keyring carrying the expected key is accepted" "0" "$rc"
+check "and dpkg -i was reached" "1" "$(installed)"
+
+# --- a different key is refused ---------------------------------------------
+DEB="$(mkdeb evil evil no)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a keyring carrying a different key is refused" "1" "$rc"
+check "and the message names the expected fingerprint" "1" "$(said "$FPR_GOOD")"
+check "and says nothing was installed" "1" "$(said 'nothing was installed')"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+# --- a rotation keyring is accepted, an enriched one is not -----------------
+#
+# standards/releases mandates a two-phase rotation that ships the old and the
+# new key together, so a keyring carrying two keys must still install. What it
+# must NOT do is install a keyring carrying a key nobody published.
+#
+# The installer used to test for presence: the published fingerprint had to be
+# in there, and anything alongside it came too. That admitted a keyring holding
+# the real key AND an attacker's, which apt then trusted equally -- and the
+# sources.list the same package installs decides where apt fetches from. The
+# published fingerprint could not catch it, because the published fingerprint
+# was present. Measured before the change: such a package reached `dpkg -i`.
+#
+# So both fingerprints go in during an overlap, and every key in the keyring
+# must be one of them.
+DEB="$(mkdeb rotation "good new" no)"
+rc=0; run_installer "$DEB" "$FPR_GOOD,$FPR_NEW" || rc=$?
+check "a rotation keyring carrying both published keys is accepted" "0" "$rc"
+check "and dpkg -i was reached" "1" "$(installed)"
+
+# Phase two: the old key is dropped and only the new one ships. Still accepted,
+# because it is still a published fingerprint.
+DEB="$(mkdeb rotated "new" no)"
+rc=0; run_installer "$DEB" "$FPR_GOOD,$FPR_NEW" || rc=$?
+check "and so is one carrying only the incoming key" "0" "$rc"
+
+# The attack the presence test admitted. One published fingerprint, a keyring
+# carrying it plus a key that was never published.
+DEB="$(mkdeb enriched "good evil" no)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a keyring carrying an unpublished key alongside is refused" "1" "$rc"
+check "and the message names the key that was not expected" "1" "$(said 'was not told to expect')"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+# --- the exploit ------------------------------------------------------------
+#
+# This package ships only the attacker's key, and carries a postinst that would
+# rewrite the installed keyring to contain the expected fingerprint. Under the
+# old order -- `dpkg -i` first, then read /usr/share/keyrings/glyndor.gpg -- the
+# check would find what it was looking for and pass.
+#
+# `dpkg-deb -x` unpacks the data archive and runs no maintainer script, so the
+# fingerprint is read from what the package SHIPS rather than from what it was
+# allowed to write.
+DEB="$(mkdeb hostile evil yes)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a package whose postinst would forge the keyring is refused" "1" "$rc"
+check "and it is refused for the key, not something else" "1" \
+	"$(said 'was not told to expect')"
+check "and its maintainer script was never given the chance to run" "0" \
+	"$(installed)"
+
+# --- the package is authenticated, not just the key inside it ---------------
+#
+# The case above is refused because the key is wrong. Keep the key right and
+# every check that reads only the key passes: the published package carries the
+# genuine archive key, so an attacker who can serve the download rebuilds it
+# around that key with a payload of their own and keeps the published signature.
+#
+# Nothing here is signed by a key the attacker does not have. The refusal comes
+# from the bytes having changed after the signature was made.
+DEB="$(mktampered tampered-postinst postinst)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a package rebuilt around the genuine key is refused" "1" "$rc"
+check "and it is refused for the signature, not the key" "1" \
+	"$(said 'not signed by the archive key')"
+check "and dpkg -i was never reached" "0" "$(installed)"
+# The half that makes the assertion above mean something. If the fingerprint
+# check had refused this fixture, the case would pass while proving the old
+# property again, which is exactly how the hostile fixture above passed for
+# years without ever reaching the payload.
+check "and the fingerprint check passed it first" "1" \
+	"$(said 'Key fingerprint verified')"
+
+# The second payload named in the issue, and the one that needs no maintainer
+# script: `Trusted: yes` in the sources file this package installs turns off
+# verification for everything apt fetches from that source afterwards.
+DEB="$(mktampered tampered-sources sources)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a package carrying a rewritten sources file is refused" "1" "$rc"
+check "and it too is refused for the signature" "1" \
+	"$(said 'not signed by the archive key')"
+check "and the fingerprint check passed it first" "1" \
+	"$(said 'Key fingerprint verified')"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+# --- the signature has to come from the key the package carries -------------
+#
+# A correct package with a signature made by a key that is not in its keyring.
+# The fingerprint check reads the keyring and is satisfied; only verifying
+# against that same keyring rejects this.
+DEB="$(mkdeb signed-by-other good no)"
+sign_deb evil "$DEB"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a signature by a key outside the keyring is refused" "1" "$rc"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+# --- a signature that is missing, empty or not a signature ------------------
+#
+# Whoever can substitute the package can also answer with a 404 or a truncated
+# body, and the one thing that must never happen is falling back to the
+# fingerprint check on its own.
+DEB="$(mkdeb sig-absent good no)"
+rm -f "$DEB.asc"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a package served without its signature is refused" "1" "$rc"
+check "and says the signature could not be downloaded" "1" \
+	"$(said 'could not download')"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+DEB="$(mkdeb sig-empty good no)"
+: > "$DEB.asc"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "an empty signature is refused" "1" "$rc"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+DEB="$(mkdeb sig-truncated good no)"
+head -c 60 "$DEB.asc" > "$WORK/trunc.asc" && mv "$WORK/trunc.asc" "$DEB.asc"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a truncated signature is refused" "1" "$rc"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+DEB="$(mkdeb sig-garbage good no)"
+printf 'not a signature at all\n' > "$DEB.asc"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a signature that is not one is refused" "1" "$rc"
+check "and dpkg -i was never reached" "0" "$(installed)"
+
+# --- the published fingerprint can be pasted in the form it is published -----
+#
+# gpg prints a fingerprint in groups, and the README publishes it that way. The
+# override documented in the script says nothing about format, so a fork
+# operator copies what is on the page. Before it was normalised, that produced
+# "does not carry the expected fingerprint" -- an error pointing at the key when
+# the fault was the spaces.
+DEB="$(mkdeb spaced good no)"
+SPACED="$(printf '%s' "$FPR_GOOD" | sed 's/\(....\)/\1 /g; s/ $//')"
+rc=0; run_installer "$DEB" "$SPACED" || rc=$?
+check "a fingerprint pasted with gpg's spacing is accepted" "0" "$rc"
+check "and dpkg -i was reached" "1" "$(installed)"
+
+# Lower case too: some tools print fingerprints that way.
+rc=0; run_installer "$DEB" "$(printf '%s' "$FPR_GOOD" | tr 'A-F' 'a-f')" || rc=$?
+check "a lower-case fingerprint is accepted" "0" "$rc"
+
+# Normalising must not make the check lax. A wrong key spelled with spaces is
+# still a wrong key.
+DEB="$(mkdeb spaced-evil evil no)"
+rc=0; run_installer "$DEB" "$SPACED" || rc=$?
+check "and a spaced fingerprint still refuses the wrong key" "1" "$rc"
+check "and nothing was installed" "0" "$(installed)"
+
+# --- a replaced default announces itself ------------------------------------
+#
+# Both overrides exist for forks and both used to be silent. The case that
+# matters is a copied command line where the visible URL is the real one and the
+# substitution sits in the environment, past where a reader looks.
+#
+# Nothing here blocks the override -- that would break the fork it was written
+# for. The assertion is that the screen says what is in use.
+DEB="$(mkdeb spaced2 good no)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "the stock install still succeeds" "0" "$rc"
+
+# There is no un-overridden case to assert here, and pretending otherwise would
+# be a test that cannot pass. This harness serves its fixture over file:// and
+# signs it with a generated key, so KEYRING_URL and GLYNDOR_APT_FPR are BOTH
+# always replaced. The quiet path -- neither overridden -- exists only against
+# the real archive with the real key, which this suite does not reach.
+check "a replaced keyring source is announced" "1" \
+	"$(said 'keyring source:')"
+
+# Both replaced is the combination where nothing traces back to Glyndor's
+# published key, and it gets its own sentence.
+DEB="$(mkdeb spaced3 evil no)"
+FPR_EVIL_REAL="$(GNUPGHOME="$WORK/gnupg-evil" gpg --batch --with-colons --list-keys evil \
+	| awk -F: '/^fpr:/{print $10; exit}')"
+rc=0; run_installer "$DEB" "$FPR_EVIL_REAL" || rc=$?
+check "a keyring and a fingerprint that both differ still installs" "0" "$rc"
+check "and the run says nothing traces back to Glyndor's key" "1" \
+	"$(said 'nothing here is checked against Glyndor')"
+
+# --- a download that does not arrive ----------------------------------------
+rc=0; run_installer "$WORK/absent.deb" "$FPR_GOOD" || rc=$?
+check "a keyring that cannot be downloaded is refused" "1" "$rc"
+check "and says so" "1" "$(said 'could not download')"
+check "and nothing was installed" "0" "$(installed)"
+
+# --- something that is not a .deb -------------------------------------------
+printf 'this is not a debian package' > "$WORK/junk.deb"
+# The signature is fetched before anything is unpacked, so a fixture without one
+# would be refused at the download and this case would stop being about the
+# package at all. Its content does not matter: extraction fails first.
+printf 'not a signature\n' > "$WORK/junk.deb.asc"
+rc=0; run_installer "$WORK/junk.deb" "$FPR_GOOD" || rc=$?
+check "a download that is not a .deb is refused" "1" "$rc"
+check "and says extraction failed" "1" "$(said 'could not extract')"
+check "and nothing was installed" "0" "$(installed)"
+
+# --- an oversized download is refused ---------------------------------------
+#
+# The keyring is about 2 KB and stays kilobytes carrying both keys through a
+# rotation. A server answering that request with an endless body used to be
+# bounded by the disk alone, and this runs as root: /tmp filling up takes the
+# machine with it, before any fingerprint is compared. curl's --max-filesize
+# refuses it mid-transfer.
+#
+# A VALID .deb, oversized. A blob of zeroes would be refused by `dpkg-deb -x`
+# whether or not the cap exists, so the test would pass with the cap removed --
+# measured, it did. The fixture has to be invalid in the one respect under test
+# and correct in every other, or it proves nothing.
+#
+# Incompressible padding, so the built package really exceeds the 8 MB cap
+# rather than compressing back under it.
+big="$WORK/pkg-big"
+rm -rf "$big"; mkdir -p "$big/DEBIAN" "$big/usr/share/keyrings" "$big/usr/share/doc"
+printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' \
+	> "$big/DEBIAN/control"
+export_ring good "$big/usr/share/keyrings/glyndor.gpg"
+head -c $((9 * 1024 * 1024)) /dev/urandom > "$big/usr/share/doc/padding"
+dpkg-deb -Znone --root-owner-group --build "$big" "$WORK/huge.deb" >/dev/null 2>&1
+
+rc=0; run_installer "$WORK/huge.deb" "$FPR_GOOD" || rc=$?
+check "a download larger than the cap is refused" "1" "$rc"
+check "and it is refused at the download, not later" "1" "$(said 'could not download')"
+check "and nothing was installed" "0" "$(installed)"
+
+# --- a .deb carrying no keyring at all --------------------------------------
+#
+# `gpg --show-keys` on a missing file yields nothing, and an empty fingerprint
+# list must not satisfy the comparison.
+root="$WORK/pkg-empty"; mkdir -p "$root/DEBIAN"
+printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' \
+	> "$root/DEBIAN/control"
+dpkg-deb --root-owner-group --build "$root" "$WORK/empty.deb" >/dev/null 2>&1
+# Signed by a real key, so this case is refused for the missing keyring rather
+# than for a signature that was never made.
+sign_deb good "$WORK/empty.deb"
+rc=0; run_installer "$WORK/empty.deb" "$FPR_GOOD" || rc=$?
+check "a package shipping no keyring is refused" "1" "$rc"
+check "and nothing was installed" "0" "$(installed)"
+
+# --- what it puts on the screen ---------------------------------------------
+#
+# The installer styles its output, and every one of these is a way that breaks
+# silently: it still exits 0, the package still installs, and the damage is in
+# somebody else's log file or on a terminal that cannot render what was sent.
+#
+# `run_installer` uses `env -i`, so it runs with no locale and no terminal --
+# which is one of the cases below, not a neutral baseline. This variant takes
+# extra environment so the others can be reached, and a pty so `[ -t 1 ]` is
+# true, since colour is suppressed off a terminal and every colour assertion
+# would otherwise pass without exercising anything.
+run_tty() { # <env assignments...> -- output in $WORK/tty
+	rm -f "$WORK/marker"; mkdir -p "$WORK/apt.conf.d"
+	sed 's/@PRODUCT@/testpkg/g' "$TEMPLATE" > "$WORK/install.sh"
+	printf '#!/bin/sh\necho "testpkg version v9.9.9"\n' > "$BIN/testpkg"
+	chmod +x "$BIN/testpkg"
+	script -qec "env -i PATH='$BIN:$PATH' HOME='$WORK' \
+		DPKG_MARKER='$WORK/marker' KEYRING_URL='file://$DEB_GOOD' \
+		GLYNDOR_APT_FPR='$FPR_GOOD' \
+		$* /bin/sh '$WORK/install.sh'" /dev/null >"$WORK/tty" 2>&1 || true
+}
+# grep -c always prints a count, and exits 1 when that count is zero. Adding
+# `|| echo 0` therefore prints a SECOND line on the case this is here to check,
+# and the comparison sees "0\n0" against "0" and fails. Let the count stand.
+esc_count() { grep -c "$(printf '\033')" "$WORK/$1"; true; }
+
+DEB_GOOD="$(mkdeb good good no)"
+
+# The control. Everything below asserts an ABSENCE of escapes, and an absence
+# proves nothing unless the same fixture can produce a presence -- a typo in
+# the pty invocation would make all four "pass" while running nothing.
+run_tty "TERM=xterm-256color LANG=en_US.UTF-8"
+check "on a terminal it does emit colour, so the checks below can fail" "1" \
+	"$([ "$(esc_count tty)" -gt 0 ] && echo 1 || echo 0)"
+# Match the spaced rendering, not the raw fingerprint: the fork warning higher
+# up prints the raw form too, so a raw match would pass with the line under
+# test deleted.
+check "and the fingerprint is on screen, not folded into the tick" "1" \
+	"$(grep -c "$(printf '%s' "$FPR_GOOD" | cut -c1-8 | sed -E 's/(.{4})/\1 /;s/ $//')" "$WORK/tty")"
+
+# NO_COLOR is a promise about every tool on the machine, not a preference.
+run_tty "TERM=xterm-256color LANG=en_US.UTF-8 NO_COLOR=1"
+check "NO_COLOR suppresses every escape sequence" "0" "$(esc_count tty)"
+
+# TERM=dumb is what emacs shells and some CI runners report.
+run_tty "TERM=dumb LANG=en_US.UTF-8"
+check "TERM=dumb suppresses every escape sequence" "0" "$(esc_count tty)"
+
+# Redirected output is the case that corrupts somebody else's file. This one
+# uses the plain runner, which already has no terminal.
+rc=0; run_installer "$DEB_GOOD" "$FPR_GOOD" || rc=$?
+check "a successful install off a terminal exits 0" "0" "$rc"
+check "and writes no escape sequences into the redirected output" "0" \
+	"$(esc_count out)"
+
+# A non-UTF-8 locale is the default in a bare container, not an edge case. The
+# glyphs are multi-byte, so the test is for bytes above ASCII rather than for
+# the character: that is what a terminal in a C locale receives and cannot draw.
+run_tty "TERM=xterm-256color LC_ALL=C LANG=C"
+# Count bytes with the high bit set rather than "non-printable characters".
+# The pty adds a carriage return to every line, so a character-class test
+# reports the harness rather than the installer -- measured, 17 lines of it.
+# High-bit bytes are precisely the multi-byte sequences a C-locale terminal
+# cannot draw, and CR and ESC do not have that bit.
+check "a C locale gets ASCII glyphs, no multi-byte characters" "0" \
+	"$(LC_ALL=C tr -dc '\200-\377' < "$WORK/tty" | wc -c | tr -d ' ')"
+
+# apt's output is captured so the ordinary install is readable. Captured is one
+# keystroke from swallowed, and the failure case is where that output IS the
+# diagnosis -- so assert both halves: absent when it worked, present when it
+# did not.
+# apt names the unsatisfiable dependency in a block it prints BEFORE the final
+# E: line, and -qq suppresses that block while leaving the E: line. Shipped that
+# way for an hour and it cost a real diagnosis: a machine whose podman was older
+# than the Depends asks for got
+#
+#     E: Unable to correct problems, you have held broken packages.
+#
+# and nothing saying which package or which version. Capturing the output is
+# what keeps the ordinary run quiet, so -qq buys nothing and only removes this.
+#
+# The stub HONOURS -qq rather than ignoring it. A stub that always printed the
+# block would pass with -qq restored, which is the mutation this exists to
+# catch -- the assertion has to be able to see the flag to be about the flag.
+saved_apt="$(cat "$BIN/apt-get")"
+cat > "$BIN/apt-get" <<'APTSTUB'
+#!/bin/sh
+case "$*" in
+	*install*)
+		case "$*" in
+			*-qq*) ;;
+			*) echo "The following packages have unmet dependencies:" >&2
+			   echo " testpkg : Depends: podman (>= 5.0) but 4.9.3 is to be installed" >&2 ;;
+		esac
+		echo "E: Unable to correct problems, you have held broken packages." >&2
+		exit 100
+		;;
+esac
+exit 0
+APTSTUB
+chmod +x "$BIN/apt-get"
+rc=0; run_installer "$DEB_GOOD" "$FPR_GOOD" || rc=$?
+check "an unsatisfiable dependency fails the install" "1" "$rc"
+check "and the output names the dependency, not just that something broke" "1" \
+	"$(grep -c 'Depends: podman' "$WORK/out")"
+printf '%s' "$saved_apt" > "$BIN/apt-get"; chmod +x "$BIN/apt-get"
+
+
+# The stub has to SAY something for this to mean anything. It exits 0 silently,
+# so grepping a successful run for apt's chatter answered zero whether the
+# output was captured or not -- sabotaged the capture and the check stayed
+# green, which is how this was found. A stub that prints is what turns the
+# assertion into one that can fail.
+cat > "$BIN/apt-get" <<'APTSTUB'
+#!/bin/sh
+echo "Reading package lists..."
+echo "Building dependency tree..."
+exit 0
+APTSTUB
+chmod +x "$BIN/apt-get"
+rc=0; run_installer "$DEB_GOOD" "$FPR_GOOD" || rc=$?
+check "an install whose apt is chatty still succeeds" "0" "$rc"
+check "and apt's chatter stays out of the output" "0" \
+	"$(grep -c 'Reading package lists' "$WORK/out"; true)"
+
+cat > "$BIN/apt-get" <<'APTSTUB'
+#!/bin/sh
+case "$*" in
+	*install*) echo "E: fixture-apt-failure" >&2; exit 100 ;;
+esac
+exit 0
+APTSTUB
+chmod +x "$BIN/apt-get"
+rc=0; run_installer "$DEB_GOOD" "$FPR_GOOD" || rc=$?
+check "an apt failure fails the install" "1" "$rc"
+check "and apt's captured output is shown, since it is the diagnosis" "1" \
+	"$(grep -c 'E: fixture-apt-failure' "$WORK/out")"
+printf '%s' "$saved_apt" > "$BIN/apt-get"; chmod +x "$BIN/apt-get"
+
+# --- a product that cannot start is refused --------------------------------
+#
+# The previous form ended `@PRODUCT@ --version 2>/dev/null || true`, which
+# meant a binary on PATH that exits non-zero was reported as installed: dpkg
+# had unpacked it, the installer said "installed", and the user was left with a
+# program that does nothing. The check the installer runs now is the one that
+# turns "installed" into "runs", and the assertion below is what makes that
+# check survivable against the original `|| true` regression.
+#
+# The stub exits 126 and writes its message to stderr. The installer captures
+# stdout and stderr together, so the line the user sees is the one that
+# reached fail().
+cat > "$BIN/testpkg" <<'STUB'
+#!/bin/sh
+echo "cannot execute: required file not found" >&2
+exit 126
+STUB
+chmod +x "$BIN/testpkg"
+DEB="$(mkdeb good good no)"
+rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
+check "a product that exits non-zero on --version fails the install" "1" "$rc"
+check "and names the exit code" "1" "$(said 'does not start (exit 126)')"
+check "and quotes the first line of its output" "1" "$(said 'required file not found')"
+
+# --- cleanup only undoes its own install ---------------------------------
+#
+# The installer installs gnupg when it is missing, then purges it after
+# verification or on an earlier failure.
+# --auto-remove is machine-wide autoremove: every auto-installed package
+# no longer depended on, not only what this script pulled in. cleanup()
+# must name the packages explicitly so the machine is left exactly as
+# it was before.
+#
+# Run cleanup() directly with stubbed binaries to check the trap's explicit
+# package list. The full gpg-absent run below also checks the install order
+# and auto-set diff. Here cleanup() is given $gnupg_deps as an input, and
+# the assertion is that
+# the purge line names exactly what was in $gnupg_deps and nothing else,
+# which is the part that protects the operator's other auto packages.
+
+cleanup_fn="$(awk '/^(cleanup|purge_gnupg)\(\) \{/,/^\}/' "$TEMPLATE")"
+# The cleanup function calls note(), which is defined in the installer's
+# output layer. Pulling the whole layer in here would also pull the colour
+# variables, which only matter when [ -t 1 ]. A no-op that still prints
+# is what cleanup() needs.
+note() { printf '      %s\n' "$1"; }
+eval "$cleanup_fn"
+
+# An apt-get stub that logs argv. The original do-nothing stub is saved
+# and restored at the end of this block, the same shape as the earlier
+# stubs that need to see specific flags.
+saved_apt="$(cat "$BIN/apt-get")"
+cat > "$BIN/apt-get" <<'APTSTUB'
+#!/bin/sh
+printf '%s\n' "$0 $*" >> "$WORK/apt-get.log"
+exit 0
+APTSTUB
+chmod +x "$BIN/apt-get"
+
+# apt-mark showauto prints the contents of $WORK/auto-set. cleanup() never
+# calls apt-mark; the stub exists because the test infrastructure expects
+# every command the installer might run to be on PATH when the gpg-absent
+# path is exercised, and the symmetry keeps a future path here from
+# silently calling a real apt-mark.
+cat > "$BIN/apt-mark" <<'MKSTUB'
+#!/bin/sh
+case "$1" in
+	showauto) cat "$WORK/auto-set" ;;
+esac
+exit 0
+MKSTUB
+chmod +x "$BIN/apt-mark"
+
+# Make sure the stub apt-get is found by cleanup()'s PATH lookup, and the
+# stub sees $WORK when it logs to $WORK/apt-get.log.
+saved_path="$PATH"
+saved_work="$WORK"
+export PATH="$BIN:$PATH" WORK
+
+run_cleanup() { # $1=installed_gnupg  $2=gnupg_deps
+	# shellcheck disable=SC2034 # read by the eval'd cleanup() below, not by this function
+	installed_gnupg="$1"
+	# shellcheck disable=SC2034 # same: cleanup() expands it
+	gnupg_deps="$2"
+	workdir="$WORK/wd-$RANDOM"
+	mkdir -p "$workdir"
+	cleanup
+}
+
+# Case 1: cleanup never runs apt with --auto-remove.
+rm -f "$WORK/apt-get.log"
+run_cleanup yes ""
+check "the cleanup never runs apt with --auto-remove" "0" \
+	"$(grep -c -- '--auto-remove' "$WORK/apt-get.log")"
+
+# Case 2: cleanup purges gnupg plus only the packages named in $gnupg_deps.
+# The install block computes $gnupg_deps from the auto-set diff; here I
+# pass it directly to verify that cleanup() uses it verbatim and does not
+# fall back to --auto-remove or anything else. `orphan-before` is what
+# the operator had installed before; the assertion is that it does not
+# appear in the purge line, which is the property that protects the
+# operator's other auto packages from being removed by this installer.
+printf 'orphan-before\n' > "$WORK/auto-set"
+rm -f "$WORK/apt-get.log"
+run_cleanup yes "gnupg-dep-a
+gnupg-dep-b"
+purge_line="$(grep -F ' purge ' "$WORK/apt-get.log" || true)"
+check "and purges gnupg plus only the packages that became auto during its install" \
+	"1" "$(printf '%s' "$purge_line" | grep -c 'gnupg gnupg-dep-a gnupg-dep-b')"
+check "and does not name the orphan that was already auto" \
+	"0" "$(printf '%s' "$purge_line" | grep -c 'orphan-before')"
+
+# Case 3: a machine that already had gpg is left alone. No purge line at
+# all in the log, because the cleanup's apt-get purge is gated on
+# $installed_gnupg.
+printf '' > "$WORK/auto-set"
+: > "$WORK/apt-get.log"
+run_cleanup "" ""
+check "a machine that already had gpg is left alone" "0" \
+	"$(grep -c ' purge ' "$WORK/apt-get.log")"
+
+export PATH="$saved_path"
+WORK="$saved_work"
+printf '%s' "$saved_apt" > "$BIN/apt-get"; chmod +x "$BIN/apt-get"
+
+# Exercise the whole gpg-absent flow without hiding any host binaries. The
+# restricted PATH includes tar because dpkg-deb invokes it during extraction.
+INSTALLER_PATH="$WORK/no-gpg"
+mkdir -p "$INSTALLER_PATH"
+for tool in tr rm mktemp sort comm curl mkdir dpkg-deb tar awk grep sed chmod cat ln head; do
+	ln -s "$(command -v "$tool")" "$INSTALLER_PATH/$tool"
+done
+# Key authentication has its own cases above. Stub it here so this case
+# measures package operations without needing a gpg-agent socket.
+cleanup_fpr=0123456789ABCDEF0123456789ABCDEF01234567
+cat > "$WORK/gpg-stub" <<'GPGSTUB'
+#!/bin/sh
+case "$1" in
+	--show-keys) printf 'pub::::::::::\nfpr:::::::::0123456789ABCDEF0123456789ABCDEF01234567:\n' ;;
+	--no-default-keyring) exit 0 ;;
+	*) exit 1 ;;
+esac
+GPGSTUB
+chmod +x "$WORK/gpg-stub"
+cp "$BIN/id" "$BIN/dpkg" "$INSTALLER_PATH/"
+# The upgrade step looks for the engine; with it present the case below sees
+# only the package operations it is about.
+printf '#!/bin/sh\nexit 0\n' > "$INSTALLER_PATH/unattended-upgrade"
+chmod +x "$INSTALLER_PATH/unattended-upgrade"
+printf '#!/bin/sh\necho "testpkg version v9.9.9"\n' > "$INSTALLER_PATH/testpkg"
+cat > "$INSTALLER_PATH/apt-get" <<'APTSTUB'
+#!/bin/sh
+printf '%s\n' "$*" >> "$WORK/apt-get.log"
+case "$*" in
+	'install -y -qq gnupg')
+		ln -s "$WORK/gpg-stub" "${0%/*}/gpg"
+		printf 'orphan-before\ngnupg-dep-a\ngnupg-dep-b\n' > "$WORK/auto-set"
+		;;
+	purge*) rm -f "${0%/*}/gpg" ;;
+esac
+exit 0
+APTSTUB
+cp "$BIN/apt-mark" "$INSTALLER_PATH/apt-mark"
+chmod +x "$INSTALLER_PATH/testpkg" "$INSTALLER_PATH/apt-get"
+printf 'orphan-before\n' > "$WORK/auto-set"
+: > "$WORK/apt-get.log"
+printf 'fixture signature\n' > "$DEB_GOOD.asc"
+rc=0; run_installer "$DEB_GOOD" "$cleanup_fpr" || rc=$?
+check "a full install with gpg initially missing succeeds" "0" "$rc"
+check "gnupg and its new dependencies are purged before the product install" \
+	"install -y -qq gnupg
+purge -y -qq gnupg gnupg-dep-a gnupg-dep-b
+install -y testpkg" \
+	"$(grep -E '^(install|purge) ' "$WORK/apt-get.log")"
+check "no purge runs after the product install" "0" \
+	"$(awk '/^install -y testpkg$/{installed=1} /^purge /{if(installed) n++} END{print n+0}' "$WORK/apt-get.log")"
+unset INSTALLER_PATH
+
+echo
+echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
+[ "$fail" -eq 0 ]

@@ -56,7 +56,7 @@ env:
   # product installable with one `sh` line, and joining the archive joins both
   # at once.
   # Architectures to collect and serve. Must match the reprepro distribution
-  # (scripts/build-repo.sh) and keyring/glyndor.sources.
+  # (scripts/build/build-repo.sh) and keyring/glyndor.sources.
   ARCHITECTURES: "amd64 arm64"
 
 jobs:
@@ -308,14 +308,14 @@ jobs:
             tag="$(cat "tags/$p" 2>/dev/null || true)"
             [ -n "$tag" ] \
               || { echo "::error::no pinned tag was recorded for $p; refusing to admit packages that cannot be bound to a release"; exit 1; }
-            ./scripts/verify-debs.sh "debs/$p" keyring/glyndor-release-ed25519.b64 "$p" "$tag"
+            ./scripts/verify/verify-debs.sh "debs/$p" keyring/glyndor-release-ed25519.b64 "$p" "$tag"
           done
           # Flatten the per-product, now-verified .deb files into a single
           # directory for reprepro and the keyring build below.
           find debs -mindepth 2 -maxdepth 2 -name '*.deb' -exec mv -t debs {} +
 
       - name: Build keyring package
-        run: ./scripts/build-keyring.sh debs
+        run: ./scripts/build/build-keyring.sh debs
 
       - name: Build signed apt repository
         env:
@@ -326,7 +326,7 @@ jobs:
             echo "::error::GLYNDOR_APT_GPG_PRIVATE_KEY secret is not configured."
             exit 1
           fi
-          ./scripts/build-repo.sh public debs/*.deb
+          ./scripts/build/build-repo.sh public debs/*.deb
           # The keyring package is also offered at the repo root for first-time
           # bootstrap (curl + dpkg -i before apt knows the repo).
           cp debs/glyndor-archive-keyring.deb public/glyndor-archive-keyring.deb
@@ -348,7 +348,7 @@ jobs:
             echo "::error::GLYNDOR_APT_GPG_PRIVATE_KEY secret is not configured."
             exit 1
           fi
-          # Same import and same key selection as scripts/build-repo.sh,
+          # Same import and same key selection as scripts/build/build-repo.sh,
           # re-run here because that script imported into its own ephemeral
           # GNUPGHOME and unset the secret afterwards. This is one more use of
           # the existing key, not a second way to get at it.
@@ -394,7 +394,7 @@ jobs:
             installers="$installers ${spec%%:*}"
           done
           # shellcheck disable=SC2086
-          ./scripts/build-installers.sh public/install $installers
+          ./scripts/build/build-installers.sh public/install $installers
 
       - name: Publish to R2
         env:
@@ -441,7 +441,7 @@ jobs:
           # while reprepro had already written the new hash into the signed
           # index, and the archive served a package its own index rejected.
           # build-keyring.sh is reproducible now (stamped from the key's commit,
-          # locked by tests/build-keyring.test.sh), which is what makes
+          # locked by tests/build/build-keyring.test.sh), which is what makes
           # --size-only sound for that object too. If anything else that is
           # regenerated per run is ever added under pool/, it needs the same
           # property or it does not belong in these passes.
@@ -508,9 +508,9 @@ jobs:
           # never did. That ceiling is reached by the roster in the product
           # context on three architectures, and it would have failed the run
           # AFTER the sync, leaving a fresh archive behind a stale edge cache.
-          # tests/purge-cache.test.sh covers the batching and the fail-closed
+          # tests/publish/purge-cache.test.sh covers the batching and the fail-closed
           # paths.
-          ./scripts/purge-cache.sh "$ARCHIVE_URL" public
+          ./scripts/publish/purge-cache.sh "$ARCHIVE_URL" public
 
       - name: Verify the published archive matches the signed index
         run: |
@@ -538,5 +538,5 @@ jobs:
           # 600s leaves five minutes of the job for everything else and for
           # the script to print which file is not being served as signed.
           # Cancelled-by-timeout prints nothing.
-          ./scripts/verify-published.sh "$ARCHIVE_URL" \
+          ./scripts/verify/verify-published.sh "$ARCHIVE_URL" \
             keyring/glyndor-apt-key.asc 6 10 600

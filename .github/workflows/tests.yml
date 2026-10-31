@@ -13,15 +13,15 @@ name: Tests
 # is why it did not happen for tidiness.
 #
 # The suite is listed one per line. As a single line it grew past the width of
-# any terminal, and tests/locale-pinned.test.sh was dropped from it without
+# any terminal, and tests/ci/policy/locale-pinned.test.sh was dropped from it without
 # anyone noticing -- it sat in tests/, passed by hand, and CI never ran it.
-# tests/ci-runs-every-test.test.sh now fails when that happens again.
+# tests/ci/suites/ci-runs-every-test.test.sh now fails when that happens again.
 #
 # The first item is the runner and the rest are its arguments. A `&&` chain
 # cannot tell a suite that ran every assertion from one that exited early
 # having run three: both leave a zero status and the chain moves on. Every
 # test file now ends by printing a sentinel after its last assertion, and
-# tests/check-suite-completeness.test.sh requires one from every file it was
+# tests/ci/suites/check-suite-completeness.test.sh requires one from every file it was
 # given, naming the file that did not produce one.
 #
 # Order is roughly cheapest-first, so a broken fixture surfaces before the
@@ -42,51 +42,51 @@ jobs:
       # Only prose the suite does not read. README.md is read by
       # readme-bootstrap, keyring-fingerprints, build-index-page and
       # distro-floor, and docs/ by readme-bootstrap, so neither is listed;
-      # tests/shell-ci-scope.test.sh fails if this list grows to a file the
+      # tests/ci/suites/shell-ci-scope.test.sh fails if this list grows to a file the
       # suite reads.
       skip-suite-paths: CONTRIBUTING.md
       test-command: >-
-        ./tests/check-suite-completeness.test.sh
-        ./tests/verify-debs.test.sh
-        ./tests/verify-published.test.sh
-        ./tests/build-keyring.test.sh
-        ./tests/glyndor-upgrade.test.sh
-        ./tests/build-repo.test.sh
-        ./tests/purge-cache.test.sh
-        ./tests/build-index-page.test.sh
-        ./tests/build-installers.test.sh
-        ./tests/install-template.test.sh
-        ./tests/install-template-behaviour.test.sh
-        ./tests/unattended-upgrades.test.sh
-        ./tests/architectures-agree.test.sh
-        ./tests/readme-bootstrap.test.sh
-        ./tests/keyring-fingerprints.test.sh
-        ./tests/publish-workflow.test.sh
-        ./tests/health-check-workflow.test.sh
-        ./tests/distro-floor.test.sh
-        ./tests/locale-pinned.test.sh
-        ./tests/check-test-coverage.test.sh
-        ./tests/ci-runs-every-test.test.sh
-        ./tests/lint-workflow-shell.test.sh
-        ./tests/reusable-line-limit.test.sh
-        ./tests/reusable-shell-ci.test.sh
-        ./tests/shell-ci-scope.test.sh
-        ./tests/cancel-policy.test.sh
-        ./tests/reusable-empty-diff.test.sh
-        ./tests/reusable-dco.test.sh
-        ./tests/check-editorconfig.test.sh
-        ./tests/check-reusable-drift.test.sh
-        ./tests/jobs-are-bounded.test.sh
-        ./tests/workflow-shape.test.sh
-        ./tests/network-calls-are-bounded.test.sh
-        ./tests/reusable-dependabot-freshness.test.sh
-        ./tests/reusable-schedule-freshness.test.sh
-        ./tests/check-suite-on-main.test.sh
-        ./tests/reusable-workflow-lint.test.sh
-      # shellcheck: tests/lint-workflow-shell.test.sh plants a violation and
+        ./tests/ci/suites/check-suite-completeness.test.sh
+        ./tests/verify/verify-debs.test.sh
+        ./tests/verify/verify-published.test.sh
+        ./tests/build/build-keyring.test.sh
+        ./tests/keyring/glyndor-upgrade.test.sh
+        ./tests/build/build-repo.test.sh
+        ./tests/publish/purge-cache.test.sh
+        ./tests/build/build-index-page.test.sh
+        ./tests/build/build-installers.test.sh
+        ./tests/installer/install-template.test.sh
+        ./tests/installer/install-template-behaviour.test.sh
+        ./tests/installer/unattended-upgrades.test.sh
+        ./tests/build/architectures-agree.test.sh
+        ./tests/installer/readme-bootstrap.test.sh
+        ./tests/keyring/keyring-fingerprints.test.sh
+        ./tests/publish/publish-workflow.test.sh
+        ./tests/publish/health-check-workflow.test.sh
+        ./tests/verify/distro-floor.test.sh
+        ./tests/ci/policy/locale-pinned.test.sh
+        ./tests/quality/check-test-coverage.test.sh
+        ./tests/ci/suites/ci-runs-every-test.test.sh
+        ./tests/quality/lint-workflow-shell.test.sh
+        ./tests/ci/reusable/reusable-line-limit.test.sh
+        ./tests/ci/reusable/reusable-shell-ci.test.sh
+        ./tests/ci/suites/shell-ci-scope.test.sh
+        ./tests/ci/policy/cancel-policy.test.sh
+        ./tests/ci/reusable/reusable-empty-diff.test.sh
+        ./tests/ci/reusable/reusable-dco.test.sh
+        ./tests/quality/check-editorconfig.test.sh
+        ./tests/monitoring/check-reusable-drift.test.sh
+        ./tests/ci/policy/jobs-are-bounded.test.sh
+        ./tests/ci/policy/workflow-shape.test.sh
+        ./tests/ci/policy/network-calls-are-bounded.test.sh
+        ./tests/ci/reusable/reusable-dependabot-freshness.test.sh
+        ./tests/ci/reusable/reusable-schedule-freshness.test.sh
+        ./tests/monitoring/check-suite-on-main.test.sh
+        ./tests/ci/reusable/reusable-workflow-lint.test.sh
+      # shellcheck: tests/quality/lint-workflow-shell.test.sh plants a violation and
       # requires the linter to report it, so it needs the linter. The gate
       # itself runs in the shellcheck job against the pinned binary; this one
       # asserts behaviour, which does not turn on the exact version.
-      # python3-yaml: the tooling-isolation step tests/reusable-workflow-lint.test.sh
+      # python3-yaml: the tooling-isolation step tests/ci/reusable/reusable-workflow-lint.test.sh
       # executes imports it, exactly as the workflow-lint job installs it.
       apt-packages: python3-cryptography reprepro shellcheck python3-yaml
