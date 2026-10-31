@@ -31,6 +31,15 @@ on:
         description: Space-separated apt packages the test suite needs
         type: string
         default: ""
+      skip-suite-paths:
+        description: >-
+          Space-separated globs. A pull request whose changed files ALL match
+          one of them skips the dependency install and the test run, and the
+          job still reports so the required check stays green. Empty (the
+          default) never skips. List only files the suite and the scripts it
+          runs do not read; the caller's own test must enforce that.
+        type: string
+        default: ""
       check-exec-bit:
         description: Fail when a script the workflows invoke as ./path is not executable in git
         type: boolean
@@ -41,7 +50,10 @@ permissions:
 
 concurrency:
   group: shell-ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working-directory }}
-  cancel-in-progress: true
+  # Only a pull request supersedes its own earlier run. A push to main is a
+  # distinct commit that has to be judged on its own, and the suite-on-main
+  # watcher reads those verdicts; a cron run is never replaced by the next.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   shellcheck:
@@ -207,11 +219,59 @@ jobs:
       TEST_COMMAND: ${{ inputs.test-command }}
       APT_PACKAGES: ${{ inputs.apt-packages }}
     steps:
+      # Two commits: on a pull request the checkout is the merge commit, whose
+      # first parent is the base branch tip, so HEAD^1..HEAD is exactly what the
+      # pull request changes.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
+
+      # A pull request that touches only files the caller declared as unread by
+      # the suite (`skip-suite-paths`) skips the dependency install and the run
+      # and keeps the job, and therefore the required `shell / test` check,
+      # green. This is a step condition on purpose: a path filter on the
+      # workflow, or an `if` on the calling job, makes GitHub never report
+      # `shell / test` and the required check waits forever.
+      #
+      # Nothing is skipped unless the caller opts in with a list, because which
+      # prose is inert differs per repository: README.md is read by tests in
+      # all three channel repositories, and docs/ by one of them.
+      #
+      # It fails open. Anything that is not clearly a pull request touching only
+      # listed paths -- a push, a schedule, an unreadable diff, an empty list, a
+      # path outside it -- runs the suite. A rename counts as both paths, so
+      # moving a script into a listed directory cannot hide the script.
+      - name: Decide whether the suite is needed
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          SKIP_PATHS: ${{ inputs.skip-suite-paths }}
+        run: |
+          set -euo pipefail
+          docs_only=false
+          if [ "$EVENT" = pull_request ] && [ -n "${SKIP_PATHS// /}" ] \
+            && files="$(git diff --name-only --no-renames HEAD^1 HEAD 2>/dev/null)" \
+            && [ -n "$files" ]; then
+            docs_only=true
+            set -f
+            while IFS= read -r f; do
+              matched=false
+              for pattern in $SKIP_PATHS; do
+                # shellcheck disable=SC2053 # the pattern is meant to glob
+                if [[ "$f" == $pattern ]]; then matched=true; break; fi
+              done
+              [ "$matched" = true ] || docs_only=false
+            done <<< "$files"
+            set +f
+          fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          if [ "$docs_only" = true ]; then
+            echo "Only files the suite does not read changed, so the test suite was skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Install test dependencies
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
           if [ -n "$APT_PACKAGES" ]; then
@@ -231,6 +291,7 @@ jobs:
       # that fixes that, since a `set -e` above this line never reaches the
       # child.
       - name: Run tests
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
           bash -e -o pipefail -c "$TEST_COMMAND"

@@ -32,7 +32,10 @@ permissions:
 
 concurrency:
   group: line-limit-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a pull request supersedes its own earlier run. A push to main is a
+  # distinct commit that has to be judged on its own, and the suite-on-main
+  # watcher reads those verdicts; a cron run is never replaced by the next.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   line-limit:
