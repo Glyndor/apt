@@ -8,10 +8,19 @@ set -e
 state=/var/lib/glyndor-archive-keyring
 case "$1" in
 	remove | deconfigure)
-		if [ -d /run/systemd/system ] && systemctl is-enabled --quiet glyndor-upgrade.timer 2>/dev/null; then
-			mkdir -p "$state"
-			: > "$state/suspended-by-package"
-			systemctl disable --now glyndor-upgrade.timer || true
+		if [ -d /run/systemd/system ]; then
+			# Two questions, answered separately. Whether to remember a
+			# restore depends on the timer having been enabled. Whether to stop
+			# it does not: an operator's `systemctl disable` without --now
+			# leaves it running, and it must not keep firing upgrades while
+			# the package is being removed.
+			if systemctl is-enabled --quiet glyndor-upgrade.timer 2>/dev/null; then
+				mkdir -p "$state"
+				: > "$state/suspended-by-package"
+				systemctl disable --now glyndor-upgrade.timer || true
+			elif systemctl is-active --quiet glyndor-upgrade.timer 2>/dev/null; then
+				systemctl stop glyndor-upgrade.timer || true
+			fi
 		fi
 		;;
 esac
