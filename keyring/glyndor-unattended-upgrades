@@ -14,8 +14,11 @@
 // appends repeated blocks rather than replacing them (measured with
 // `apt-config dump`), so whatever the operator already allows is untouched.
 //
-// To opt out, edit this file - it is a conffile, so dpkg keeps your version
-// across upgrades and will ask before overwriting it.
+// This only adds the archive to unattended-upgrades' own allowlist. Glyndor
+// packages are upgraded by glyndor-upgrade.timer, which does not read this
+// file; to opt out of that, run `systemctl disable --now glyndor-upgrade.timer`.
+// This file is a conffile, so dpkg keeps your version across upgrades and will
+// ask before overwriting it.
 Unattended-Upgrade::Allowed-Origins {
         "Glyndor:stable";
 };

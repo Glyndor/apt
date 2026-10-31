@@ -5,9 +5,9 @@ case "$1" in
 		if [ -d /run/systemd/system ]; then
 			systemctl daemon-reload || true
 		fi
+		# Removing the package undoes its choices, so a reinstall offers the
+		# timer again instead of inheriting a marker from the old install.
+		rm -rf /var/lib/glyndor-archive-keyring
 		;;
 esac
-if [ "$1" = purge ]; then
-	rm -rf /var/lib/glyndor-archive-keyring
-fi
 exit 0

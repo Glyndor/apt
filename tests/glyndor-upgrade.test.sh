@@ -125,6 +125,15 @@ rm -rf "$WORK/run/systemd" "$WORK/state/timer-offered" "$WORK/systemctl.log"
 run_post configure
 check "without systemd nothing is started" "0" \
 	"$([ -f "$WORK/systemctl.log" ] && echo 1 || echo 0)"
+check "and no marker is written, so a later configure tries again" "0" \
+	"$([ -f "$WORK/state/timer-offered" ] && echo 1 || echo 0)"
+
+mkdir -p "$WORK/run/systemd/system"
+printf '#!/bin/sh\ncase "$*" in *enable*) exit 1 ;; esac\n' > "$WORK/sbin/systemctl"
+rm -f "$WORK/state/timer-offered"
+run_post configure
+check "an enable that fails leaves no marker" "0" \
+	"$([ -f "$WORK/state/timer-offered" ] && echo 1 || echo 0)"
 
 for f in postinst prerm postrm; do
 	check "maintainer-$f is valid shell" "0" "$(sh -n "$HERE/keyring/maintainer-$f"; echo $?)"
