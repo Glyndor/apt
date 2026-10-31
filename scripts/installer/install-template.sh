@@ -147,8 +147,9 @@ product_blacklist_state() { # prints: blacklisted | clear | unknown
 		| grep -E '^Unattended-Upgrade::Package-Blacklist::' \
 		| sed -nE 's/.*:: "([^"]*)".*/\1/p')"
 	for _e in $_entries; do
-		printf '%s\n' "@PRODUCT@" | grep -Eq -- "$_e" 2>/dev/null
-		_rc=$?
+		# "|| _rc=$?": under set -e a plain non-match (1) would end the installer.
+		_rc=0
+		printf '%s\n' "@PRODUCT@" | grep -Eq -- "$_e" 2>/dev/null || _rc=$?
 		case "$_rc" in
 			0) echo blacklisted; return 0 ;;
 			2) echo unknown; return 0 ;;
