@@ -39,6 +39,12 @@ jobs:
   shell:
     uses: ./.github/workflows/reusable-shell-ci.yml
     with:
+      # Only prose the suite does not read. README.md is read by
+      # readme-bootstrap, keyring-fingerprints, build-index-page and
+      # distro-floor, and docs/ by readme-bootstrap, so neither is listed;
+      # tests/shell-ci-scope.test.sh fails if this list grows to a file the
+      # suite reads.
+      skip-suite-paths: CONTRIBUTING.md
       test-command: >-
         ./tests/check-suite-completeness.test.sh
         ./tests/verify-debs.test.sh

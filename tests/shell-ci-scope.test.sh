@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 #
 # The test suite is skipped only for a pull request that touches nothing but
-# prose. A wrong "skip" lets a code change merge untested, so the decision is run
-# here against real merge commits, taken from the shipped workflow rather than a
-# copy of it:
+# paths the caller listed in `skip-suite-paths`. A wrong "skip" lets a change
+# merge untested, so the decision is run here against real merge commits, taken
+# from the shipped workflow rather than a copy of it:
 #
-#   * README.md, CONTRIBUTING.md and docs/*.md alone      -> skip
-#   * any script, test, workflow or config with them      -> run
-#   * a script renamed into docs/                          -> run (both paths count)
-#   * a push, a schedule, an unreadable diff               -> run
+#   * only listed paths                                   -> skip
+#   * an empty list                                       -> run (opt-in)
+#   * a listed path with any other                        -> run
+#   * a script renamed into a listed directory            -> run (both paths count)
+#   * a push, a schedule, an unreadable diff              -> run
+#
+# And the list this repository passes must not contain a file the suite reads:
+# README.md is a test input in every channel repository, so a list that grows to
+# include it would let a change that breaks a test merge unseen.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -71,24 +76,34 @@ scenario() {
 	)
 }
 
-# $1 = scenario dir, $2 = event name -> prints docs_only value
+LIST="CONTRIBUTING.md docs/*.md"
+
+# $1 = scenario dir, $2 = event name, $3 = skip list (default $LIST)
+# -> prints docs_only value
 decide() {
 	local out="$WORK/out-$1-$2"
 	: > "$out"
 	(
 		cd "$WORK/$1" || exit 1
-		EVENT="$2" GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null bash "$WORK/scope.sh" >/dev/null 2>&1
+		EVENT="$2" SKIP_PATHS="${3-$LIST}" GITHUB_OUTPUT="$out" GITHUB_STEP_SUMMARY=/dev/null \
+			bash "$WORK/scope.sh" >/dev/null 2>&1
 	)
 	sed -n 's/^docs_only=//p' "$out"
 }
 
-scenario prose 'echo more >> README.md; echo more >> docs/a.md; echo x > CONTRIBUTING.md; mkdir -p docs/sub; echo y > docs/sub/b.md'
-check "prose only on a pull request skips the suite" "true" "$(decide prose pull_request)"
-check "the same change on a push runs it" "false" "$(decide prose push)"
-check "and on a schedule" "false" "$(decide prose schedule)"
+scenario listed 'echo more >> docs/a.md; echo x > CONTRIBUTING.md; mkdir -p docs/sub; echo y > docs/sub/b.md'
+check "only listed paths on a pull request skips the suite" "true" "$(decide listed pull_request)"
+check "the same change on a push runs it" "false" "$(decide listed push)"
+check "and on a schedule" "false" "$(decide listed schedule)"
+check "with an empty list nothing is ever skipped" "false" "$(decide listed pull_request '')"
+check "with a blank list nothing is ever skipped" "false" "$(decide listed pull_request '   ')"
 
-scenario code 'echo more >> README.md; echo "# c" >> scripts/run.sh'
-check "prose plus a script runs the suite" "false" "$(decide code pull_request)"
+scenario readme 'echo more >> README.md'
+check "README.md is not skipped unless the caller lists it" "false" "$(decide readme pull_request)"
+check "and is skipped when the caller does list it" "true" "$(decide readme pull_request 'README.md')"
+
+scenario code 'echo more >> docs/a.md; echo "# c" >> scripts/run.sh'
+check "a listed file plus a script runs the suite" "false" "$(decide code pull_request)"
 
 scenario testchange 'echo "# c" > tests/x.test.sh'
 check "a test file alone runs the suite" "false" "$(decide testchange pull_request)"
@@ -114,6 +129,24 @@ check "an empty change runs the suite" "false" "$(decide empty pull_request)"
 
 mkdir -p "$WORK/shallow" && (cd "$WORK/shallow" && git init -q -b main && git config user.name t && git config user.email t@example.invalid && echo a > README.md && git add -A && git commit -q -m only)
 check "a single commit, so no HEAD^1, runs the suite" "false" "$(decide shallow pull_request)"
+
+# The list this repository really passes. Each entry's literal prefix must not
+# appear in anything the suite reads or runs, other than this test and the
+# workflow files themselves.
+caller_list="$(python3 - "$HERE/.github/workflows/tests.yml" <<'PY'
+import sys, yaml
+wf = yaml.safe_load(open(sys.argv[1]))
+for job in wf["jobs"].values():
+    print(" ".join(str(job.get("with", {}).get("skip-suite-paths", "")).split()))
+PY
+)"
+
+for pattern in $caller_list; do
+	prefix="${pattern%%[*?[]*}"
+	hits="$(grep -rlF -- "$prefix" "$HERE/tests" "$HERE/scripts" 2>/dev/null \
+		| grep -v -e 'shell-ci-scope.test.sh' | tr '\n' ' ')"
+	check "the suite does not read ${pattern} (found in: ${hits:-nowhere})" "" "$hits"
+done
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
