@@ -3,8 +3,7 @@
 # The Glyndor upgrade timer is the thing that keeps every package from this
 # archive current, so what it does is pinned here with the engine stubbed:
 #
-#   * the config it hands unattended-upgrade whitelists the Glyndor packages,
-#     strictly, and nothing else;
+#   * the config it hands unattended-upgrade whitelists the Glyndor packages;
 #   * names with "." or "+" in them are matched literally;
 #   * with no Glyndor index it fails instead of running unrestricted;
 #   * the maintainer scripts switch the timer on once, and leave an operator's
@@ -71,8 +70,8 @@ cp "$WORK/lists/apt.glyndor.net_dists_stable_main_binary-amd64_Packages" \
 run_upgrade >/dev/null; rc=$?
 check "with an index the script runs the engine" "0" "$rc"
 conf="$(cat "$WORK/seen.conf" 2>/dev/null)"
-check "the whitelist is strict" "1" \
-	"$(printf '%s' "$conf" | grep -c 'Package-Whitelist-Strict "true"')"
+check "the whitelist is not strict, so a new dependency is not held back" "1" \
+	"$(printf '%s' "$conf" | grep -c 'Package-Whitelist-Strict "false"')"
 for name in podup epistle glyndor-archive-keyring; do
 	check "$name is whitelisted, anchored" "1" \
 		"$(printf '%s' "$conf" | grep -cF "\"^$name\$\";")"

@@ -4,10 +4,16 @@
 # Run daily by glyndor-upgrade.timer. unattended-upgrade does the work; this
 # script narrows it to this archive. apt reads the file named by APT_CONFIG
 # before the system configuration, so a "clear" in it cannot remove Debian's
-# origins. Package-Whitelist-Strict can: with it set, a package that is not on
-# the list is never touched, whatever origin it comes from, and neither are its
-# dependencies. The list is every package the Glyndor index offers, read at run
-# time so a product published tomorrow is covered without a new keyring.
+# origins. A Package-Whitelist can: a package that is neither on the list nor a
+# dependency of something on it is never touched, whatever origin it comes from.
+# The list is every package the Glyndor index offers, read at run time so a
+# product published tomorrow is covered without a new keyring.
+#
+# The list is deliberately not strict. Strict also holds back the dependencies
+# of a listed package, so a Glyndor release that adds a Depends would be kept
+# back forever, silently (measured on Debian 13: "Package podup is kept back
+# because a related package is kept back"). Not strict, a new dependency is
+# installed with it, and unrelated packages are still left alone.
 #
 # Whatever the operator has configured still applies afterwards, including
 # Unattended-Upgrade::Package-Blacklist: that is their per-package opt-out.
@@ -29,7 +35,7 @@ mkdir -p "$RUN"
 conf="$RUN/apt.conf"
 {
 	echo 'Unattended-Upgrade::Allowed-Origins { "Glyndor:stable"; };'
-	echo 'Unattended-Upgrade::Package-Whitelist-Strict "true";'
+	echo 'Unattended-Upgrade::Package-Whitelist-Strict "false";'
 	echo 'Unattended-Upgrade::Package-Whitelist {'
 	# Names are matched as regular expressions, so "." and "+" are written as
 	# classes; a backslash would need a second level of escaping in this file.
