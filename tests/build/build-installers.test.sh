@@ -133,7 +133,7 @@ check "and says which file" "1" "$(grep -c 'is not valid shell' "$WORK/stderr" |
 # The name goes into a sed replacement and then into a path, so anything that
 # is not a Debian package name is refused rather than escaped.
 
-for bad in 'pod/up' 'pod up' 'PODUP' '../etc/passwd' 'pod;rm -rf /' ''; do
+for bad in 'pod/up' 'pod up' 'PODUP' '../etc/passwd' 'pod;rm -rf /' '' '-x' '--allow-unauthenticated' '.' '..' '.hidden' '+x' 'a'; do
 	rc=0; run - "$bad" || rc=$?
 	check "refuses the package name '$bad'" "1" "$rc"
 done
