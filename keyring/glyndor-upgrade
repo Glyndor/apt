@@ -1,0 +1,42 @@
+#!/bin/sh
+# Upgrade the packages that come from apt.glyndor.net, and only those.
+#
+# Run daily by glyndor-upgrade.timer. unattended-upgrade does the work; this
+# script narrows it to this archive. apt reads the file named by APT_CONFIG
+# before the system configuration, so a "clear" in it cannot remove Debian's
+# origins. Package-Whitelist-Strict can: with it set, a package that is not on
+# the list is never touched, whatever origin it comes from, and neither are its
+# dependencies. The list is every package the Glyndor index offers, read at run
+# time so a product published tomorrow is covered without a new keyring.
+#
+# Whatever the operator has configured still applies afterwards, including
+# Unattended-Upgrade::Package-Blacklist: that is their per-package opt-out.
+set -eu
+
+LISTS="${GLYNDOR_APT_LISTS:-/var/lib/apt/lists}"
+RUN="${GLYNDOR_RUN_DIR:-/run/glyndor-upgrade}"
+
+apt-get update -qq
+
+names="$(awk '/^Package: /{print $2}' \
+	"$LISTS"/apt.glyndor.net_dists_stable_main_binary-*_Packages 2>/dev/null | sort -u)"
+if [ -z "$names" ]; then
+	echo "glyndor-upgrade: no Glyndor package index under $LISTS, nothing to upgrade" >&2
+	exit 1
+fi
+
+mkdir -p "$RUN"
+conf="$RUN/apt.conf"
+{
+	echo 'Unattended-Upgrade::Allowed-Origins { "Glyndor:stable"; };'
+	echo 'Unattended-Upgrade::Package-Whitelist-Strict "true";'
+	echo 'Unattended-Upgrade::Package-Whitelist {'
+	# Names are matched as regular expressions, so "." and "+" are written as
+	# classes; a backslash would need a second level of escaping in this file.
+	for n in $names; do
+		printf '\t"^%s$";\n' "$(printf '%s' "$n" | sed 's/[.+]/[&]/g')"
+	done
+	echo '};'
+} > "$conf"
+
+APT_CONFIG="$conf" exec "${GLYNDOR_UNATTENDED:-unattended-upgrade}"

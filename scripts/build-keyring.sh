@@ -51,7 +51,9 @@ UNATTENDED="$HERE/keyring/glyndor-unattended-upgrades"
 # Every file this package installs. The version suffix is the date the newest of
 # them last changed, so any edit to what clients receive bumps the version that
 # reaches them.
-PACKAGED_INPUTS=(keyring/glyndor-apt-key.asc keyring/glyndor.sources keyring/glyndor-unattended-upgrades)
+PACKAGED_INPUTS=(keyring/glyndor-apt-key.asc keyring/glyndor.sources keyring/glyndor-unattended-upgrades
+	keyring/glyndor-upgrade keyring/glyndor-upgrade.service keyring/glyndor-upgrade.timer
+	keyring/maintainer-postinst keyring/maintainer-prerm keyring/maintainer-postrm)
 
 # Base version from keyring/version, suffixed with that date.
 BASE_VERSION="$(cat "$HERE/keyring/version")"
@@ -80,6 +82,9 @@ VERSION="${BASE_VERSION}+pkg${PKG_DATE}"
 [ -f "$PUBKEY_ASC" ] || { echo "missing public key: $PUBKEY_ASC" >&2; exit 1; }
 [ -f "$SOURCES" ]    || { echo "missing sources file: $SOURCES" >&2; exit 1; }
 [ -f "$UNATTENDED" ] || { echo "missing unattended-upgrades config: $UNATTENDED" >&2; exit 1; }
+for f in "${PACKAGED_INPUTS[@]}"; do
+	[ -f "$HERE/$f" ] || { echo "missing packaged input: $f" >&2; exit 1; }
+done
 
 mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
@@ -92,6 +97,8 @@ install -d -m 0755 "$ROOT/DEBIAN"
 install -d -m 0755 "$ROOT/usr/share/keyrings"
 install -d -m 0755 "$ROOT/etc/apt/sources.list.d"
 install -d -m 0755 "$ROOT/etc/apt/apt.conf.d"
+install -d -m 0755 "$ROOT/usr/lib/glyndor-archive-keyring"
+install -d -m 0755 "$ROOT/usr/lib/systemd/system"
 
 gpg --dearmor < "$PUBKEY_ASC" > "$ROOT/usr/share/keyrings/glyndor.gpg"
 chmod 0644 "$ROOT/usr/share/keyrings/glyndor.gpg"
@@ -157,6 +164,15 @@ install -m 0644 "$SOURCES" "$ROOT/etc/apt/sources.list.d/glyndor.sources"
 # allowlist survives.
 install -m 0644 "$UNATTENDED" "$ROOT/etc/apt/apt.conf.d/51glyndor-unattended-upgrades"
 
+# The daily upgrade of Glyndor packages, separate from the machine's own
+# unattended-upgrades schedule so that one does not decide the other.
+install -m 0755 "$HERE/keyring/glyndor-upgrade" "$ROOT/usr/lib/glyndor-archive-keyring/glyndor-upgrade"
+install -m 0644 "$HERE/keyring/glyndor-upgrade.service" "$ROOT/usr/lib/systemd/system/glyndor-upgrade.service"
+install -m 0644 "$HERE/keyring/glyndor-upgrade.timer" "$ROOT/usr/lib/systemd/system/glyndor-upgrade.timer"
+install -m 0755 "$HERE/keyring/maintainer-postinst" "$ROOT/DEBIAN/postinst"
+install -m 0755 "$HERE/keyring/maintainer-prerm" "$ROOT/DEBIAN/prerm"
+install -m 0755 "$HERE/keyring/maintainer-postrm" "$ROOT/DEBIAN/postrm"
+
 cat > "$ROOT/DEBIAN/control" <<EOF
 Package: glyndor-archive-keyring
 Version: $VERSION
@@ -170,9 +186,12 @@ Description: GPG key and apt source for the Glyndor repository
  https://apt.glyndor.net so Glyndor packages can be installed and kept up to
  date with apt. Key renewals are delivered through apt upgrade.
  .
- It also allows unattended-upgrades to install from this archive, so security
- fixes for Glyndor packages arrive without anyone running apt by hand. Edit
- /etc/apt/apt.conf.d/51glyndor-unattended-upgrades to opt out.
+ It also installs a daily timer, glyndor-upgrade.timer, that upgrades the
+ packages from this archive and nothing else, so fixes for Glyndor packages
+ arrive without anyone running apt by hand. Run
+ systemctl disable --now glyndor-upgrade.timer to opt out; that choice survives
+ upgrades of this package. The archive is also put on the unattended-upgrades
+ allowlist, in /etc/apt/apt.conf.d/51glyndor-unattended-upgrades.
 EOF
 
 cat > "$ROOT/DEBIAN/conffiles" <<'EOF'

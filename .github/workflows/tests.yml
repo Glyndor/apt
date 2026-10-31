@@ -44,6 +44,7 @@ jobs:
         ./tests/verify-debs.test.sh
         ./tests/verify-published.test.sh
         ./tests/build-keyring.test.sh
+        ./tests/glyndor-upgrade.test.sh
         ./tests/build-repo.test.sh
         ./tests/purge-cache.test.sh
         ./tests/build-index-page.test.sh

@@ -57,15 +57,16 @@ not what the floor is about.
 
 ## Updates take care of themselves
 
-The signing key ships **as a package**, so apt owns it, and the keyring puts
-this archive on the `unattended-upgrades` allowlist. Nothing to re-run, no
-expiry to diarise.
+The signing key ships **as a package**, so apt owns it. The same package installs
+`glyndor-upgrade.timer`, which runs daily and upgrades the packages from this archive
+and nothing else, including products published later. Nothing to re-run, no expiry
+to diarise.
 
-> [!NOTE]
-> Debian ships neither `unattended-upgrades` nor the switch that turns it on;
-> Ubuntu server ships both. The installer respects an existing setup rather
-> than overriding it, and says so if it could not install one at all. In that
-> case the archive is on the allowlist but nothing is applying it.
+The timer does not depend on the machine's own `unattended-upgrades` schedule and
+does not change it. To opt out, run `sudo systemctl disable --now glyndor-upgrade.timer`;
+that choice survives upgrades of the package. It needs systemd and the
+`unattended-upgrades` engine, which the install command below puts on the machine
+if it is missing.
 
 ## How it works
 
@@ -131,10 +132,10 @@ sudo dpkg -i glyndor-archive-keyring.deb
 ```
 
 > [!WARNING]
-> Do not stop here and install the package with apt. The keyring puts this
-> archive on the allowlist, but an allowlist does nothing on a machine that is
-> not running unattended upgrades, and only the script installs and switches
-> those on. Run the install command at the top instead.
+> Do not stop here and install the package with apt. The keyring switches the
+> upgrade timer on, but the timer runs the `unattended-upgrades` engine, and
+> only the script installs that when it is missing. Run the install command at
+> the top instead.
 
 ---
 

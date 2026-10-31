@@ -752,6 +752,10 @@ esac
 GPGSTUB
 chmod +x "$WORK/gpg-stub"
 cp "$BIN/id" "$BIN/dpkg" "$INSTALLER_PATH/"
+# The upgrade step looks for the engine; with it present the case below sees
+# only the package operations it is about.
+printf '#!/bin/sh\nexit 0\n' > "$INSTALLER_PATH/unattended-upgrade"
+chmod +x "$INSTALLER_PATH/unattended-upgrade"
 printf '#!/bin/sh\necho "testpkg version v9.9.9"\n' > "$INSTALLER_PATH/testpkg"
 cat > "$INSTALLER_PATH/apt-get" <<'APTSTUB'
 #!/bin/sh

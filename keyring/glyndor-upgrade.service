@@ -1,0 +1,14 @@
+[Unit]
+Description=Upgrade Glyndor packages
+Documentation=https://github.com/Glyndor/apt
+# Without the engine there is nothing to run. The installer puts it on the
+# machine; a host that removed it simply skips the run.
+ConditionPathExists=/usr/bin/unattended-upgrade
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RuntimeDirectory=glyndor-upgrade
+ExecStart=/usr/lib/glyndor-archive-keyring/glyndor-upgrade
+TimeoutStartSec=1h

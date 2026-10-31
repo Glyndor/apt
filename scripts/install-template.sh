@@ -131,83 +131,18 @@ fail() {
 	printf '  %b%s%b %s\n' "$RED" "$CROSS" "$OFF" "error: $1" >&2
 	exit 1
 }
-# Whether unattended-upgrades would actually touch THIS archive, which is a
-# different question from whether it runs at all. Printing "already on" from the
-# switch alone said the second and implied the first (#194).
+# Whether the operator has vetoed this product by name. The daily Glyndor
+# upgrade reads the system configuration after its own, so an
+# Unattended-Upgrade::Package-Blacklist entry that matches the product freezes
+# it, and a machine in that state must not be told it stays current.
 #
-# Read through `apt-config dump` rather than by opening files. The entry may
-# come from any file in apt.conf.d, and this is apt parsing its own
-# configuration instead of us reproducing its precedence rules.
-#
-# Three ways to be excluded, and checking one of them is exactly how a check
-# reports success while the machine sits frozen:
-#
-#   Allowed-Origins     what our keyring writes
-#   Origins-Pattern     a second, equally valid list -- the unattended-upgrades
-#                       README says one OR the other, so a check that knows only
-#                       the spelling we ship is right on every machine we
-#                       configured and wrong on the operator's
-#   Package-Blacklist   origin allowed, package vetoed by name
-#
-# Unknown stays distinguishable from broken: if apt-config cannot be read there
-# is nothing to report, and inventing a warning there would train people to
-# ignore the one that matters.
-archive_upgrade_state() { # prints: allowed | no-origin | blacklisted | unknown
+# Read through `apt-config dump` rather than by opening files: the entry may come
+# from any file in apt.conf.d, and apt is the thing that knows its own
+# precedence. Entries are regular expressions, so "^product$" counts as well as
+# the plain name; one that grep cannot parse is unknown, not a miss.
+product_blacklist_state() { # prints: blacklisted | clear | unknown
 	_dump="$(apt-config dump 2>/dev/null)" || { echo unknown; return 0; }
 	[ -n "$_dump" ] || { echo unknown; return 0; }
-
-	# A value covers this archive when it is one of these forms, and only
-	# these:
-	#
-	#   Glyndor:stable
-	#   origin=Glyndor (with optional ,archive=stable or ,a=stable)
-	#   o=Glyndor with the same optional suite
-	#   site=apt.glyndor.net
-	#
-	# Glyndor:<other suite> does not cover it. Any other Glyndor-mentioning
-	# entry that does not match one of these forms is unknown, not allowed:
-	# the operator spelled it differently from the forms above, so what
-	# the machine does with it cannot be read from here.
-	_values="$(printf '%s\n' "$_dump" \
-		| grep -E '^Unattended-Upgrade::(Allowed-Origins|Origins-Pattern)::' \
-		| sed -nE 's/.*:: "([^"]*)".*/\1/p')"
-
-	_allowed_origin=0
-	_unknown_origin=0
-	for _v in $_values; do
-		case "$_v" in
-			'Glyndor:stable')
-				_allowed_origin=1
-				;;
-			'origin=Glyndor'|'origin=Glyndor,archive=stable'|'origin=Glyndor,a=stable')
-				_allowed_origin=1
-				;;
-			'o=Glyndor'|'o=Glyndor,archive=stable'|'o=Glyndor,a=stable')
-				_allowed_origin=1
-				;;
-			'site=apt.glyndor.net')
-				_allowed_origin=1
-				;;
-			*Glyndor*)
-				_unknown_origin=1
-				;;
-		esac
-	done
-
-	if [ "$_allowed_origin" = 0 ]; then
-		if [ "$_unknown_origin" = 1 ]; then
-			echo unknown
-		else
-			echo no-origin
-		fi
-		return 0
-	fi
-
-	# Blacklist entries are regular expressions. The default blacklist (and
-	# ours) is the product name as a literal, but an operator may also write
-	# "^product" or "^product$", and those still match. An entry that is not
-	# a valid regex is unknown, not a miss: if grep cannot parse what the
-	# operator wrote, what the machine does with it cannot be said either.
 	_entries="$(printf '%s\n' "$_dump" \
 		| grep -E '^Unattended-Upgrade::Package-Blacklist::' \
 		| sed -nE 's/.*:: "([^"]*)".*/\1/p')"
@@ -219,78 +154,26 @@ archive_upgrade_state() { # prints: allowed | no-origin | blacklisted | unknown
 			2) echo unknown; return 0 ;;
 		esac
 	done
-
-	echo allowed
+	echo clear
 }
 
-# Whether unattended-upgrades is scheduled to fetch and apply updates on its
-# own. The previous shortcut asked "does the file by that name exist" and
-# answered "already on" on that basis, so a file containing
-# APT::Periodic::Unattended-Upgrade "0" was reported as on to the operator
-# who wrote it. Reading apt-config's own dump is the smallest change that
-# fixes that, since the value can come from any file in apt.conf.d and apt
-# is the thing that knows its own precedence.
+# Whether the Glyndor upgrade timer, shipped by glyndor-archive-keyring, is on.
+# That timer is what keeps every package from this archive current, and it is
+# independent of the machine's own unattended-upgrades schedule: this asks about
+# the timer and nothing else.
 #
-# Three responses, the same shape as archive_upgrade_state above:
-#
-#   on       APT::Periodic::Unattended-Upgrade is "1" and Update-Package-Lists
-#            is also "1". The installer leaves it alone.
-#   off      one of the two APT::Periodic keys is at "0". Update-Package-
-#            Lists "0" alone is enough: no list refresh, so even with
-#            Unattended-Upgrade "1" there is nothing to upgrade. The previous
-#            branch silently flipped this to "1".
-#   unknown  no APT::Periodic keys are set, or `apt-config` cannot be read.
-#            A machine with no keys can run unattended-upgrades on a systemd
-#            timer, and a binary on/off check would write settings the
-#            operator did not ask for. The installer reports this and
-#            writes nothing.
-# What this must never go back to, recorded because the reason is not
-# reconstructable from the code that remains.
-#
-# The question was once asked as `dpkg -s unattended-upgrades`, meaning "is the
-# package absent" rather than "is the schedule off". That was a safe proxy only
-# while no product on this archive pulled the package in, and it stopped being
-# one the moment a product did: `apt-get install @PRODUCT@` runs earlier in this
-# script and passes no `--no-install-recommends`, so a product that merely
-# recommends unattended-upgrades installs it too. The test then read true on a
-# machine that had never seen the package, the other branch became unreachable,
-# and the installer reported success having switched nothing on. It was reported
-# from Glyndor/podup, whose debian/control came to read
-# `Depends: ... unattended-upgrades`.
-#
-# The missing switch was not the whole cost. `52glyndor-safety`, the file that
-# stops an unattended upgrade rebooting a server on its own, is written in the
-# same branch and would have gone with it.
-#
-# Reading apt-config replaces both the package test and the file test, and it
-# answers the question that was being asked all along.
-upgrade_switch_state() { # prints: on | off | unknown
-	_dump="$(apt-config dump 2>/dev/null)" || { echo unknown; return 0; }
-	[ -n "$_dump" ] || { echo unknown; return 0; }
-
-	# Either of the two APT::Periodic keys at "0" disables the schedule.
-	# Update-Package-Lists "0" alone is enough: no list refresh, so even
-	# with Unattended-Upgrade "1" there is nothing to upgrade. The previous
-	# shortcut silently wrote "1" on top of this.
-	if printf '%s\n' "$_dump" \
-		| grep -qE '^APT::Periodic::(Unattended-Upgrade|Update-Package-Lists) "0"'; then
-		echo off
-		return 0
-	fi
-
-	# Both keys at "1" is what this installer writes and what Ubuntu ships
-	# with on its switch file. Missing one is unknown, not on: a systemd
-	# timer can run unattended-upgrades with either key unset, and we
-	# cannot read the timer here.
-	if printf '%s\n' "$_dump" \
-		| grep -qE '^APT::Periodic::Unattended-Upgrade "1"' \
-		&& printf '%s\n' "$_dump" \
-		| grep -qE '^APT::Periodic::Update-Package-Lists "1"'; then
-		echo on
-		return 0
-	fi
-
-	echo unknown
+#   enabled     systemd will run it
+#   disabled    the operator ran `systemctl disable`; the package never undoes it
+#   no-systemd  not running under systemd, so there is no timer to run
+#   missing     the unit is not installed (an older keyring that has not upgraded)
+glyndor_timer_state() { # prints: enabled | disabled | no-systemd | missing
+	[ -d /run/systemd/system ] || { echo no-systemd; return 0; }
+	_state="$(systemctl is-enabled glyndor-upgrade.timer 2>/dev/null || true)"
+	case "$_state" in
+		enabled | enabled-runtime) echo enabled ;;
+		disabled) echo disabled ;;
+		*) echo missing ;;
+	esac
 }
 
 # --- end output --------------------------------------------------------------
@@ -598,102 +481,76 @@ step "@PRODUCT@ installed" "$version"
 
 # Automatic upgrades.
 #
-# The keyring package puts this archive on unattended-upgrades' allowlist, which
-# is the part that is ours to decide. Whether the machine runs unattended
-# upgrades at all is the operator's, and the installer reports it from
-# `apt-config dump` rather than touching it: a `20auto-upgrades` containing
-# APT::Periodic::Unattended-Upgrade "0" is a deliberate "off", and the file-
-# existence shortcut it replaces called that "already on" without reading the
-# value. The switch state is `upgrade_switch_state` above; the archive side is
-# `archive_upgrade_state` further up.
+# Every package from this archive is meant to keep itself current. That is done
+# by glyndor-upgrade.timer, which glyndor-archive-keyring installed above and
+# switched on the first time it reached this machine. It upgrades Glyndor
+# packages and nothing else, so it neither depends on nor changes the machine's
+# own unattended-upgrades schedule.
 #
-# An operator whose machine has the switch off -- or whose machine has never
-# had the package installed and a systemd timer drives what arrives -- now sees
-# that as the installer's last word and is pointed at the reconfigure command.
-# The README's promise that this script "switches automatic security upgrades
-# on" is narrower than it was; it now describes the explicit on case and a
-# quiet no-op on the others.
-#
-# Three answers for the switch, three for the archive, with combinations the
-# matrix deliberately does not over-promise on. Read in order: on+anything is
-# the operator's call (and the case statement below is reached only there);
-# off and unknown leave the machine alone.
+# What is left for this script is the engine the timer runs, which a product may
+# not depend on, and telling the operator the truth about what they have:
+# running, switched off by them, or unable to run.
 # --- automatic upgrades ------------------------------------------------------
 #
 # Delimited because tests/unattended-upgrades.test.sh runs this section in
-# isolation. It used to end at the first `fi`, which stopped being the end of it
-# when the step moved out of the branches and below the case.
+# isolation.
 
-# Empty means the failure branch below already said its piece in red; the
-# script runs under `set -u`, so this cannot be left undeclared.
+# Empty means a branch below already said its piece in red; the script runs
+# under `set -u`, so this cannot be left undeclared.
 upgrade_switch=""
 
-# Decide what to tell the operator from `upgrade_switch_state`, not from the
-# presence of a file by that name. The shortcut this replaces reported a
-# switch file with APT::Periodic::Unattended-Upgrade "0" as "already on" and
-# went on to overwrite it to "1", and that was the one sentence in this
-# script that lied to a human at the moment they trusted it.
-#
-# The three answers match what `upgrade_switch_state` returns above:
-#
-#   on       the operator has the schedule on; the case statement further
-#            down handles the archive side of what they will be told.
-#   off      the operator has one of the APT::Periodic keys at "0". The
-#            previous branch silently wrote "1" on top of that. Now reported
-#            as their config, with how to change it.
-#   unknown  no APT::Periodic keys are set, or apt-config cannot be read. A
-#            systemd timer can run unattended-upgrades with neither key, and
-#            a binary on/off would write settings the operator did not ask
-#            for. Report and write nothing.
-case "$(upgrade_switch_state)" in
-	on)
-		upgrade_switch=kept
-		;;
-	off)
-		printf '  %b%s%b %-32s%b%s%b\n' "$RED" "$CROSS" "$OFF" \
-			"Automatic security upgrades" "$DIM" "switched off, left alone" "$OFF" >&2
-		note "@PRODUCT@ will not receive security fixes on its own" >&2
-		note "switch it on with: sudo dpkg-reconfigure -plow unattended-upgrades" >&2
-		;;
-	*)
-		note "could not determine whether automatic upgrades are on" >&2
-		note "@PRODUCT@ may or may not receive security fixes on its own" >&2
-		;;
-esac
+if ! command -v unattended-upgrade >/dev/null 2>&1; then
+	apt-get install -y -qq unattended-upgrades >/dev/null 2>&1 || true
+fi
 
-# One line for two facts, when the switch is on: unattended-upgrades runs,
-# and it is allowed to touch this archive. Both have to hold for the sentence
-# a reader takes away from it -- that @PRODUCT@ stays current on its own -- to
-# be true.
-if [ "$upgrade_switch" = kept ]; then
-	case "$(archive_upgrade_state)" in
-		allowed)
-			step "Automatic security upgrades" "already on, left alone"
+if ! command -v unattended-upgrade >/dev/null 2>&1; then
+	printf '  %b%s%b %-32s%b%s%b\n' "$RED" "$CROSS" "$OFF" \
+		"Automatic upgrades" "$DIM" "engine not installed" "$OFF" >&2
+	note "unattended-upgrades could not be installed" >&2
+	note "@PRODUCT@ will not be upgraded on its own" >&2
+else
+	case "$(glyndor_timer_state)" in
+		enabled)
+			upgrade_switch=on
 			;;
-		no-origin)
-			# The keyring was installed moments ago and ships this entry, so
-			# reaching here means it was opted out of rather than missing.
-			# Say what is true and what to do, and do not undo their choice.
+		disabled)
+			# Their choice; the package never re-enables it. Say so, and say
+			# how to undo it, but do not undo it.
 			printf '  %b%s%b %-32s%b%s%b\n' "$RED" "$CROSS" "$OFF" \
-				"Automatic security upgrades" "$DIM" \
-				"on, but not for this archive" "$OFF" >&2
-			note "unattended-upgrades runs, and nothing allows apt.glyndor.net" >&2
-			note "so @PRODUCT@ will not be upgraded on its own" >&2
-			note "restore it with: dpkg --force-confmiss -i the keyring .deb" >&2
+				"Automatic upgrades" "$DIM" "switched off, left alone" "$OFF" >&2
+			note "@PRODUCT@ will not be upgraded on its own" >&2
+			note "switch it on with: sudo systemctl enable --now glyndor-upgrade.timer" >&2
+			;;
+		no-systemd)
+			note "this machine is not running systemd, so there is no upgrade timer" >&2
+			note "upgrade by hand with: sudo apt-get install --only-upgrade @PRODUCT@" >&2
+			;;
+		*)
+			note "the Glyndor upgrade timer is not installed" >&2
+			note "@PRODUCT@ may not be upgraded on its own" >&2
+			;;
+	esac
+fi
+
+# One line, when the timer is on: it runs, and the operator has not vetoed this
+# product. Both have to hold for the sentence a reader takes away -- that
+# @PRODUCT@ stays current on its own -- to be true.
+if [ "$upgrade_switch" = on ]; then
+	case "$(product_blacklist_state)" in
+		clear)
+			step "Automatic upgrades" "daily, Glyndor packages only"
 			;;
 		blacklisted)
 			printf '  %b%s%b %-32s%b%s%b\n' "$RED" "$CROSS" "$OFF" \
-				"Automatic security upgrades" "$DIM" \
+				"Automatic upgrades" "$DIM" \
 				"on, but @PRODUCT@ is blacklisted" "$OFF" >&2
 			note "Unattended-Upgrade::Package-Blacklist names @PRODUCT@" >&2
 			note "so @PRODUCT@ will not be upgraded on its own" >&2
 			;;
 		*)
-			# archive_upgrade_state returned unknown on a switch that is
-			# on. The previous branch printed a green tick that implied the
-			# archive is allowed; that has not been verified.
-			note "automatic upgrades are on, but this archive's allowlist" >&2
-			note "could not be verified" >&2
+			# A green tick would imply the product is not vetoed; that has
+			# not been verified.
+			note "the daily upgrade is on, but the blacklist could not be read" >&2
 			;;
 	esac
 fi
