@@ -4,16 +4,20 @@
 # Run daily by glyndor-upgrade.timer. unattended-upgrade does the work; this
 # script narrows it to this archive. apt reads the file named by APT_CONFIG
 # before the system configuration, so a "clear" in it cannot remove Debian's
-# origins. A Package-Whitelist can: a package that is neither on the list nor a
-# dependency of something on it is never touched, whatever origin it comes from.
-# The list is every package the Glyndor index offers, read at run time so a
-# product published tomorrow is covered without a new keyring.
+# origins. A strict Package-Whitelist can: a package that is not on the list is
+# never touched, whatever origin it comes from.
 #
-# The list is deliberately not strict. Strict also holds back the dependencies
-# of a listed package, so a Glyndor release that adds a Depends would be kept
-# back forever, silently (measured on Debian 13: "Package podup is kept back
-# because a related package is kept back"). Not strict, a new dependency is
-# installed with it, and unrelated packages are still left alone.
+# The list is not "every Glyndor package". It is exactly what apt would change
+# to upgrade the Glyndor packages installed here, asked of `apt-get -s`: those
+# packages plus any dependency a new release adds or needs upgraded. Both
+# simpler lists were measured on Debian 13 and fail in opposite directions:
+#   strict, Glyndor names only   a release that adds a Depends is "kept back
+#                                because a related package is kept back",
+#                                forever and silently;
+#   non-strict                   upgrading podup also upgraded curl, the kernel
+#                                and other packages it has nothing to do with.
+# Read at run time, so a product published tomorrow is covered without a new
+# keyring.
 #
 # Whatever the operator has configured still applies afterwards, including
 # Unattended-Upgrade::Package-Blacklist: that is their per-package opt-out.
@@ -31,15 +35,33 @@ if [ -z "$names" ]; then
 	exit 1
 fi
 
+# Only what is installed: --only-upgrade never installs a Glyndor package the
+# operator did not choose.
+# shellcheck disable=SC2086 # one argument per package name
+installed="$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' $names 2>/dev/null \
+	| awk '$1 == "ii" {print $2}')"
+if [ -z "$installed" ]; then
+	echo "glyndor-upgrade: no Glyndor package is installed, nothing to upgrade"
+	exit 0
+fi
+
+# shellcheck disable=SC2086
+plan="$(apt-get -s --only-upgrade install $installed 2>/dev/null \
+	| awk '/^Inst / {print $2}' | sort -u)"
+if [ -z "$plan" ]; then
+	echo "glyndor-upgrade: everything from the Glyndor archive is current"
+	exit 0
+fi
+
 mkdir -p "$RUN"
 conf="$RUN/apt.conf"
 {
 	echo 'Unattended-Upgrade::Allowed-Origins { "Glyndor:stable"; };'
-	echo 'Unattended-Upgrade::Package-Whitelist-Strict "false";'
+	echo 'Unattended-Upgrade::Package-Whitelist-Strict "true";'
 	echo 'Unattended-Upgrade::Package-Whitelist {'
 	# Names are matched as regular expressions, so "." and "+" are written as
 	# classes; a backslash would need a second level of escaping in this file.
-	for n in $names; do
+	for n in $plan; do
 		printf '\t"^%s$";\n' "$(printf '%s' "$n" | sed 's/[.+]/[&]/g')"
 	done
 	echo '};'

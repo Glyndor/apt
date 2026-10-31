@@ -3,7 +3,8 @@
 # The Glyndor upgrade timer is the thing that keeps every package from this
 # archive current, so what it does is pinned here with the engine stubbed:
 #
-#   * the config it hands unattended-upgrade whitelists the Glyndor packages;
+#   * the config it hands unattended-upgrade whitelists exactly what apt would
+#     change to upgrade the installed Glyndor packages, strictly;
 #   * names with "." or "+" in them are matched literally;
 #   * with no Glyndor index it fails instead of running unrestricted;
 #   * the maintainer scripts switch the timer on once, and leave an operator's
@@ -31,25 +32,37 @@ check() { # <description> <expected> <actual>
 # --- the upgrade script -------------------------------------------------------
 
 mkdir -p "$WORK/bin" "$WORK/lists" "$WORK/run"
-# apt-get does nothing here; unattended-upgrade records the config it was given.
-printf '#!/bin/sh\nexit 0\n' > "$WORK/bin/apt-get"
+# apt-get -s prints the plan in $WORK/plan.txt; anything else does nothing.
+# dpkg-query reports what is "installed" from $WORK/installed.txt.
+cat > "$WORK/bin/apt-get" <<STUB
+#!/bin/sh
+case "\$*" in
+	*--only-upgrade*) cat "$WORK/plan.txt" 2>/dev/null; echo "\$*" > "$WORK/sim-args" ;;
+esac
+exit 0
+STUB
+cat > "$WORK/bin/dpkg-query" <<STUB
+#!/bin/sh
+cat "$WORK/installed.txt" 2>/dev/null
+STUB
 cat > "$WORK/bin/unattended-upgrade" <<STUB
 #!/bin/sh
 cp "\$APT_CONFIG" "$WORK/seen.conf"
 STUB
-chmod +x "$WORK/bin/apt-get" "$WORK/bin/unattended-upgrade"
+chmod +x "$WORK/bin/apt-get" "$WORK/bin/dpkg-query" "$WORK/bin/unattended-upgrade"
 
 run_upgrade() {
+	rm -f "$WORK/seen.conf"
 	env PATH="$WORK/bin:$PATH" GNUPGHOME=/nonexistent \
 		GLYNDOR_APT_LISTS="$WORK/lists" GLYNDOR_RUN_DIR="$WORK/run" \
 		GLYNDOR_UNATTENDED="$WORK/bin/unattended-upgrade" \
 		sh "$HERE/keyring/glyndor-upgrade" 2>&1
 }
+ran() { [ -f "$WORK/seen.conf" ] && echo 1 || echo 0; }
 
 run_upgrade >/dev/null; rc=$?
 check "with no Glyndor index the script fails" "1" "$rc"
-check "and does not run the engine unrestricted" "0" \
-	"$([ -f "$WORK/seen.conf" ] && echo 1 || echo 0)"
+check "and does not run the engine unrestricted" "0" "$(ran)"
 
 cat > "$WORK/lists/apt.glyndor.net_dists_stable_main_binary-amd64_Packages" <<'PKG'
 Package: podup
@@ -67,23 +80,39 @@ PKG
 cp "$WORK/lists/apt.glyndor.net_dists_stable_main_binary-amd64_Packages" \
 	"$WORK/lists/apt.glyndor.net_dists_stable_main_binary-arm64_Packages"
 
+printf 'un  epistle\n' > "$WORK/installed.txt"
 run_upgrade >/dev/null; rc=$?
-check "with an index the script runs the engine" "0" "$rc"
+check "with no Glyndor package installed there is nothing to do" "0" "$rc"
+check "and the engine does not run" "0" "$(ran)"
+
+printf 'ii  podup\nii  libfoo.bar+baz\nun  epistle\n' > "$WORK/installed.txt"
+: > "$WORK/plan.txt"
+run_upgrade >/dev/null; rc=$?
+check "when everything is current the script succeeds" "0" "$rc"
+check "and the engine does not run" "0" "$(ran)"
+check "only installed Glyndor packages are asked about" "1" \
+	"$(grep -c 'install podup libfoo.bar+baz$' "$WORK/sim-args")"
+
+# podup is upgraded and its new release needs podman, which is not installed.
+printf 'Inst podup [1] (2 stable)\nInst podman (5.4 trixie)\nInst libfoo.bar+baz (2 stable)\n' > "$WORK/plan.txt"
+run_upgrade >/dev/null; rc=$?
+check "with something to upgrade the script runs the engine" "0" "$rc"
+check "and hands it a config" "1" "$(ran)"
 conf="$(cat "$WORK/seen.conf" 2>/dev/null)"
-check "the whitelist is not strict, so a new dependency is not held back" "1" \
-	"$(printf '%s' "$conf" | grep -c 'Package-Whitelist-Strict "false"')"
-for name in podup epistle glyndor-archive-keyring; do
-	check "$name is whitelisted, anchored" "1" \
-		"$(printf '%s' "$conf" | grep -cF "\"^$name\$\";")"
-done
+check "the whitelist is strict" "1" \
+	"$(printf '%s' "$conf" | grep -c 'Package-Whitelist-Strict "true"')"
+check "an upgraded Glyndor package is whitelisted, anchored" "1" \
+	"$(printf '%s' "$conf" | grep -cF '"^podup$";')"
+check "a dependency the release needs is whitelisted too" "1" \
+	"$(printf '%s' "$conf" | grep -cF '"^podman$";')"
 check "a dot and a plus are matched literally" "1" \
 	"$(printf '%s' "$conf" | grep -cF '"^libfoo[.]bar[+]baz$";')"
-check "a package listed in both architectures appears once" "1" \
-	"$(printf '%s' "$conf" | grep -cF '"^podup$";')"
+check "a Glyndor package that needs no upgrade is not named" "0" \
+	"$(printf '%s' "$conf" | grep -cF 'glyndor-archive-keyring')"
+check "nothing outside the plan is named" "0" \
+	"$(printf '%s' "$conf" | grep -c 'curl')"
 check "the archive's own origin is allowed" "1" \
 	"$(printf '%s' "$conf" | grep -c 'Allowed-Origins { "Glyndor:stable"; }')"
-check "nothing outside the index is named" "0" \
-	"$(printf '%s' "$conf" | grep -c 'nginx')"
 
 # --- maintainer scripts -------------------------------------------------------
 
