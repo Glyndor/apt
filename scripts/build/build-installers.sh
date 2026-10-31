@@ -30,8 +30,11 @@ mkdir -p "$OUT_DIR"
 
 for product in "$@"; do
 	case "$product" in
-		*[!a-z0-9.+-]* | '')
-			echo "::error::refusing to generate an installer for '$product': a package name is lowercase alphanumerics, dot, plus and hyphen" >&2
+		*[!a-z0-9.+-]* | '' | [!a-z0-9]* | ?)
+			# Debian policy: at least two characters, starting with a letter or
+			# digit. A leading hyphen would reach apt-get as an option, and "."
+			# or ".." would name a directory instead of a file.
+			echo "::error::refusing to generate an installer for '$product': a package name is lowercase alphanumerics, dot, plus and hyphen, at least two characters, starting with a letter or digit" >&2
 			exit 1
 			;;
 	esac
