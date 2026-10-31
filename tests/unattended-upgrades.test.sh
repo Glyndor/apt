@@ -1,34 +1,22 @@
 #!/usr/bin/env bash
 #
-# The installer decides whether unattended-upgrades runs on its own by asking
-# `apt-config dump`, not by asking whether the file by that name exists. The
-# file-existence shortcut this replaces reported a 20auto-upgrades with
-# APT::Periodic::Unattended-Upgrade "0" as "already on" to the operator who
-# wrote it and went on to overwrite the value to "1" without asking. The new
-# function reads the value and returns on, off, or unknown; the installer
-# prints one of three messages and writes nothing in the off or unknown cases.
+# What the installer tells the operator about automatic upgrades.
 #
-# Four observations the screen must show correctly:
+# Keeping Glyndor packages current is the job of glyndor-upgrade.timer, which
+# the keyring package installs and switches on. The installer does not touch
+# the machine's own APT::Periodic schedule. What it does here is install the
+# engine the timer runs when that is missing, and report the truth:
 #
-#   1. APT::Periodic::Unattended-Upgrade "0" -> "switched off, left alone"
-#   2. APT::Periodic::Unattended-Upgrade "1" -> "already on, left alone"
-#                                             (when the archive is allowed)
-#   3. no APT::Periodic keys at all        -> "could not determine"
-#   4. a file present with non-config text -> "could not determine"
-#                                             (the file's contents are not
-#                                              apt configuration, so apt reads
-#                                              it as no APT::Periodic keys)
+#   timer enabled          -> "daily, Glyndor packages only"
+#   timer disabled         -> "switched off, left alone" and how to undo it
+#   no systemd             -> a note, no claim
+#   unit not installed     -> a note, no claim
+#   engine cannot install  -> "engine not installed", in red
+#   product blacklisted    -> "on, but <product> is blacklisted", in red
 #
-# Tests 5+ are the archive-side ones (#194): what the operator is told when
-# the switch is on. The fixtures that used a placeholder file as evidence of
-# "the operator had this set" pinned the file-existence shortcut; they now
-# use a file with the real APT::Periodic values, which is what a real machine
-# with the keyring installed looks like.
-#
-# This runs the real block out of the shipped script rather than a copy,
-# with `/etc/apt/apt.conf.d` redirected into a temporary tree, `apt-config`
-# stubbed, so what is asserted is what the installer does rather than what
-# it looks like.
+# This runs the real block out of the shipped script rather than a copy, with
+# systemd's directory redirected into a sandbox and systemctl, apt-config and
+# the engine stubbed, so what is asserted is what the installer does.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -52,405 +40,122 @@ check() { # <description> <expected> <actual>
 }
 
 # Cut the block out of the shipped script by its own markers, so this cannot
-# drift from what ships. A copy pasted in here would keep passing after the
-# original changed, which is the failure this whole file exists to catch.
+# drift from what ships.
 extract_block() {
 	awk '/^# --- automatic upgrades ---/,/^# --- end automatic upgrades ---/' "$SCRIPT"
 }
-
-# The block calls step() and doing(), which the installer defines near the top.
-# Running the block without them does not error out loudly -- `sh` reports
-# "not found" and carries on -- so the block would write the right files while
-# saying nothing, and the assertions about what it says would fail with no clue
-# why. Extract the definitions and prepend them.
 extract_output_layer() {
 	awk '/^# --- output ---/,/^# --- end output ---/' "$SCRIPT"
 }
 
 output_layer="$(extract_output_layer)"
-# Emptiness only catches a missing OPENING marker. Drop the closing one and awk
-# runs to end of file: the extract is not empty, it is the rest of the script,
-# and the upgrades block would then be defined twice and run twice. So check
-# what the extract contains at both ends -- it has to define the functions the
-# block calls, and it has to have stopped before the block itself.
-#
-# 20auto-upgrades is the keyword used by the surrounding block; appearing in
-# the output layer means the extract ran past the closing marker and picked
-# up a snippet of the block.
 case "$output_layer" in
 	*"step()"*) : ;;
 	*)
 		echo "FAIL  the output layer in $SCRIPT does not define step()" >&2
-		echo "      its opening marker moved; the block would run without it" >&2
 		exit 1
 		;;
 esac
+# The layer must have stopped before the block: if it swallowed it, the block
+# would be defined twice and run twice.
 case "$output_layer" in
-	*'20auto-upgrades'*)
+	*'upgrade_switch=""'*)
 		echo "FAIL  the output layer extract ran past its closing marker" >&2
-		echo "      it swallowed the upgrades block, which would then run twice" >&2
 		exit 1
 		;;
 esac
-
 block="$(extract_block)"
-if [ -z "$block" ]; then
-	echo "FAIL  could not find the automatic-upgrades block in $SCRIPT" >&2
-	echo "      its opening marker changed; this test is now measuring nothing" >&2
-	exit 1
-fi
-# Emptiness only catches a missing OPENING marker; drop the closing one and awk
-# runs to end of file, so the extract is not empty, it is the rest of the
-# script. Same failure the output layer's guard was widened for.
-#
-# The sentinel is the function DEFINITION, not its name: the block calls
-# archive_upgrade_state, so matching the bare name fired on a correct extract.
-case "$block" in
-	*'archive_upgrade_state() {'*)
-		echo "FAIL  the automatic-upgrades extract ran past its closing marker" >&2
-		echo "      it swallowed the rest of the script" >&2
-		exit 1
-		;;
-esac
 case "$block" in
 	*'upgrade_switch'*) : ;;
 	*)
-		echo "FAIL  the automatic-upgrades extract does not set upgrade_switch" >&2
-		echo "      its markers moved; the block below would report nothing" >&2
+		echo "FAIL  could not find the automatic-upgrades block in $SCRIPT" >&2
+		exit 1
+		;;
+esac
+case "$block" in
+	*'glyndor_timer_state() {'*)
+		echo "FAIL  the block extract ran past its closing marker" >&2
 		exit 1
 		;;
 esac
 
-# Prepare a runnable copy: the config directory moves into the sandbox, and
-# the template placeholder is filled in. The earlier `apt-get install -y -qq
-# unattended-upgrades` substitution has been removed because that branch no
-# longer exists; the sed is left in place so older copies of the script
-# still run the assertion below without it failing to construct.
-prepare() { # $1 = sandbox
-	mkdir -p "$1/apt.conf.d"
-	{ extract_output_layer; extract_block; } \
-		| sed 's|apt-get install -y -qq unattended-upgrades|true|' \
-		| sed 's|@PRODUCT@|testproduct|g' \
-		> "$1/block.sh"
-}
-
-# The block runs unmodified. `apt-config` is stubbed because this test is about what
-# the installer does with what it reads, not about apt reading it.
-#
-# $2 is what the stubbed `apt-config` prints. Without a stub the function
-# returns "unknown" -- honest, but it means the path that distinguishes on
-# from off is never exercised and every assertion below would pass with it
-# deleted.
-run_block() { # $1=sandbox  $2=apt-config dump output
-	mkdir -p "$1/bin"
+# $1 = sandbox, $2 = enabled|disabled|missing|nosystemd, $3 = apt-config dump,
+# $4 = engine: present|absent|uninstallable
+run_case() {
+	local s="$1" state="$2" dump="$3" engine="${4:-present}"
+	mkdir -p "$s/bin" "$s/systemd"
+	[ "$state" = nosystemd ] && rmdir "$s/systemd"
 	{
-		echo '#!/bin/sh'
-		echo "cat <<'DUMP'"
-		printf '%s\n' "${2-}"
-		echo 'DUMP'
-	} > "$1/bin/apt-config"
-	chmod +x "$1/bin/apt-config"
-	( cd "$1" && PATH="$1/bin:$PATH" sh block.sh 2>&1 )
+		extract_output_layer
+		extract_block
+	} | sed -e 's|apt-get install -y -qq unattended-upgrades|touch engine-installed|' \
+		-e "s|/run/systemd/system|$s/systemd|g" \
+		-e 's|@PRODUCT@|testproduct|g' > "$s/block.sh"
+	# The engine is found by name on PATH. "absent" makes it appear only once the
+	# stubbed install has run; "uninstallable" makes it never appear.
+	case "$engine" in
+		absent) sed -i 's|command -v unattended-upgrade >/dev/null 2>&1|[ -f engine-installed ]|' "$s/block.sh" ;;
+		uninstallable) sed -i 's|command -v unattended-upgrade >/dev/null 2>&1|false|; s|touch engine-installed|false|' "$s/block.sh" ;;
+	esac
+	printf '%s\n' "$dump" > "$s/dump.txt"
+	printf '#!/bin/sh\ncat "%s/dump.txt"\n' "$s" > "$s/bin/apt-config"
+	# shellcheck disable=SC2016 # $1 is meant to expand in the stub, not here
+	printf '#!/bin/sh\n[ "$1" = is-enabled ] && echo "%s" && [ "%s" = enabled ]\n' "$state" "$state" > "$s/bin/systemctl"
+	printf '#!/bin/sh\nexit 0\n' > "$s/bin/unattended-upgrade"
+	chmod +x "$s/bin/"*
+	( cd "$s" && PATH="$s/bin:$PATH" sh block.sh 2>&1 )
 }
 
-# What apt-config dump returns for each scenario. Each stub has the right
-# APT::Periodic keys (or not) for the switch state and the right
-# Unattended-Upgrade::* entries for the archive state. The stubs are what
-# the function reads, so this is also what makes the test reproducible
-# against a sandbox that never installs unattended-upgrades.
+says() { printf '%s' "$1" | grep -q "$2" && echo 1 || echo 0; }
 
-ON_PERIODIC='APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Unattended-Upgrade "1";'
+NOBL='APT::Periodic::Unattended-Upgrade "0";'
 
-OFF_PERIODIC='APT::Periodic::Update-Package-Lists "0";
-APT::Periodic::Unattended-Upgrade "0";'
+# --- the timer is on -----------------------------------------------------------
+out="$(run_case "$WORK/on" enabled "$NOBL")"
+check "an enabled timer is reported as daily, Glyndor only" "1" "$(says "$out" 'daily, Glyndor packages only')"
+check "and the machine's own APT::Periodic \"0\" does not matter" "0" "$(says "$out" 'switched off')"
+check "and the engine was already there, so it is not installed" "0" \
+	"$([ -f "$WORK/on/engine-installed" ] && echo 1 || echo 0)"
 
-ALLOWED='Unattended-Upgrade::Allowed-Origins:: "Glyndor:stable";'
-PATTERN='Unattended-Upgrade::Origins-Pattern:: "origin=Glyndor";'
-BLACKLIST_LINE='Unattended-Upgrade::Package-Blacklist:: "testproduct";'
+# --- the operator switched it off ------------------------------------------------
+out="$(run_case "$WORK/off" disabled "$NOBL")"
+check "a disabled timer is reported as switched off" "1" "$(says "$out" 'switched off, left alone')"
+check "and says how to switch it on" "1" "$(says "$out" 'systemctl enable --now glyndor-upgrade.timer')"
+check "and does not claim it is on" "0" "$(says "$out" 'daily, Glyndor')"
 
-ON_WITH_ALLOW="$ALLOWED
-$ON_PERIODIC"
-ON_WITH_PATTERN="$PATTERN
-$ON_PERIODIC"
-ON_WITH_BLACKLIST="$ALLOWED
-$BLACKLIST_LINE
-$ON_PERIODIC"
-ON_WITH_WRONG_ORIGIN='Unattended-Upgrade::Allowed-Origins:: "Debian:bookworm-security";
-APT::Periodic::Unattended-Upgrade "1";
-APT::Periodic::Update-Package-Lists "1";'
+# --- no systemd, or an older keyring ------------------------------------------------
+out="$(run_case "$WORK/nosd" nosystemd "$NOBL")"
+check "without systemd it says there is no timer" "1" "$(says "$out" 'not running systemd')"
+check "and does not claim it is on" "0" "$(says "$out" 'daily, Glyndor')"
+out="$(run_case "$WORK/missing" missing "$NOBL")"
+check "with the unit not installed it says so" "1" "$(says "$out" 'timer is not installed')"
+check "and does not claim it is on" "0" "$(says "$out" 'daily, Glyndor')"
 
-OFF_WITH_ALLOW="$ALLOWED
-$OFF_PERIODIC"
+# --- the engine -------------------------------------------------------------------------
+out="$(run_case "$WORK/noeng" enabled "$NOBL" absent)"
+check "a missing engine is installed" "1" "$([ -f "$WORK/noeng/engine-installed" ] && echo 1 || echo 0)"
+check "and the timer is then reported as on" "1" "$(says "$out" 'daily, Glyndor packages only')"
+out="$(run_case "$WORK/noinst" enabled "$NOBL" uninstallable)"
+check "an engine that cannot be installed is reported" "1" "$(says "$out" 'engine not installed')"
+check "and nothing claims the product stays current" "0" "$(says "$out" 'daily, Glyndor')"
 
-NO_PERIODIC_ALLOW="$ALLOWED"
-
-# A file whose contents are the real APT::Periodic keys, used to match the
-# dump stub for the switch-on scenarios. The file is what the operator
-# edits; the dump stub is what the function reads; both must agree for the
-# test to exercise the on-allowed path. In a sandbox the file does not
-# matter on its own -- the stub decides everything the function sees -- but
-# keeping both sides matching makes the test fail loud if the script ever
-# goes back to reading the file directly.
-write_on_file() { # $1=sandbox
-	cat > "$1/apt.conf.d/20auto-upgrades" <<'CONF'
-APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Unattended-Upgrade "1";
-CONF
-}
-
-write_off_file() { # $1=sandbox
-	cat > "$1/apt.conf.d/20auto-upgrades" <<'CONF'
-APT::Periodic::Update-Package-Lists "0";
-APT::Periodic::Unattended-Upgrade "0";
-CONF
-}
-
-# --- #1: a switch at "0" is reported as off, not as on ----------------------
-#
-# The defect. A 20auto-upgrades with APT::Periodic::Unattended-Upgrade "0"
-# was being reported as "already on" because the shortcut looked at the
-# file's existence and not at what it said. The new function reads the
-# value and the screen says so.
-
-s="$WORK/switchoff"
-prepare "$s"
-write_off_file "$s"
-out="$(run_block "$s" "$OFF_WITH_ALLOW")"
-check "a switch at \"0\" is not reported as already on" "0" \
-	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
-check "and the screen says it is switched off" "1" \
-	"$(printf '%s' "$out" | grep -q 'switched off, left alone' && echo 1 || echo 0)"
-check "and the script did not silently write a 1 on top of it" "0" \
-	"$([ -f "$s/apt.conf.d/20auto-upgrades" ] \
-		&& grep -q 'Unattended-Upgrade "1"' "$s/apt.conf.d/20auto-upgrades" \
-		&& echo 1 || echo 0)"
-check "and did not drop a 52glyndor-safety file" "0" \
-	"$([ -f "$s/apt.conf.d/52glyndor-safety" ] && echo 1 || echo 0)"
-
-# --- #2: a switch at "1" is reported as on ----------------------------------
-#
-# The positive case. APT::Periodic::Unattended-Upgrade "1" plus the
-# archive in the allowlist -> "already on, left alone".
-
-s="$WORK/switchon"
-prepare "$s"
-write_on_file "$s"
-out="$(run_block "$s" "$ON_WITH_ALLOW")"
-check "a switch at \"1\" with the archive allowed is reported as on" "1" \
-	"$(printf '%s' "$out" | grep -q 'already on, left alone' && echo 1 || echo 0)"
-check "and does not warn about the archive" "0" \
-	"$(printf '%s' "$out" | grep -c 'not for this archive')"
-check "and does not write on top of the operator's file" "1" \
-	"$(grep -q 'Unattended-Upgrade "1"' "$s/apt.conf.d/20auto-upgrades" && echo 1 || echo 0)"
-
-# --- #3: no APT::Periodic keys at all -> unknown ----------------------------
-#
-# A machine with no APT::Periodic keys can run unattended-upgrades on a
-# systemd timer, and the timer is not visible to apt-config. A binary
-# on/off check would have called this machine "off" and started writing
-# settings the operator did not ask for; the new function returns unknown.
-
-s="$WORK/noperiodic"
-prepare "$s"
-out="$(run_block "$s" "$NO_PERIODIC_ALLOW")"
-check "with no APT::Periodic keys the screen does not claim on" "0" \
-	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
-check "and does not claim off" "0" \
-	"$(printf '%s' "$out" | grep -c 'switched off, left alone')"
-check "and says it could not determine" "1" \
-	"$(printf '%s' "$out" | grep -q 'could not determine' && echo 1 || echo 0)"
-check "and writes nothing on the operator's behalf" "0" \
-	"$([ -f "$s/apt.conf.d/20auto-upgrades" ] && echo 1 || echo 0)"
-check "and does not drop a 52glyndor-safety file" "0" \
-	"$([ -f "$s/apt.conf.d/52glyndor-safety" ] && echo 1 || echo 0)"
-
-# --- #4: a placeholder file is the same as no keys --------------------------
-#
-# The fixture the old tests used was `printf 'set by the operator'` -- text
-# apt does not parse. The new function reads apt-config dump, ignores that
-# text, and returns unknown.
-
-s="$WORK/placeholder"
-prepare "$s"
-printf 'set by the operator' > "$s/apt.conf.d/20auto-upgrades"
-out="$(run_block "$s" "$NO_PERIODIC_ALLOW")"
-check "a placeholder file is not read as on" "0" \
-	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
-check "and is reported as could not determine" "1" \
-	"$(printf '%s' "$out" | grep -q 'could not determine' && echo 1 || echo 0)"
-
-# --- #5+: the switch is on -- what about the archive? (#194) ----------------
-#
-# The archive-side matrix. The fixtures used to take a placeholder file as
-# evidence that the operator had the switch set, which pinned the file-
-# existence shortcut on the switch. They now write a real switch-on file
-# and use a matching dump stub. What is exercised here is the archive
-# side, not the switch.
-
-s="$WORK/allowed"
-prepare "$s"
-write_on_file "$s"
-out="$(run_block "$s" "$ON_WITH_ALLOW")"
-check "with the archive allowed, it says settings were left alone" "1" \
-	"$(printf '%s' "$out" | grep -q 'already on, left alone' && echo 1 || echo 0)"
-check "and warns about nothing" "0" \
-	"$(printf '%s' "$out" | grep -c 'not for this archive')"
-
-# The second spelling. The unattended-upgrades README says Allowed-Origins
-# OR Origins-Pattern, so a check that knows only the one our keyring writes
-# is right on every machine we configured and wrong on the operator's --
-# wrong in the loud direction, telling someone who is covered that they
-# are not.
-s="$WORK/pattern"
-prepare "$s"
-write_on_file "$s"
-out="$(run_block "$s" "$ON_WITH_PATTERN")"
-check "Origins-Pattern counts as allowed, not just Allowed-Origins" "1" \
-	"$(printf '%s' "$out" | grep -q 'already on, left alone' && echo 1 || echo 0)"
-
-# The case this exists for: switch on, allowlist opted out. The file is a
-# conffile so an operator who emptied it keeps their empty version through
-# every reinstall, and the old message called that "already on, left alone".
-s="$WORK/noorigin"
-prepare "$s"
-write_on_file "$s"
-out="$(run_block "$s" "$ON_WITH_WRONG_ORIGIN")"
-check "with the switch on but the archive not allowed, it says so" "1" \
-	"$(printf '%s' "$out" | grep -q 'not for this archive' && echo 1 || echo 0)"
-check "and does not claim things were left in order" "0" \
-	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
-check "and says what it means for the product" "1" \
-	"$(printf '%s' "$out" | grep -q 'will not be upgraded on its own' && echo 1 || echo 0)"
-
-# Origin allowed, package vetoed. A third way to be frozen that reading the
-# allowlist alone reports as healthy.
-s="$WORK/blacklist"
-prepare "$s"
-write_on_file "$s"
-out="$(run_block "$s" "$ON_WITH_BLACKLIST")"
-check "a blacklisted product is reported even with the origin allowed" "1" \
-	"$(printf '%s' "$out" | grep -q 'is blacklisted' && echo 1 || echo 0)"
-check "and it does not claim things were left in order" "0" \
-	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
-
-# A fourth spelling of "this archive". The unattended-upgrades README says
-# Allowed-Origins OR Origins-Pattern, and within Origins-Pattern the
-# "origin=Glyndor" form is what the operator who follows the README most
-# often writes. A check that only knew the keyring's spelling would call
-# this machine uncovered, which is the loud direction.
-s="$WORK/origin-form"
-prepare "$s"
-write_on_file "$s"
-out="$(run_block "$s" "$ON_WITH_PATTERN")"
-check "an origin written as origin=Glyndor is covered" "1" \
-	"$(printf '%s' "$out" | grep -q 'already on, left alone' && echo 1 || echo 0)"
-
-# The other suite. This archive serves suite stable; an operator who pinned
-# Allowed-Origins to "Glyndor:testing" -- the spelling for a different suite
-# of the same archive -- has not allowed THIS archive, and the screen must
-# not pretend they did.
-OTHER_SUITE='Unattended-Upgrade::Allowed-Origins:: "Glyndor:testing";'
-ON_WITH_OTHER_SUITE="$OTHER_SUITE
-$ON_PERIODIC"
-s="$WORK/other-suite"
-prepare "$s"
-write_on_file "$s"
-out="$(run_block "$s" "$ON_WITH_OTHER_SUITE")"
-check "an origin for another suite of this archive is not reported as covered" "0" \
-	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
-
-# Blacklist entries are regular expressions. The plain spelling
-# blacklists the product; "^product$" and "^product" do too, and the
-# screen reports the archive as blacklisted in each case.
-REGEX_BLACKLIST='Unattended-Upgrade::Package-Blacklist:: "^testproduct$";'
-ON_WITH_REGEX_BLACKLIST="$ALLOWED
-$REGEX_BLACKLIST
-$ON_PERIODIC"
-s="$WORK/regex-blacklist"
-prepare "$s"
-write_on_file "$s"
-out="$(run_block "$s" "$ON_WITH_REGEX_BLACKLIST")"
-check "a blacklist written as a regular expression is honoured" "1" \
-	"$(printf '%s' "$out" | grep -q 'is blacklisted' && echo 1 || echo 0)"
-
-# An invalid regex is unknown, not allowed. The operator wrote something
-# grep cannot parse, and what the machine does with it is what we cannot
-# read here either. The screen falls through to the unknown branch, not
-# the green "already on" arm.
-MALFORMED_BLACKLIST='Unattended-Upgrade::Package-Blacklist:: "[";'
-ON_WITH_MALFORMED_BLACKLIST="$ALLOWED
-$MALFORMED_BLACKLIST
-$ON_PERIODIC"
-s="$WORK/malformed-blacklist"
-prepare "$s"
-write_on_file "$s"
-out="$(run_block "$s" "$ON_WITH_MALFORMED_BLACKLIST")"
-check "a malformed blacklist pattern is reported as unknown, not as covered" "0" \
-	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
-check "and does not claim the product is blacklisted" "0" \
-	"$(printf '%s' "$out" | grep -c 'is blacklisted')"
-check "and says the allowlist could not be verified" "1" \
-	"$(printf '%s' "$out" | grep -q 'could not be verified' && echo 1 || echo 0)"
-
-# --- #6: an unreadable apt-config means unknown, full stop ------------------
-#
-# A machine whose apt-config cannot be read is not "on" and not "off", and
-# the operator should know that. The earlier test asserted a green tick
-# "Automatic security upgrades on" -- the default arm that reports success
-# without measuring anything -- and is replaced with the unknown message.
-
-s="$WORK/aptbroken"
-prepare "$s"
-mkdir -p "$s/bin"
-printf '#!/bin/sh\nexit 1\n' > "$s/bin/apt-config"; chmod +x "$s/bin/apt-config"
-out="$( cd "$s" && PATH="$s/bin:$PATH" sh block.sh 2>&1 )"
-check "an unreadable apt-config does not claim on" "0" \
-	"$(printf '%s' "$out" | grep -c 'already on, left alone')"
-check "and does not claim off" "0" \
-	"$(printf '%s' "$out" | grep -c 'switched off, left alone')"
-check "and warns about nothing the install could not measure" "0" \
-	"$(printf '%s' "$out" | grep -c 'not for this archive')"
-check "and says it could not determine" "1" \
-	"$(printf '%s' "$out" | grep -q 'could not determine' && echo 1 || echo 0)"
-
-# --- #7: dpkg presence is irrelevant ---------------------------------------
-#
-# The original regression. A machine with the unattended-upgrades package
-# present took the do-nothing branch even with the switch off, because the
-# shortcut asked `dpkg -s` instead of asking apt. Both sandboxes below have
-# no APT::Periodic keys; they differ only in whether a `dpkg` binary is on
-# PATH, and the outcome must be identical.
-
-for variant in with-dpkg without-dpkg; do
-	s="$WORK/dpkg-$variant"
-	prepare "$s"
-	if [ "$variant" = with-dpkg ]; then
-		mkdir -p "$s/bin"
-		printf '#!/bin/sh\nexit 0\n' > "$s/bin/dpkg"
-		chmod +x "$s/bin/dpkg"
-	fi
-	( cd "$s" && PATH="$s/bin:$PATH" sh block.sh >/dev/null 2>&1 )
-	check "with no APT::Periodic keys, no file is written regardless of dpkg ($variant)" "0" \
-		"$([ -f "$s/apt.conf.d/20auto-upgrades" ] && echo 1 || echo 0)"
+# --- the operator vetoed the product ------------------------------------------------------
+for entry in 'testproduct' '^testproduct$' '^testproduct'; do
+	out="$(run_case "$WORK/bl" enabled "Unattended-Upgrade::Package-Blacklist:: \"$entry\";")"
+	check "a blacklist entry \"$entry\" is reported" "1" "$(says "$out" 'is blacklisted')"
+	check "and the green line is withheld ($entry)" "0" "$(says "$out" 'daily, Glyndor')"
 done
+out="$(run_case "$WORK/blother" enabled 'Unattended-Upgrade::Package-Blacklist:: "someotherpkg";')"
+check "a blacklist naming another package does not matter" "1" "$(says "$out" 'daily, Glyndor packages only')"
+out="$(run_case "$WORK/blbad" enabled 'Unattended-Upgrade::Package-Blacklist:: "[";')"
+check "an unparsable blacklist entry is not read as clear" "0" "$(says "$out" 'daily, Glyndor')"
+check "and the screen says it could not be read" "1" "$(says "$out" 'blacklist could not be read')"
 
-# --- #8: the block must not look at the file by name ------------------------
-#
-# The narrow assertion for the new fix. Any reintroduction of a shortcut
-# that asks "does the file exist" puts the file-existence trap back, and
-# the operator who wrote "0" inside is told their machine is on.
-
-check "the block does not test 20auto-upgrades by file existence" "0" \
-	"$(printf '%s' "$block" | grep -cE '\[ +-f[^]]*20auto-upgrades')"
-
-# --- #9: the block still does not consult dpkg ------------------------------
-#
-# The earlier regression. Kept so a future shortcut that reverts to "is the
-# package installed" fails the suite rather than slipping through.
-
-check "the block still asks about the switch, not about the package" "0" \
+# --- the block must not go back to asking dpkg or the schedule -------------------------------
+check "the block does not ask dpkg whether the package is installed" "0" \
 	"$(printf '%s' "$block" | grep -c 'dpkg -s')"
+check "the block does not write apt configuration" "0" \
+	"$(printf '%s' "$block" | grep -c 'apt.conf.d')"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

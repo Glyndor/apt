@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily upgrade of Glyndor packages
+
+[Timer]
+OnCalendar=*-*-* 03:00
+RandomizedDelaySec=2h
+# A machine that was off at 03:00 catches up when it next boots.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

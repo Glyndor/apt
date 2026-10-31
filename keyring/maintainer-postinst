@@ -1,0 +1,26 @@
+#!/bin/sh
+set -e
+
+# Switch the Glyndor upgrade timer on once per machine. The marker is what makes
+# that "once": after it exists, a `systemctl disable glyndor-upgrade.timer` is
+# the operator's decision and no later upgrade or reinstall of this package
+# undoes it. Machines that had the keyring before the timer existed have no
+# marker, so they get it on their first upgrade.
+#
+# The marker is written only once the timer is really enabled. Where systemd is
+# not running (an image build, a container) nothing is enabled and no marker is
+# written, so the next configure on a machine that has systemd tries again
+# instead of recording a switch-on that never happened.
+case "$1" in
+	configure)
+		state=/var/lib/glyndor-archive-keyring
+		if [ ! -e "$state/timer-offered" ] && [ -d /run/systemd/system ]; then
+			systemctl daemon-reload || true
+			if systemctl enable --now glyndor-upgrade.timer; then
+				mkdir -p "$state"
+				: > "$state/timer-offered"
+			fi
+		fi
+		;;
+esac
+exit 0

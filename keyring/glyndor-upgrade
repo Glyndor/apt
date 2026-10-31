@@ -1,0 +1,98 @@
+#!/bin/sh
+# Upgrade the packages that come from apt.glyndor.net, and only those.
+#
+# Run daily by glyndor-upgrade.timer. unattended-upgrade does the work; this
+# script narrows it to this archive. apt reads the file named by APT_CONFIG
+# before the system configuration, so a "clear" in it cannot remove Debian's
+# origins. A strict Package-Whitelist can: a package that is not on the list is
+# never touched, whatever origin it comes from.
+#
+# The list is not "every Glyndor package". It is exactly what apt would change
+# to upgrade the Glyndor packages installed here, asked of `apt-get -s`: those
+# packages plus any dependency a new release adds or needs upgraded. Both
+# simpler lists were measured on Debian 13 and fail in opposite directions:
+#   strict, Glyndor names only   a release that adds a Depends is "kept back
+#                                because a related package is kept back",
+#                                forever and silently;
+#   non-strict                   upgrading podup also upgraded curl, the kernel
+#                                and other packages it has nothing to do with.
+# Read at run time, so a product published tomorrow is covered without a new
+# keyring.
+#
+# Whatever the operator has configured still applies afterwards, including
+# Unattended-Upgrade::Package-Blacklist: that is their per-package opt-out.
+set -eu
+
+LISTS="${GLYNDOR_APT_LISTS:-/var/lib/apt/lists}"
+RUN="${GLYNDOR_RUN_DIR:-/run/glyndor-upgrade}"
+
+apt-get update -qq
+
+# A package name is lowercase alphanumerics, dot, plus and hyphen (Debian policy),
+# with an optional ":arch" on a foreign architecture. Anything else must never
+# reach the config below, where a quote or a newline would end the string and let
+# a line of its own through. A name that fails is not filtered away quietly: that
+# would let a plan look empty, and "everything is current" would be reported over
+# an upgrade that was never attempted. It fails the unit and is named in the
+# journal. The index is signed, so this is the second lock, not the only one.
+# Called in the main shell on purpose: an `exit` inside a command substitution
+# would end only the subshell and the script would carry on with an empty list.
+reject_invalid() { # $1 = what the names are, $2 = the names, one per line
+	_bad="$(printf '%s\n' "$2" | grep -vE '^[a-z0-9][a-z0-9.+-]+(:[a-z0-9-]+)?$' | grep -v '^$' || true)"
+	if [ -n "$_bad" ]; then
+		echo "glyndor-upgrade: refusing to run, invalid package name in $1: $(printf '%s\n' "$_bad" | head -1)" >&2
+		exit 1
+	fi
+}
+
+names_raw="$(awk '/^Package: /{print $2}' \
+	"$LISTS"/apt.glyndor.net_dists_stable_main_binary-*_Packages 2>/dev/null || true)"
+reject_invalid "the Glyndor index" "$names_raw"
+names="$(printf '%s\n' "$names_raw" | grep -v '^$' | sort -u || true)"
+if [ -z "$names" ]; then
+	echo "glyndor-upgrade: no Glyndor package index under $LISTS, nothing to upgrade" >&2
+	exit 1
+fi
+
+# Only what is installed: --only-upgrade never installs a Glyndor package the
+# operator did not choose.
+# shellcheck disable=SC2086 # one argument per package name
+installed="$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' $names 2>/dev/null \
+	| awk '$1 == "ii" {print $2}')"
+if [ -z "$installed" ]; then
+	echo "glyndor-upgrade: no Glyndor package is installed, nothing to upgrade"
+	exit 0
+fi
+
+# The simulation's own exit status is what separates "nothing to upgrade" from
+# "could not tell": a locked dpkg or a broken dependency makes apt-get fail, and
+# reading that as an empty plan would report everything current while nothing
+# was upgraded. It fails the unit instead, with apt's message in the journal.
+# shellcheck disable=SC2086
+if ! sim="$(apt-get -s --only-upgrade install $installed)"; then
+	echo "glyndor-upgrade: apt could not plan the upgrade, nothing was upgraded" >&2
+	exit 1
+fi
+plan_raw="$(printf '%s\n' "$sim" | awk '/^Inst / {print $2}')"
+reject_invalid "the upgrade plan" "$plan_raw"
+plan="$(printf '%s\n' "$plan_raw" | grep -v '^$' | sort -u || true)"
+if [ -z "$plan" ]; then
+	echo "glyndor-upgrade: everything from the Glyndor archive is current"
+	exit 0
+fi
+
+mkdir -p "$RUN"
+conf="$RUN/apt.conf"
+{
+	echo 'Unattended-Upgrade::Allowed-Origins { "Glyndor:stable"; };'
+	echo 'Unattended-Upgrade::Package-Whitelist-Strict "true";'
+	echo 'Unattended-Upgrade::Package-Whitelist {'
+	# Names are matched as regular expressions, so "." and "+" are written as
+	# classes; a backslash would need a second level of escaping in this file.
+	for n in $plan; do
+		printf '\t"^%s$";\n' "$(printf '%s' "$n" | sed 's/[.+]/[&]/g')"
+	done
+	echo '};'
+} > "$conf"
+
+APT_CONFIG="$conf" exec "${GLYNDOR_UNATTENDED:-unattended-upgrade}"

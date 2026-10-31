@@ -28,9 +28,7 @@ REPO="$WORK/repo"
 BUILD="$REPO/scripts/build-keyring.sh"
 mkdir -p "$REPO/scripts" "$REPO/keyring"
 cp "$HERE/scripts/build-keyring.sh" "$REPO/scripts/"
-cp "$HERE"/keyring/glyndor-apt-key.asc "$HERE"/keyring/glyndor.sources \
-	"$HERE"/keyring/glyndor-unattended-upgrades \
-	"$HERE"/keyring/version "$REPO/keyring/"
+cp "$HERE"/keyring/* "$REPO/keyring/"
 git -C "$REPO" init -q
 git -C "$REPO" add -A
 git -C "$REPO" -c user.name=test -c user.email=test@example.invalid \
@@ -156,7 +154,10 @@ fi
 
 contents="$(dpkg-deb --contents "$first")"
 for path in ./usr/share/keyrings/glyndor.gpg ./etc/apt/sources.list.d/glyndor.sources \
-	./etc/apt/apt.conf.d/51glyndor-unattended-upgrades; do
+	./etc/apt/apt.conf.d/51glyndor-unattended-upgrades \
+	./usr/lib/glyndor-archive-keyring/glyndor-upgrade \
+	./usr/lib/systemd/system/glyndor-upgrade.service \
+	./usr/lib/systemd/system/glyndor-upgrade.timer; do
 	if printf '%s' "$contents" | grep -qF " $path"; then
 		ok "the package ships $path"
 	else
@@ -175,9 +176,7 @@ cp "$BUILD" "$detached/scripts/"
 # Every packaged input, not just the ones this case is about: the build fails
 # closed on a missing one, and a fixture short of a file would fail here for
 # that reason instead of the missing history this case exists to check.
-cp "$REPO"/keyring/glyndor-apt-key.asc "$REPO"/keyring/glyndor.sources \
-	"$REPO"/keyring/glyndor-unattended-upgrades \
-	"$REPO"/keyring/version "$detached/keyring/"
+cp "$REPO"/keyring/* "$detached/keyring/"
 
 got=0
 out="$("$detached/scripts/build-keyring.sh" "$detached/out" 2>&1)" || got=$?
@@ -199,8 +198,8 @@ key_repo() { # $1=dir $2=gpg lifetime spec
 	local dir="$1" life="$2"
 	rm -rf "$dir"; mkdir -p "$dir/scripts" "$dir/keyring"
 	cp "$HERE/scripts/build-keyring.sh" "$dir/scripts/"
-	cp "$HERE"/keyring/glyndor.sources "$HERE"/keyring/glyndor-unattended-upgrades \
-		"$HERE"/keyring/version "$dir/keyring/"
+	cp "$HERE"/keyring/* "$dir/keyring/"
+	rm -f "$dir/keyring/glyndor-apt-key.asc"
 	local home="$dir/.gnupg"; mkdir -p "$home"; chmod 700 "$home"
 	GNUPGHOME="$home" gpg --batch --quiet --passphrase '' \
 		--quick-generate-key "fixture <f@test.invalid>" default default "$life" \

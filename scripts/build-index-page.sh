@@ -49,13 +49,11 @@ done
 ARCH_LIST="${ARCHES// /, }"
 
 # One <li> per installable package, offering the bootstrap installer rather than
-# `apt install`. The keyring carries the allowlist entry, so an `apt install`
-# gets Glyndor packages onto the unattended-upgrades allowlist, but an allowlist
-# does nothing where unattended upgrades are not switched on, and the switch
-# (`20auto-upgrades`) is written by the installer alone. A page that stopped at
-# `apt install` left a machine that looked complete and quietly stopped taking
-# security fixes. README.md says the same thing; the two are read by the same
-# person and must not disagree.
+# `apt install`. The keyring switches the Glyndor upgrade timer on, but the timer
+# runs the unattended-upgrades engine, and only the installer puts that on a
+# machine that lacks it. A page that stopped at `apt install` could leave a
+# machine that looked complete and quietly stopped taking fixes. README.md says
+# the same thing; the two are read by the same person and must not disagree.
 #
 # The installer path is /install/<product>, generated from PRODUCTS, while this
 # list comes from the built index. They agree because a product's package
