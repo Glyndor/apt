@@ -238,9 +238,13 @@ cat > "$WORK/sbin/systemctl" <<STUB
 #!/bin/sh
 echo "\$*" >> "$WORK/systemctl.log"
 case "\$1" in
-	enable) [ -f "$WORK/enable-fails" ] && exit 1; echo enabled > "$WORK/unit-state" ;;
-	disable) echo disabled > "$WORK/unit-state" ;;
+	enable) [ -f "$WORK/enable-fails" ] && exit 1; echo enabled > "$WORK/unit-state"
+		case "\$*" in *--now*) echo active > "$WORK/active-state" ;; esac ;;
+	disable) echo disabled > "$WORK/unit-state"
+		case "\$*" in *--now*) echo inactive > "$WORK/active-state" ;; esac ;;
+	stop) echo inactive > "$WORK/active-state" ;;
 	is-enabled) [ "\$(cat "$WORK/unit-state" 2>/dev/null)" = enabled ]; exit \$? ;;
+	is-active) [ "\$(cat "$WORK/active-state" 2>/dev/null)" = active ]; exit \$? ;;
 esac
 exit 0
 STUB
@@ -258,7 +262,7 @@ for s in postinst prerm postrm; do sandboxed "$s"; done
 post() { PATH="$WORK/sbin:$PATH" sh "$WORK/postinst" "$@"; }
 pre() { PATH="$WORK/sbin:$PATH" sh "$WORK/prerm" "$@"; }
 gone() { PATH="$WORK/sbin:$PATH" sh "$WORK/postrm" "$@"; }
-reset() { rm -rf "$WORK/state" "$WORK/systemctl.log" "$WORK/unit-state" "$WORK/enable-fails"; mkdir -p "$WORK/state"; }
+reset() { rm -rf "$WORK/state" "$WORK/systemctl.log" "$WORK/unit-state" "$WORK/active-state" "$WORK/enable-fails"; mkdir -p "$WORK/state"; }
 unit() { cat "$WORK/unit-state" 2>/dev/null || echo none; }
 logged() { grep -c "$1" "$WORK/systemctl.log" 2>/dev/null || true; }
 
@@ -327,6 +331,17 @@ post configure
 check "a timer the operator disabled stays disabled across deconfigure and configure" "disabled" "$(unit)"
 post abort-remove
 check "and across an aborted removal" "disabled" "$(unit)"
+
+# `systemctl disable` without --now leaves the timer running; removing the
+# package must still stop it, and must not promise to turn it back on.
+reset
+post configure
+echo disabled > "$WORK/unit-state"
+pre remove
+check "a timer disabled without --now but still running is stopped on removal" "inactive" \
+	"$(cat "$WORK/active-state" 2>/dev/null)"
+check "and nothing is remembered to turn it back on" "0" \
+	"$([ -f "$WORK/state/suspended-by-package" ] && echo 1 || echo 0)"
 
 reset
 post configure
