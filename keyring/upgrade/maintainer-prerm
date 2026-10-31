@@ -1,8 +1,16 @@
 #!/bin/sh
 set -e
+
+# Removing or deconfiguring the package switches the timer off, and the package
+# remembers that it was the one that did. The operator's own `systemctl disable`
+# leaves no such memory, which is how the two are told apart afterwards: what the
+# package suspended it restores, what the operator disabled stays disabled.
+state=/var/lib/glyndor-archive-keyring
 case "$1" in
 	remove | deconfigure)
-		if [ -d /run/systemd/system ]; then
+		if [ -d /run/systemd/system ] && systemctl is-enabled --quiet glyndor-upgrade.timer 2>/dev/null; then
+			mkdir -p "$state"
+			: > "$state/suspended-by-package"
 			systemctl disable --now glyndor-upgrade.timer || true
 		fi
 		;;

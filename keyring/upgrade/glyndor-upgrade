@@ -23,7 +23,6 @@
 # Unattended-Upgrade::Package-Blacklist: that is their per-package opt-out.
 set -eu
 
-LISTS="${GLYNDOR_APT_LISTS:-/var/lib/apt/lists}"
 RUN="${GLYNDOR_RUN_DIR:-/run/glyndor-upgrade}"
 
 apt-get update -qq
@@ -45,19 +44,33 @@ reject_invalid() { # $1 = what the names are, $2 = the names, one per line
 	fi
 }
 
-names_raw="$(awk '/^Package: /{print $2}' \
-	"$LISTS"/apt.glyndor.net_dists_stable_main_binary-*_Packages 2>/dev/null || true)"
+# The index files are asked of apt, not guessed from a file name: a machine that
+# keeps its indexes compressed (Acquire::GzipIndexes) holds them as .lz4 or .gz,
+# and apt-helper reads whichever form apt kept. A machine with no Glyndor index
+# at all, or none apt can read, fails the unit instead of looking current.
+APT_HELPER="${GLYNDOR_APT_HELPER:-/usr/lib/apt/apt-helper}"
+# shellcheck disable=SC2016 # $(FILENAME) is apt's format syntax, not a shell expansion
+index_files="$(apt-get indextargets --format '$(FILENAME)' \
+	'Created-By: Packages' 'Origin: Glyndor' 'Suite: stable' 2>/dev/null || true)"
+names_raw=""
+for f in $index_files; do
+	names_raw="$names_raw
+$("$APT_HELPER" cat-file "$f" 2>/dev/null | awk '/^Package: /{print $2}' || true)"
+done
 reject_invalid "the Glyndor index" "$names_raw"
 names="$(printf '%s\n' "$names_raw" | grep -v '^$' | sort -u || true)"
 if [ -z "$names" ]; then
-	echo "glyndor-upgrade: no Glyndor package index under $LISTS, nothing to upgrade" >&2
+	echo "glyndor-upgrade: no readable Glyndor package index, nothing to upgrade" >&2
 	exit 1
 fi
 
 # Only what is installed: --only-upgrade never installs a Glyndor package the
 # operator did not choose.
 # shellcheck disable=SC2086 # one argument per package name
-installed="$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' $names 2>/dev/null \
+# ${binary:Package} keeps the ":arch" of a foreign-architecture package. Without
+# it apt is asked about the native package of that name, which is not installed,
+# and a pending upgrade of the foreign one is reported as current.
+installed="$(dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package}\n' $names 2>/dev/null \
 	| awk '$1 == "ii" {print $2}')"
 if [ -z "$installed" ]; then
 	echo "glyndor-upgrade: no Glyndor package is installed, nothing to upgrade"
@@ -81,8 +94,12 @@ if [ -z "$plan" ]; then
 	exit 0
 fi
 
+# One private file per invocation. A fixed name let a second invocation replace
+# the plan between this one writing it and the engine reading it. The engine is
+# not exec'd, so the file can be removed whatever the engine returns.
 mkdir -p "$RUN"
-conf="$RUN/apt.conf"
+conf="$(mktemp "$RUN/apt.conf.XXXXXX")"
+trap 'rm -f "$conf"' EXIT
 {
 	echo 'Unattended-Upgrade::Allowed-Origins { "Glyndor:stable"; };'
 	echo 'Unattended-Upgrade::Package-Whitelist-Strict "true";'
@@ -95,4 +112,6 @@ conf="$RUN/apt.conf"
 	echo '};'
 } > "$conf"
 
-APT_CONFIG="$conf" exec "${GLYNDOR_UNATTENDED:-unattended-upgrade}"
+rc=0
+APT_CONFIG="$conf" "${GLYNDOR_UNATTENDED:-unattended-upgrade}" || rc=$?
+exit "$rc"
