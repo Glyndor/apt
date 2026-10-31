@@ -94,6 +94,27 @@ check "and the engine does not run" "0" "$(ran)"
 check "only installed Glyndor packages are asked about" "1" \
 	"$(grep -c 'install podup libfoo.bar+baz$' "$WORK/sim-args")"
 
+# A hostile name must not reach the config. The index is signed, so this is the
+# second lock; it still has to hold on its own.
+cat >> "$WORK/lists/apt.glyndor.net_dists_stable_main_binary-amd64_Packages" <<'PKG'
+
+Package: evil"; }; Unattended-Upgrade::Package-Whitelist-Strict "false
+Version: 1
+
+Package: UPPER
+Version: 1
+PKG
+printf 'ii  podup\n' > "$WORK/installed.txt"
+printf 'Inst podup [1] (2 stable)\nInst x";y (1 trixie)\nInst Bad (1 trixie)\n' > "$WORK/plan.txt"
+run_upgrade >/dev/null
+conf="$(cat "$WORK/seen.conf" 2>/dev/null)"
+check "a plan entry with a quote or an uppercase letter never reaches the config" "0" \
+	"$(printf '%s' "$conf" | grep -c '[";]y\|Bad')"
+check "the strict flag is still the only one set" "1" \
+	"$(printf '%s' "$conf" | grep -c 'Package-Whitelist-Strict')"
+check "and the legitimate package is still there" "1" "$(printf '%s' "$conf" | grep -cF '"^podup$";')"
+printf 'ii  podup\nii  libfoo.bar+baz\n' > "$WORK/installed.txt"
+
 # apt-get -s failing is not "everything is current".
 printf 'ii  podup\n' > "$WORK/installed.txt"
 : > "$WORK/plan.txt"

@@ -28,8 +28,15 @@ RUN="${GLYNDOR_RUN_DIR:-/run/glyndor-upgrade}"
 
 apt-get update -qq
 
+# A package name is lowercase alphanumerics, dot, plus and hyphen (Debian policy).
+# Anything else is dropped before it can reach the config below, where a quote
+# or a newline would end the string and let a line of its own through. The index
+# is signed, so this is the second lock, not the only one.
+valid_names() { grep -E '^[a-z0-9][a-z0-9.+-]+$' || true; }
+
 names="$(awk '/^Package: /{print $2}' \
-	"$LISTS"/apt.glyndor.net_dists_stable_main_binary-*_Packages 2>/dev/null | sort -u)"
+	"$LISTS"/apt.glyndor.net_dists_stable_main_binary-*_Packages 2>/dev/null \
+	| valid_names | sort -u)"
 if [ -z "$names" ]; then
 	echo "glyndor-upgrade: no Glyndor package index under $LISTS, nothing to upgrade" >&2
 	exit 1
@@ -54,7 +61,7 @@ if ! sim="$(apt-get -s --only-upgrade install $installed)"; then
 	echo "glyndor-upgrade: apt could not plan the upgrade, nothing was upgraded" >&2
 	exit 1
 fi
-plan="$(printf '%s\n' "$sim" | awk '/^Inst / {print $2}' | sort -u)"
+plan="$(printf '%s\n' "$sim" | awk '/^Inst / {print $2}' | valid_names | sort -u)"
 if [ -z "$plan" ]; then
 	echo "glyndor-upgrade: everything from the Glyndor archive is current"
 	exit 0
