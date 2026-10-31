@@ -111,7 +111,9 @@ CI is split by responsibility rather than gathered in one file:
 | `health-check.yml` | the published archive is stale, unreachable or unsigned |
 
 Every reusable this repository calls lives in `.github/workflows/reusable-*.yml`
-as a copy taken from a named `Glyndor/.github` tag. Nothing is pulled remotely.
+as a copy kept identical in logic to the
+copies in the sibling channels (`scripts/monitoring/check-reusable-drift.sh` compares
+them). Nothing is pulled remotely.
 
 **Job ids are load-bearing.** A required status check is named
 `<caller job id> / <inner job name>`, so renaming a job renames its check and

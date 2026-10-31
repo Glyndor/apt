@@ -19,7 +19,7 @@ on:
   workflow_call:
     inputs:
       shellcheck-version:
-        description: Exact shellcheck release tag to install from koalaman/shellcheck for actionlint's embedded shellcheck pass; bumped via .github releases
+        description: Exact shellcheck release tag to install from koalaman/shellcheck for actionlint's embedded shellcheck pass; bumped here and in the sibling channels together
         type: string
         default: "v0.11.0"
       shellcheck-sha256:
