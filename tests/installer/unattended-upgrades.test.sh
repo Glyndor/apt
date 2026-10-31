@@ -86,6 +86,9 @@ run_case() {
 	mkdir -p "$s/bin" "$s/systemd"
 	[ "$state" = nosystemd ] && rmdir "$s/systemd"
 	{
+		# The options the installer itself runs under: a status that is
+		# fine without them can end the script with them.
+		echo 'set -eu'
 		extract_output_layer
 		extract_block
 	} | sed -e 's|apt-get install -y -qq unattended-upgrades|touch engine-installed|' \
