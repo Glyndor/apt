@@ -59,7 +59,8 @@ not what the floor is about.
 
 The signing key ships **as a package**, so apt owns it. The same package installs
 `glyndor-upgrade.timer`, which runs daily and upgrades the packages from this archive
-and nothing else, including products published later. Nothing to re-run, no expiry
+(plus any dependency a new release needs), including products published later,
+and leaves every other package alone. Nothing to re-run, no expiry
 to diarise.
 
 The timer does not depend on the machine's own `unattended-upgrades` schedule and
