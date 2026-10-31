@@ -37,7 +37,8 @@ mkdir -p "$WORK/bin" "$WORK/lists" "$WORK/run"
 cat > "$WORK/bin/apt-get" <<STUB
 #!/bin/sh
 case "\$*" in
-	*--only-upgrade*) cat "$WORK/plan.txt" 2>/dev/null; echo "\$*" > "$WORK/sim-args" ;;
+	*--only-upgrade*) [ -f "$WORK/sim-fails" ] && { echo "E: Unable to lock the administration directory" >&2; exit 100; }
+		cat "$WORK/plan.txt" 2>/dev/null; echo "\$*" > "$WORK/sim-args" ;;
 esac
 exit 0
 STUB
@@ -92,6 +93,16 @@ check "when everything is current the script succeeds" "0" "$rc"
 check "and the engine does not run" "0" "$(ran)"
 check "only installed Glyndor packages are asked about" "1" \
 	"$(grep -c 'install podup libfoo.bar+baz$' "$WORK/sim-args")"
+
+# apt-get -s failing is not "everything is current".
+printf 'ii  podup\n' > "$WORK/installed.txt"
+: > "$WORK/plan.txt"
+touch "$WORK/sim-fails"
+run_upgrade >/dev/null; rc=$?
+check "when apt cannot plan the upgrade the script fails" "1" "$rc"
+check "and the engine does not run" "0" "$(ran)"
+rm -f "$WORK/sim-fails"
+printf 'ii  podup\nii  libfoo.bar+baz\n' > "$WORK/installed.txt"
 
 # podup is upgraded and its new release needs podman, which is not installed.
 printf 'Inst podup [1] (2 stable)\nInst podman (5.4 trixie)\nInst libfoo.bar+baz (2 stable)\n' > "$WORK/plan.txt"

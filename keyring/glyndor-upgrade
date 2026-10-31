@@ -45,9 +45,16 @@ if [ -z "$installed" ]; then
 	exit 0
 fi
 
+# The simulation's own exit status is what separates "nothing to upgrade" from
+# "could not tell": a locked dpkg or a broken dependency makes apt-get fail, and
+# reading that as an empty plan would report everything current while nothing
+# was upgraded. It fails the unit instead, with apt's message in the journal.
 # shellcheck disable=SC2086
-plan="$(apt-get -s --only-upgrade install $installed 2>/dev/null \
-	| awk '/^Inst / {print $2}' | sort -u)"
+if ! sim="$(apt-get -s --only-upgrade install $installed)"; then
+	echo "glyndor-upgrade: apt could not plan the upgrade, nothing was upgraded" >&2
+	exit 1
+fi
+plan="$(printf '%s\n' "$sim" | awk '/^Inst / {print $2}' | sort -u)"
 if [ -z "$plan" ]; then
 	echo "glyndor-upgrade: everything from the Glyndor archive is current"
 	exit 0
