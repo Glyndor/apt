@@ -54,8 +54,14 @@ index_files="$(apt-get indextargets --format '$(FILENAME)' \
 	'Created-By: Packages' 'Origin: Glyndor' 'Suite: stable' 2>/dev/null || true)"
 names_raw=""
 for f in $index_files; do
+	# An index that cannot be read fails the unit: skipping it would shrink the
+	# plan and report the packages only it listed as current.
+	if ! content="$("$APT_HELPER" cat-file "$f" 2>/dev/null)"; then
+		echo "glyndor-upgrade: cannot read the Glyndor index $f" >&2
+		exit 1
+	fi
 	names_raw="$names_raw
-$("$APT_HELPER" cat-file "$f" 2>/dev/null | awk '/^Package: /{print $2}' || true)"
+$(printf '%s\n' "$content" | awk '/^Package: /{print $2}')"
 done
 reject_invalid "the Glyndor index" "$names_raw"
 names="$(printf '%s\n' "$names_raw" | grep -v '^$' | sort -u || true)"

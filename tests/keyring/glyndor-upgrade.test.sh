@@ -184,6 +184,27 @@ printf 'Inst podup [1] (2 stable)\n' > "$WORK/plan.txt"
 run_upgrade >/dev/null; rc=$?
 check "a compressed index is read" "0" "$rc"
 check "and the engine runs on it" "1" "$(ran)"
+# One unreadable index among readable ones fails the unit, it does not shrink the plan.
+rm -f "$WORK/lists/"*
+cp "$WORK/index.good" "$WORK/lists/apt.glyndor.net_a_Packages"
+cp "$WORK/index.good" "$WORK/lists/apt.glyndor.net_b_Packages"
+printf 'ii  podup\n' > "$WORK/installed.txt"
+cat > "$WORK/bin/apt-helper" <<'STUB'
+#!/bin/sh
+case "$2" in *_b_Packages) exit 1 ;; esac
+cat "$2"
+STUB
+run_upgrade >/dev/null; rc=$?
+check "an unreadable index among readable ones is a failure" "1" "$rc"
+check "and the engine does not run on the rest" "0" "$(ran)"
+cat > "$WORK/bin/apt-helper" <<'STUB'
+#!/bin/sh
+[ "$1" = cat-file ] || exit 2
+case "$2" in
+	*.gz) zcat "$2" ;;
+	*) cat "$2" ;;
+esac
+STUB
 check "an index apt cannot read is a failure, not an empty plan" "1" \
 	"$(rm -f "$WORK/lists/"*; : > "$WORK/lists/empty_Packages"; run_upgrade >/dev/null; echo $?)"
 
@@ -279,6 +300,18 @@ post configure
 check "configuring it again switches the timer back on" "enabled" "$(unit)"
 check "and forgets that it had suspended it" "0" \
 	"$([ -f "$WORK/state/suspended-by-package" ] && echo 1 || echo 0)"
+
+# A restore that fails keeps its mark, so the next configure tries again.
+reset
+post configure
+pre deconfigure
+: > "$WORK/enable-fails"
+post configure
+check "a restore that fails keeps the mark" "1" \
+	"$([ -f "$WORK/state/suspended-by-package" ] && echo 1 || echo 0)"
+rm -f "$WORK/enable-fails"
+post configure
+check "and the next configure switches the timer back on" "enabled" "$(unit)"
 
 reset
 post configure
