@@ -132,7 +132,10 @@ for deb in "${debs[@]}"; do
 		upstream="${ver#*:}"
 		upstream="${upstream%-*}"
 		want="${EXPECTED_TAG#v}"
-		if [ "$upstream" != "$want" ]; then
+		# A tag with a hyphen (v5.10.0-rc1) is ambiguous: dpkg reads the text
+		# after the last hyphen as the revision. Accept the whole version as
+		# well, still equal to the tag, and nothing looser.
+		if [ "$upstream" != "$want" ] && [ "${ver#*:}" != "$want" ]; then
 			echo "::error::version mismatch: $(basename "$deb") declares '$ver' but was downloaded from release '$EXPECTED_TAG'; a release must not carry a .deb built for another one" >&2
 			exit 1
 		fi

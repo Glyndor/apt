@@ -301,6 +301,30 @@ sign "$d/podup_5.9.2_amd64.deb"
 assert 0 "an epoch and a Debian revision do not break the tag binding" \
 	-- "$VERIFY" "$d" "$WORK/key.b64" podup v5.9.2
 
+# A pre-release tag carries a hyphen, which dpkg would read as the revision
+# separator. The whole version equal to the tag is admitted; a different
+# pre-release of the same base is still refused.
+d="$WORK/case17b"; mkdir -p "$d"
+deb="$(make_deb prerelease podup 5.10.0-rc1)"; cp "$deb" "$d/podup_5.10.0-rc1_amd64.deb"
+sign "$d/podup_5.10.0-rc1_amd64.deb"
+assert 0 "a pre-release version equal to a hyphenated tag is admitted" \
+	-- "$VERIFY" "$d" "$WORK/key.b64" podup v5.10.0-rc1
+assert_error 1 "version mismatch" \
+	"and the same package is refused under another pre-release of the base" \
+	-- "$VERIFY" "$d" "$WORK/key.b64" podup v5.10.0-rc2
+
+# A key with a stray character inside it. Without validate=True, b64decode
+# throws the character away and the key still decodes to 32 bytes, so a file that
+# is not the key it claims to be would be trusted.
+d="$WORK/case17c"; mkdir -p "$d"
+deb="$(make_deb strict podup 5.9.2)"; cp "$deb" "$d/podup_5.9.2_amd64.deb"
+sign "$d/podup_5.9.2_amd64.deb"
+key="$(cat "$WORK/key.b64")"
+printf '%s!%s\n' "${key:0:10}" "${key:10}" > "$WORK/key-stray.b64"
+assert_error 1 "malformed release public key" \
+	"a key with a character outside the base64 alphabet is refused" \
+	-- "$VERIFY" "$d" "$WORK/key-stray.b64" podup v5.9.2
+
 # --- Case 18: with no tag given the binding is skipped, which is why the ------
 #             workflow must never pass an empty one.
 #
