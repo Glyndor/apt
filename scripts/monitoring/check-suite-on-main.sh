@@ -137,7 +137,13 @@ if [ "$event" = "push" ] && [ -n "$sha" ]; then
 
 	run=""
 	for attempt in $(seq 1 32); do
-		run="$(gh api "$url" --jq "$filter")"
+		# A transient API error (a 502, a dropped connection) on one attempt is not
+		# a verdict: it reads like "no run yet" and is asked again. A failure that
+		# persists runs out the attempts and ends in the no-verdict error below.
+		run="$(gh api "$url" --jq "$filter")" || {
+			echo "::warning::gh api failed on attempt $attempt of 32; asking again" >&2
+			run=""
+		}
 		if [ -n "$run" ]; then
 			IFS=$'\t' read -r status _ <<<"$run"
 			if [ "$status" = "completed" ]; then
