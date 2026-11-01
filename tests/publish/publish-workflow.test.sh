@@ -308,6 +308,54 @@ check "and it names both candidates" "1" \
 	   printf '%s' "$out" | grep -q 'podup_2.0.0_amd64.deb' && echo 1 || echo 0)"
 check "and it refused before any download" "0" "$(download_calls)"
 
+# --- each count check is the one that refuses ---------------------------------
+#
+# The case above has two .debs AND two .sigs, so the signature count refuses it
+# even without the .deb count, and its message ("carries 2 ... amd64") fits both.
+# Here only one thing is wrong each time, and the message names which.
+ASSETS_TWO_DEBS_ONE_SIG="1000 podup_1.0.0_amd64.deb
+1000 podup_2.0.0_amd64.deb
+100 podup_1.0.0_amd64.deb.sig
+1000 podup_1.0.0_arm64.deb
+100 podup_1.0.0_arm64.deb.sig"
+out="$(run_step v1.0.0 "$ASSETS_TWO_DEBS_ONE_SIG" podup 'amd64 arm64')"; rc=$?
+check "two same-arch .debs with one signature fail the publish" "1" "$rc"
+check "and it is the .deb count that refused" "1" \
+	"$(printf '%s' "$out" | grep -c 'carries 2 amd64 .deb file(s)')"
+check "and it refused before any download" "0" "$(download_calls)"
+
+ASSETS_ONE_DEB_TWO_SIGS="1000 podup_1.0.0_amd64.deb
+100 podup_1.0.0_amd64.deb.sig
+100 podup_2.0.0_amd64.deb.sig
+1000 podup_1.0.0_arm64.deb
+100 podup_1.0.0_arm64.deb.sig"
+out="$(run_step v1.0.0 "$ASSETS_ONE_DEB_TWO_SIGS" podup 'amd64 arm64')"; rc=$?
+check "one .deb with two signatures fails the publish" "1" "$rc"
+check "and it is the signature count that refused" "1" \
+	"$(printf '%s' "$out" | grep -c 'carries 2 amd64 .deb.sig file(s)')"
+check "and it refused before any download" "0" "$(download_calls)"
+
+# --- the advertised size is checked before any byte moves --------------------
+ASSETS_BIG_SIG="1000 podup_1.0.0_amd64.deb
+99999999 podup_1.0.0_amd64.deb.sig
+1000 podup_1.0.0_arm64.deb
+100 podup_1.0.0_arm64.deb.sig"
+out="$(run_step v1.0.0 "$ASSETS_BIG_SIG" podup 'amd64 arm64')"; rc=$?
+check "an oversized signature fails the publish" "1" "$rc"
+check "and the refusal is the .sig cap, naming the file" "1" \
+	"$(printf '%s' "$out" | grep -c 'podup_1.0.0_amd64.deb.sig is 99999999 bytes, over the')"
+check "and it refused before any download" "0" "$(download_calls)"
+
+ASSETS_NAN="abc podup_1.0.0_amd64.deb
+100 podup_1.0.0_amd64.deb.sig
+1000 podup_1.0.0_arm64.deb
+100 podup_1.0.0_arm64.deb.sig"
+out="$(run_step v1.0.0 "$ASSETS_NAN" podup 'amd64 arm64')"; rc=$?
+check "a non-numeric advertised size fails the publish" "1" "$rc"
+check "and the refusal says the size is not numeric" "1" \
+	"$(printf '%s' "$out" | grep -c 'non-numeric size')"
+check "and it refused before any download" "0" "$(download_calls)"
+
 # --- an asset name that is itself a glob ------------------------------------
 #
 # `--pattern` is a glob and the name it is given comes from the release
