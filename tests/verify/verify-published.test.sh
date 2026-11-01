@@ -481,6 +481,44 @@ assert_error 1 "after 1 attempt" \
 	"and with room to spare it still ends on the attempts" \
 	-- "$VERIFY" "$BASE" "$TRUSTED_ASC" 1 0 600
 
+# The budget is global: once it is spent, no further object is fetched, in the
+# same round either. A curl that logs every request and then does the real work
+# makes that visible: with a budget of one second the run must start fewer transfers
+# than with room to spare, and still name what it did not verify. The spy
+# sleeps a second per request so that a one-second budget is spent by the first.
+build_archive
+mkdir -p "$WORK/curlspy"
+cat > "$WORK/curlspy/curl" <<SPY
+#!/bin/sh
+echo "\$*" >> "$WORK/curlspy/log"
+sleep 1
+exec $(command -v curl) "\$@"
+SPY
+chmod +x "$WORK/curlspy/curl"
+: > "$WORK/curlspy/log"
+PATH="$WORK/curlspy:$PATH" "$VERIFY" "$BASE" "$TRUSTED_ASC" 1 0 600 >/dev/null 2>&1 || true
+roomy_fetches="$(wc -l < "$WORK/curlspy/log")"
+: > "$WORK/curlspy/log"
+zero_out="$(PATH="$WORK/curlspy:$PATH" "$VERIFY" "$BASE" "$TRUSTED_ASC" 1 0 1 2>&1 || true)"
+zero_fetches="$(wc -l < "$WORK/curlspy/log")"
+# A margin, not just "fewer": the transfers before verify_set (the signed indices)
+# are made either way, and the old loop saved one of twelve by accident.
+if [ $((zero_fetches + 4)) -le "$roomy_fetches" ]; then
+	echo "ok   - a spent budget starts no further transfer ($zero_fetches against $roomy_fetches)"
+	pass=$((pass + 1))
+else
+	echo "FAIL - a spent budget still started every transfer ($zero_fetches against $roomy_fetches)"
+	fail=$((fail + 1))
+fi
+if printf '%s' "$zero_out" | grep -q 'budget ran out'; then
+	echo "ok   - and it names the budget"
+	pass=$((pass + 1))
+else
+	echo "FAIL - the spent budget was not named"
+	printf '%s\n' "$zero_out" | sed 's/^/       /'
+	fail=$((fail + 1))
+fi
+
 # --- The caps: bounded work, not just bounded objects ------------------------
 # The two caps are the only thing keeping a hostile or runaway index from
 # turning this gate into an unbounded download. They are exercised here by

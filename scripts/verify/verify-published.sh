@@ -293,6 +293,15 @@ verify_set() {
 		failed=()
 		for entry in "${pending[@]}"; do
 			read -r entry_hash entry_size entry_path <<< "$entry"
+			# The budget is global, so it is read before every transfer and
+			# not only between rounds: a round over a slow peer would
+			# otherwise start every remaining download after the budget was
+			# already spent. What is not started is counted as not served as
+			# signed, and named below like any other.
+			if [ "$(elapsed)" -ge "$BUDGET" ]; then
+				failed+=("$entry")
+				continue
+			fi
 			if ! check_entry "$entry_hash" "$entry_size" "$entry_path" \
 				"$prefix" "$max_bytes" "$save_dir"; then
 				failed+=("$entry")
