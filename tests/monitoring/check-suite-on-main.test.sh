@@ -91,6 +91,11 @@ done
 if [ -n "${STUB_JSON_DIR:-}" ]; then
 	idx=$(grep -cz . "$LOG" 2>/dev/null || true)
 	idx="${idx:-0}"
+	# STUB_FAIL_FIRST=N: the first N calls fail like a 502.
+	if [ "$idx" -le "${STUB_FAIL_FIRST:-0}" ]; then
+		echo "gh: HTTP 502" >&2
+		exit 1
+	fi
 	f="${STUB_JSON_DIR}/${idx}"
 	[ -f "$f" ] || { echo "stub: no response file for call ${idx} (${f})" >&2; exit 1; }
 	if [ -n "$filter" ]; then
@@ -529,6 +534,19 @@ check "R2: and slept exactly once, for 15 seconds" "1" \
 	"$(grep -acz . "$WORK/sleep.log" | tr -d ' ')"
 check "R2: and the sleep argument was 15" "15" \
 	"$(tr '\0' '\n' < "$WORK/sleep.log" | xargs)"
+
+# --- R2b: a transient gh failure on the push path is asked again -------------
+# One 502 must not end a poll that has 31 attempts left; a failure that never
+# clears must still end red, not green.
+rm -rf "$WORK/json"; mkdir -p "$WORK/json"
+json_page \
+	"$(json_run 9501 9501 completed success "$PUSH_SHA" "$OLD_TS" "$PUSH_NEW_URL")" \
+	> "$WORK/json/2"
+out="$(STUB_FAIL_FIRST=1 run_gate_json_dir push "$PUSH_SHA")"; rc=$?
+check "R2b: one failing gh call does not end the poll" "0" "$rc"
+check "R2b: and it says it is asking again" "1" "$(says "$out" 'asking again')"
+out="$(STUB_FAIL_FIRST=99 run_gate_json_dir push "$PUSH_SHA")"; rc=$?
+check "R2b: a failure that never clears ends red" "1" "$rc"
 
 # --- R3: run for GITHUB_SHA completes failure ------------------------------
 #

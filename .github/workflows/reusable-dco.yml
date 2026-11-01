@@ -43,10 +43,17 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for sha in $(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}"); do
+          # Listed first, in an assignment, so that a range that cannot be walked
+          # (a base that is not in the clone) fails the step. Inside a `for ... in
+          # $(...)` the status is dropped and the loop just does not run, which
+          # printed "All commits carry a Signed-off-by trailer" over nothing.
+          shas="$(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}")" \
+            || { echo "::error::could not list ${BASE_SHA}..${HEAD_SHA}; the range could not be checked"; exit 1; }
+          for sha in $shas; do
             author="$(git show -s --format='%an <%ae>' "$sha")"
-            if ! git show -s --format='%(trailers:key=Signed-off-by)' "$sha" \
-              | grep -qi 'Signed-off-by:'; then
+            # A real trailer: a name and an address, not an empty "Signed-off-by:".
+            if ! git show -s --format='%(trailers:key=Signed-off-by,valueonly)' "$sha" \
+              | grep -qE '^.+ <[^<>@ ]+@[^<>@ ]+>$'; then
               echo "::error::commit $sha ($author) is missing a Signed-off-by trailer"
               missing=1
             fi

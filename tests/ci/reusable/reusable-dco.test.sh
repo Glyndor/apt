@@ -114,6 +114,32 @@ lower="$(git -C "$repo" rev-parse HEAD)"
 out="$(run_step "$bad" "$lower")"; rc=$?
 check "a lowercase signed-off-by trailer is accepted" "0" "$rc"
 
+# --- a range that cannot be walked is not an empty range --------------------
+# A base that is not in the clone used to make the loop not run at all, and the
+# step printed "All commits carry a Signed-off-by trailer" over nothing.
+out="$(run_step deadbeefdeadbeefdeadbeefdeadbeefdeadbeef "$lower")"; rc=$?
+check "a base that is not in the repository fails the step" "1" "$rc"
+check "and does not claim every commit is signed" "0" \
+	"$(printf '%s' "$out" | grep -c 'All commits carry')"
+
+# --- a trailer needs a name and an address ----------------------------------
+echo "$RANDOM" > "$repo/f"
+git -C "$repo" add -A
+git -C "$repo" commit -qm "fifth
+
+Signed-off-by:"
+empty="$(git -C "$repo" rev-parse HEAD)"
+out="$(run_step "$lower" "$empty")"; rc=$?
+check "an empty Signed-off-by trailer does not count" "1" "$rc"
+echo "$RANDOM" > "$repo/f"
+git -C "$repo" add -A
+git -C "$repo" commit -qm "sixth
+
+Signed-off-by: nobody"
+noaddr="$(git -C "$repo" rev-parse HEAD)"
+out="$(run_step "$empty" "$noaddr")"; rc=$?
+check "a Signed-off-by without an address does not count" "1" "$rc"
+
 # ===========================================================================
 # Detect evil merges
 # ===========================================================================
