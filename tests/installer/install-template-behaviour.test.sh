@@ -532,6 +532,27 @@ check "a package that unpacks past the ceiling is refused" "1" "$rc"
 check "and the message says it unpacks to more than 8 MB" "1" "$(said 'unpacks to more than 8 MB')"
 check "and nothing was installed" "0" "$(installed)"
 
+# --- a data archive compressed twice -------------------------------------------
+#
+# dpkg-deb --fsys-tarfile undoes one layer. If the data member is gzip inside
+# gzip, what comes out is still gzip, small enough to pass the ceiling, and tar
+# given a file name would decompress it a second time past the ceiling. Built by
+# hand with ar, since dpkg-deb would never write it.
+twice="$WORK/pkg-twice"
+rm -rf "$twice"; mkdir -p "$twice/data/usr/share/keyrings" "$twice/data/usr/share/doc" "$twice/control"
+export_ring good "$twice/data/usr/share/keyrings/glyndor.gpg"
+head -c $((20 * 1024 * 1024)) /dev/zero > "$twice/data/usr/share/doc/zeroes"
+printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' \
+	> "$twice/control/control"
+printf '2.0\n' > "$twice/debian-binary"
+tar -C "$twice/control" --owner=0 --group=0 -czf "$twice/control.tar.gz" .
+tar -C "$twice/data" --owner=0 --group=0 -cf - . | gzip -9 | gzip -9 > "$twice/data.tar.gz"
+( cd "$twice" && ar rc "$WORK/twice.deb" debian-binary control.tar.gz data.tar.gz )
+sign_deb good "$WORK/twice.deb"
+rc=0; run_installer "$WORK/twice.deb" "$FPR_GOOD" || rc=$?
+check "a data archive compressed twice is refused" "1" "$rc"
+check "and nothing was installed" "0" "$(installed)"
+
 # --- a .deb carrying no keyring at all --------------------------------------
 #
 # `gpg --show-keys` on a missing file yields nothing, and an empty fingerprint

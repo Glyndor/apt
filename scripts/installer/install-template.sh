@@ -320,7 +320,10 @@ dpkg-deb --fsys-tarfile "$workdir/glyndor-archive-keyring.deb" 2>/dev/null \
 [ -s "$workdir/keyring.tar" ] || fail "could not extract the keyring package"
 [ "$(wc -c < "$workdir/keyring.tar")" -le $((8 * 1024 * 1024)) ] \
 	|| fail "the keyring package unpacks to more than 8 MB; nothing was installed"
-tar -x -f "$workdir/keyring.tar" -C "$workdir/extracted" --no-same-owner </dev/null \
+# From stdin, not by file name: tar looks at a named file and decompresses it
+# when it is gzip or xz, so a data archive that is itself compressed twice would
+# have got past the ceiling above. On stdin tar refuses a compressed stream.
+tar -x -f - -C "$workdir/extracted" --no-same-owner < "$workdir/keyring.tar" \
 	|| fail "could not extract the keyring package"
 
 # EVERY key in the keyring must be one this installer was told to expect, not
