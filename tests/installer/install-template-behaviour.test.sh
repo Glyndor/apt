@@ -532,6 +532,73 @@ check "a package that unpacks past the ceiling is refused" "1" "$rc"
 check "and the message says it unpacks to more than 8 MB" "1" "$(said 'unpacks to more than 8 MB')"
 check "and nothing was installed" "0" "$(installed)"
 
+# --- the byte caps over a real HTTP transfer ------------------------------------
+#
+# file:// never reaches curl's --max-filesize or its clock, so those flags could
+# be deleted with every case above green (measured). A local server announces a
+# body over each cap. The bytes are real and finite on purpose: a stream that
+# never ends only proves that something, perhaps a full disk, stopped it, and it
+# fills the disk if the cap is the thing being removed. With the cap the refusal
+# is "could not download"; without it the download succeeds and the installer
+# fails later, with a different message.
+mkdir -p "$WORK/srv"
+cat > "$WORK/srv/serve.py" <<'PY'
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+ROOT = sys.argv[2]
+
+class H(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    def log_message(self, *a):
+        pass
+    def do_GET(self):
+        if self.path == "/big.deb":
+            data = b"\0" * (9 * 1024 * 1024)
+        elif self.path in ("/sigbig.deb.asc",):
+            data = b"x" * (100 * 1024)
+        elif self.path in ("/good.deb", "/sigbig.deb"):
+            data = open(ROOT + "/good.deb", "rb").read()
+        elif self.path == "/good.deb.asc":
+            data = open(ROOT + "/good.deb.asc", "rb").read()
+        else:
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+PY
+cp "$(mkdeb good good no)" "$WORK/srv/good.deb"; cp "$WORK/good.deb.asc" "$WORK/srv/good.deb.asc"
+HTTP_PORT="$(python3 -c 'import socket
+s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+python3 "$WORK/srv/serve.py" "$HTTP_PORT" "$WORK/srv" >/dev/null 2>&1 &
+SRV_PID=$!
+for _ in $(seq 1 50); do curl -fsS "http://127.0.0.1:$HTTP_PORT/good.deb.asc" >/dev/null 2>&1 && break; sleep 0.1; done
+run_installer_url() { # $1=url  $2=fingerprint
+	rm -f "$WORK/marker"
+	sed 's/@PRODUCT@/testpkg/g' "$TEMPLATE" > "$WORK/install.sh"
+	env -i PATH="$BIN:$PATH" HOME="$WORK" WORK="$WORK" DPKG_MARKER="$WORK/marker" \
+		KEYRING_URL="$1" GLYNDOR_APT_FPR="$2" \
+		timeout 60 /bin/sh "$WORK/install.sh" >"$WORK/out" 2>&1
+}
+rc=0; run_installer_url "http://127.0.0.1:$HTTP_PORT/good.deb" "$FPR_GOOD" || rc=$?
+check "over http, a real keyring is accepted (the control for the cases below)" "0" "$rc"
+rc=0; run_installer_url "http://127.0.0.1:$HTTP_PORT/big.deb" "$FPR_GOOD" || rc=$?
+check "a package body over the byte cap is refused" "1" "$rc"
+check "and it is refused at the download, naming the cap" "1" "$(said '.deb (over 8 MB')"
+check "and nothing was installed" "0" "$(installed)"
+rc=0; run_installer_url "http://127.0.0.1:$HTTP_PORT/sigbig.deb" "$FPR_GOOD" || rc=$?
+check "a signature body over its byte cap is refused" "1" "$rc"
+check "and it is refused at the signature download, naming the cap" "1" "$(said '.asc (over 64 KB')"
+check "and nothing was installed" "0" "$(installed)"
+kill "$SRV_PID" 2>/dev/null || true
+wait "$SRV_PID" 2>/dev/null || true
+
 # --- a data archive compressed twice -------------------------------------------
 #
 # dpkg-deb --fsys-tarfile undoes one layer. If the data member is gzip inside
