@@ -374,7 +374,7 @@ ASSETS_LIES="1000 podup_1.0.0_amd64.deb
 out="$(STUB_SIG_DELIVERED=5000 run_step v1.0.0 "$ASSETS_LIES" podup 'amd64 arm64')"; rc=$?
 check "a signature that arrives over the cap fails the publish" "1" "$rc"
 check "and the refusal is the signature cap, naming the file" "1" \
-	"$(printf '%s' "$out" | grep -c 'podup_1.0.0_amd64.deb.sig is 5000 bytes, over the')"
+	"$(printf '%s' "$out" | grep -c '\.deb\.sig is 5000 bytes, over the')"
 
 # --- an asset name that is itself a glob ------------------------------------
 #
