@@ -114,9 +114,13 @@ class H(BaseHTTPRequestHandler):
             data = b"\0" * (9 * 1024 * 1024)
         elif self.path in ("/sigbig.deb.asc",):
             data = b"x" * (100 * 1024)
+        elif self.path == "/slow.deb":
+            import time
+            time.sleep(6)
+            data = open(ROOT + "/good.deb", "rb").read()
         elif self.path in ("/good.deb", "/sigbig.deb"):
             data = open(ROOT + "/good.deb", "rb").read()
-        elif self.path == "/good.deb.asc":
+        elif self.path in ("/good.deb.asc", "/slow.deb.asc"):
             data = open(ROOT + "/good.deb.asc", "rb").read()
         else:
             self.send_response(404)
@@ -152,6 +156,20 @@ check "and nothing was installed" "0" "$(installed)"
 rc=0; run_installer_url "http://127.0.0.1:$HTTP_PORT/sigbig.deb" "$FPR_GOOD" || rc=$?
 check "a signature body over its byte cap is refused" "1" "$rc"
 check "and it is refused at the signature download, naming the cap" "1" "$(said '.asc (over 64 KB')"
+check "and nothing was installed" "0" "$(installed)"
+# The clock. The real deadline is 300 s, so the test shortens it to 2 s in a copy
+# of the installer and serves a body that arrives after 6 s: with --max-time the
+# transfer is cut at 2 s; without it the same body arrives and is accepted.
+run_installer_fast_clock() { # $1=url  $2=fingerprint
+	rm -f "$WORK/marker"
+	sed -e 's/@PRODUCT@/testpkg/g' -e 's/--max-time 300/--max-time 2/g' "$TEMPLATE" > "$WORK/install.sh"
+	env -i PATH="$BIN:$PATH" HOME="$WORK" WORK="$WORK" DPKG_MARKER="$WORK/marker" \
+		KEYRING_URL="$1" GLYNDOR_APT_FPR="$2" \
+		timeout 60 /bin/sh "$WORK/install.sh" >"$WORK/out" 2>&1
+}
+rc=0; run_installer_fast_clock "http://127.0.0.1:$HTTP_PORT/slow.deb" "$FPR_GOOD" || rc=$?
+check "a package that arrives after the deadline is refused" "1" "$rc"
+check "and it is refused at the download" "1" "$(said 'could not download')"
 check "and nothing was installed" "0" "$(installed)"
 kill "$SRV_PID" 2>/dev/null || true
 wait "$SRV_PID" 2>/dev/null || true
