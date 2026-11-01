@@ -34,6 +34,23 @@ for name in reusable-shell-ci reusable-workflow-lint reusable-line-limit \
 		"  cancel-in-progress: \${{ github.event_name == 'pull_request' }}" "$line"
 done
 
+# A workflow that fires on a schedule is never replaced by the next run.
+for f in "$HERE"/.github/workflows/*.yml; do
+	name="$(basename "$f" .yml)"
+	case "$name" in reusable-*) continue ;; esac
+	grep -q '^  schedule:' "$f" || continue
+	line="$(grep -E '^  cancel-in-progress:' "$f" | head -1)"
+	check "$name does not cancel a scheduled run unconditionally" "0" \
+		"$(printf '%s' "$line" | grep -c 'cancel-in-progress: true')"
+done
+
+# The second comparison in drift.yml has to run even when the first one failed.
+if [ -f "$HERE/.github/workflows/drift.yml" ] && grep -q 'check-render-drift.sh' "$HERE/.github/workflows/drift.yml"; then
+	# shellcheck disable=SC2016 # a GitHub expression, literal on purpose
+	check "the render comparison in drift.yml runs after a failure of the reusable one" "1" \
+		"$(grep -B4 'check-render-drift.sh' "$HERE/.github/workflows/drift.yml" | grep -c 'if: ${{ !cancelled() }}')"
+fi
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

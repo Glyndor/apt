@@ -53,7 +53,8 @@ permissions:
 
 concurrency:
   group: drift-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A scheduled run is never replaced by the next one (see cancel-policy.test.sh).
+  cancel-in-progress: false
 
 jobs:
   drift:
