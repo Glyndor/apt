@@ -166,6 +166,17 @@ check "a version-constrained requirement is shown with the package" "1" \
 	"$(grep -o 'install/podup | sudo sh</code> <span>needs <code>podman (&gt;= 5.0)</code>' "$E" | wc -l)"
 check "an unconstrained one is shown too" "1" \
 	"$(grep -o '<code>unattended-upgrades</code>' "$E" | wc -l)"
+
+# Requirements can differ by architecture. Showing only the first index's would
+# print the looser one and hide the stricter one the other architecture needs.
+archive "$WORK/m" "amd64 arm64" 'podup@libc6 (>= 2.36), curl'
+sed -i 's/>= 2.36/>= 2.39/' "$WORK/m/dists/stable/main/binary-arm64/Packages"
+rc=0; run "$WORK/m" || rc=$?
+check "an archive with different requirements per architecture builds a page" "0" "$rc"
+M="$WORK/m/index.html"
+check "the requirement of the first architecture is shown" "1" "$(grep -c 'libc6 (&gt;= 2.36)' "$M")"
+check "the stricter requirement of the other one is shown too" "1" "$(grep -c 'libc6 (&gt;= 2.39)' "$M")"
+check "a requirement both share is shown once" "1" "$(grep -o '<code>curl</code>' "$M" | wc -l)"
 check "each package gets its own requirements, not the archive's" "1" \
 	"$(grep -o 'install/epistle | sudo sh</code> <span>needs <code>adduser</code></span>' "$E" | wc -l)"
 
