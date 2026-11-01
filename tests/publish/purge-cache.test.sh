@@ -173,6 +173,16 @@ check "the pool object is deduplicated across the two indices" \
 check "the per-architecture Release files are purged" \
 	"2" "$(jq -s -r '[.[].files[] | select(endswith("binary-amd64/Release") or endswith("binary-arm64/Release"))] | length' < "$REQUESTS")"
 
+# A trailing slash on the archive URL must not double the separator: Cloudflare
+# purges by exact URL, so "https://x//dists/..." clears nothing that is served.
+: > "$REQUESTS"
+"$PURGE" "https://apt.example/" "$BUILT" > "$WORK/out" 2>&1 \
+	|| { echo "FAIL  the trailing-slash case exited non-zero"; cat "$WORK/out"; exit 1; }
+check "a trailing slash on the archive URL does not double the separator" \
+	"0" "$(jq -s -r '[.[].files[] | select(contains("example//"))] | length' < "$REQUESTS")"
+check "and the same 16 URLs are purged" \
+	"16" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
+
 # The signature is the file this list forgot. It is served from the root under a
 # fixed name with `max-age=86400`, next to a package that is rebuilt every run,
 # so an unpurged one is the edge handing out a new package with the previous
@@ -275,6 +285,29 @@ rm -f "$BUILT/glyndor-archive-keyring.deb"
 rc=0
 "$PURGE" "https://apt.example" "$BUILT" >/dev/null 2>&1 || rc=$?
 check "a missing keyring package fails the purge" "1" "$rc"
+
+# The missing-directory and empty-list cases name their cause; before, set -e
+# ended the script silently (no install/) or on awk's own error (no Packages).
+build_archive 1 "amd64 arm64"
+rm -rf "$BUILT/install"
+rc=0
+"$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 || rc=$?
+check "a missing install/ directory fails the purge" "1" "$rc"
+check "and says that install/ is missing" "1" "$(grep -c 'no install/ directory' "$WORK/out")"
+
+build_archive 1 "amd64 arm64"
+rm -f "$BUILT"/dists/stable/main/binary-*/Packages
+rc=0
+"$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 || rc=$?
+check "a tree with no Packages index fails the purge" "1" "$rc"
+check "and says there is no Packages index" "1" "$(grep -c 'no Packages index' "$WORK/out")"
+
+build_archive 1 "amd64 arm64"
+sed -i 's|^SHA256:$|SHA256:\n deadbeef 1 ../../evil|' "$BUILT/dists/stable/Release"
+rc=0
+"$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 || rc=$?
+check "a Release naming an index path with .. fails the purge" "1" "$rc"
+check "and names the path problem" "1" "$(grep -c "containing '..'" "$WORK/out")"
 
 rc=0
 CF_TOKEN="" "$PURGE" "https://apt.example" "$BUILT" >/dev/null 2>&1 || rc=$?

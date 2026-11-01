@@ -57,7 +57,13 @@ PACKAGED_INPUTS=(keyring/glyndor-apt-key.asc keyring/glyndor.sources keyring/gly
 
 # Base version from keyring/version, suffixed with that date.
 BASE_VERSION="$(cat "$HERE/keyring/version")"
-PKG_DATE="$(git -C "$HERE" log -1 --format=%cd --date=format:%Y%m%d%H%M%S \
+# The file goes into the control file as it is, so a second line would add a
+# field. A Debian upstream version starts with a digit and holds only these.
+[[ "$BASE_VERSION" =~ ^[0-9][0-9A-Za-z.+~]*$ ]] \
+	|| { echo "::error::keyring/version is not a single Debian upstream version" >&2; exit 1; }
+# UTC, not the committer's zone: the version has to grow with the commits, and
+# the same instant written from +0200 and from +0000 sorts the other way round.
+PKG_DATE="$(TZ=UTC git -C "$HERE" log -1 --format=%cd --date=format-local:%Y%m%d%H%M%S \
 	-- "${PACKAGED_INPUTS[@]}" 2>/dev/null || true)"
 # The same commit as a Unix timestamp, used below to make the build
 # reproducible. Derived from repository state rather than the clock, so two
@@ -109,6 +115,14 @@ pub_lines="$(gpg --show-keys --with-colons "$ROOT/usr/share/keyrings/glyndor.gpg
 	| grep '^pub:' || true)"
 key_count="$(printf '%s' "$pub_lines" | grep -c . || true)"
 [ "$key_count" -ge 1 ] || { echo "::error::keyring contains no usable key" >&2; exit 1; }
+
+# The file is a public keyring. `gpg --dearmor` copies every packet it is given,
+# secret ones included, and the count above only looks at `pub:` records, so a
+# private key pasted next to the public one would be published in the package.
+if gpg --show-keys --with-colons "$ROOT/usr/share/keyrings/glyndor.gpg" 2>/dev/null | grep -q '^sec:'; then
+	echo "::error::the keyring input carries a SECRET key; refusing to package it" >&2
+	exit 1
+fi
 
 # Counting keys is not the same as having a usable one. An expired or revoked
 # key dearmors and counts exactly like a live one, so the build would package it
