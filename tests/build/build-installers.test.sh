@@ -107,14 +107,19 @@ check "and writes nothing" "0" "$(find "$WORK/out" -name epistle 2>/dev/null | w
 
 # --- fail-closed 2: substitution left a placeholder behind --------------------
 #
-# Reached by a placeholder `sed` cannot replace with the s/@PRODUCT@/x/g form,
-# here one split across a line, which is exactly what a careless template edit
-# produces.
+# The generator checks its own output because a substitution that does nothing
+# still yields a valid shell script. With the names the guard admits, the real
+# sed always replaces every occurrence, so the branch is reached by putting a sed
+# that changes nothing first on PATH. The case is a negative one: remove the
+# check and this goes green, which is how it is known to reach it.
 
-awk '{ print } NR==1 { print "# @PRODUCT\\@" }' "$TEMPLATE" > "$WORK/split-placeholder"
-printf '# @PRODUCT@\n' >> "$WORK/split-placeholder"
-rc=0; run "$WORK/split-placeholder" podup || rc=$?
-check "a rendered installer is checked for leftovers" "0" "$rc"
+mkdir -p "$WORK/nosed"
+# shellcheck disable=SC2016 # the stub body must reach the file unexpanded
+printf '#!/bin/sh\n# A sed that passes the template through untouched.\nfor last; do :; done\ncat "$last"\n' > "$WORK/nosed/sed"
+chmod +x "$WORK/nosed/sed"
+rc=0; PATH="$WORK/nosed:$PATH" run - podup || rc=$?
+check "an installer that still carries the placeholder is refused" "1" "$rc"
+check "and the error names the file and the placeholder" "1" "$(grep -c 'still contains @PRODUCT@' "$WORK/stderr" || true)"
 
 # --- fail-closed 3: the rendered script is not valid shell --------------------
 

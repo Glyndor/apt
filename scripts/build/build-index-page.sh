@@ -94,11 +94,15 @@ ARCH_LIST="${ARCHES// /, }"
 OWN_PACKAGES="$(awk '/^Package:/ { print $2 }' \
 	"$OUT_DIR"/dists/stable/main/binary-*/Packages)"
 
-# depends_of <package>: the raw Depends line, or nothing.
+# depends_of <package>: the raw Depends lines of every architecture's index,
+# joined with commas, or nothing. Taking only the first one would show the
+# requirements of whichever architecture sorts first and hide a stricter one on
+# another; external_requirements drops the entries repeated across them.
 depends_of() {
 	awk -v want="$1" '
 		/^Package:/ { name = $2 }
-		/^Depends:/ { if (name == want) { $1 = ""; sub(/^ +/, ""); print; exit } }
+		/^Depends:/ { if (name == want) { $1 = ""; sub(/^ +/, ""); out = out (out == "" ? "" : ", ") $0 } }
+		END { if (out != "") print out }
 	' "$OUT_DIR"/dists/stable/main/binary-*/Packages
 }
 
@@ -128,7 +132,7 @@ html_escape() {
 # a browser, so the charset is checked rather than trusted. A version relation
 # carries `>` and `<<`, which is exactly why escaping is not optional here.
 external_requirements() {
-	local deps dep base out=""
+	local deps dep base out="" seen="|"
 	deps="$(depends_of "$1")"
 	[ -n "$deps" ] || return 0
 	local IFS=','
@@ -136,6 +140,8 @@ external_requirements() {
 		dep="${dep#"${dep%%[![:space:]]*}"}"
 		dep="${dep%"${dep##*[![:space:]]}"}"
 		[ -n "$dep" ] || continue
+		case "$seen" in *"|$dep|"*) continue ;; esac
+		seen="$seen$dep|"
 		base="${dep%%[[:space:]|]*}"
 		if printf '%s\n' "$OWN_PACKAGES" | grep -qxF "$base"; then
 			continue

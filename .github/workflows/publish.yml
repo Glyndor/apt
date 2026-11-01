@@ -336,14 +336,12 @@ jobs:
           GLYNDOR_APT_GPG_PRIVATE_KEY: ${{ secrets.GLYNDOR_APT_GPG_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          # This signature is NOT yet verified by anything. The installer change
-          # that demands it is a separate, deliberate PR: until it lands, every
-          # fresh install must continue to bootstrap from an unsigned archive,
-          # and the worst this step can do is produce a signature nobody
-          # checks. The order is this way round for the same reason the deploy
-          # is split: the archive must serve the .asc before any installer can
-          # require it, or the first fresh install between the two deploys
-          # fails.
+          # This signature is demanded by the bootstrap installer: it verifies
+          # glyndor-archive-keyring.deb against the key the package carries and
+          # stops before installing anything if the check fails, and the
+          # published-archive verification reads it again afterwards. The .asc
+          # therefore has to be served before an installer can require it, which
+          # is why this step sits where it does in the deploy.
           if [ -z "$GLYNDOR_APT_GPG_PRIVATE_KEY" ]; then
             echo "::error::GLYNDOR_APT_GPG_PRIVATE_KEY secret is not configured."
             exit 1
