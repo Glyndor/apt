@@ -447,10 +447,89 @@ printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaint
 export_ring good "$big/usr/share/keyrings/glyndor.gpg"
 head -c $((9 * 1024 * 1024)) /dev/urandom > "$big/usr/share/doc/padding"
 dpkg-deb -Znone --root-owner-group --build "$big" "$WORK/huge.deb" >/dev/null 2>&1
+# Signed by the right key. Unsigned, the refusal below came from the missing
+# signature and the cap could be deleted with this case still green (measured).
+sign_deb good "$WORK/huge.deb"
 
 rc=0; run_installer "$WORK/huge.deb" "$FPR_GOOD" || rc=$?
 check "a download larger than the cap is refused" "1" "$rc"
 check "and it is refused at the download, not later" "1" "$(said 'could not download')"
+check "and nothing was installed" "0" "$(installed)"
+
+# --- delivered through a pipe, as `curl ... | sudo sh` delivers it ----------------
+#
+# The shell reads the script from stdin as it goes. A child that also reads stdin
+# (dpkg and apt-get can, when they ask something) swallows the rest of the
+# script, and dash then ends quietly with status 0 having run half of it. Every
+# command the installer runs takes its stdin from /dev/null for that reason; the
+# stubs here read stdin the way a hungry child would.
+pipebin="$WORK/pipebin"; rm -rf "$pipebin"; cp -r "$BIN" "$pipebin"
+printf '#!/bin/sh\ncat >/dev/null\nexit 0\n' > "$pipebin/apt-get"
+cat > "$pipebin/dpkg" <<'STUB'
+#!/bin/sh
+cat >/dev/null
+case "$1" in
+	-i) echo "$*" >> "$DPKG_MARKER" ;;
+esac
+exit 0
+STUB
+chmod +x "$pipebin/apt-get" "$pipebin/dpkg"
+DEB="$(mkdeb good good no)"
+rm -f "$WORK/marker"
+# 200 KB of comments right after the signature check, so that when dpkg runs the
+# rest of the script is still in the pipe and not in the shell's read buffer.
+sed -e 's/@PRODUCT@/testpkg/g' \
+	-e '/^step "Package signature verified"$/r /dev/stdin' "$TEMPLATE" \
+	< <(head -c 200000 /dev/zero | tr '\0' 'x' | fold -w 100 | sed 's/^/# /') > "$WORK/install.sh"
+rc=0
+env -i PATH="$pipebin:$PATH" HOME="$WORK" WORK="$WORK" \
+	DPKG_MARKER="$WORK/marker" KEYRING_URL="file://$DEB" GLYNDOR_APT_FPR="$FPR_GOOD" \
+	/bin/sh <"$WORK/install.sh" >"$WORK/out" 2>&1 || rc=$?
+check "piped to sh, with children that read stdin, the installer still succeeds" "0" "$rc"
+check "and it ran to the end: the product was verified after the install" "1" "$(said 'v9.9.9')"
+
+# --- an interrupt is cleaned up after ------------------------------------------
+#
+# dash does not run the EXIT trap when a signal ends the shell. A Ctrl-C in the
+# middle of `curl | sudo sh` left the work directory behind; the installer turns
+# INT and TERM into an exit so the trap runs. TERM is what a background job can
+# be sent here (a non-interactive shell starts background jobs ignoring INT).
+slowbin="$WORK/slowbin"; rm -rf "$slowbin"; cp -r "$BIN" "$slowbin"
+cat > "$slowbin/curl" <<'STUB'
+#!/bin/sh
+echo "$$" > "$WORK/curl.pid"
+sleep 30
+STUB
+chmod +x "$slowbin/curl"
+tmpdir="$WORK/tmp-int"; rm -rf "$tmpdir"; mkdir -p "$tmpdir"
+env -i PATH="$slowbin:$PATH" HOME="$WORK" WORK="$WORK" TMPDIR="$tmpdir" KEYRING_URL="https://invalid.example/x.deb" \
+	GLYNDOR_APT_FPR="$FPR_GOOD" /bin/sh "$WORK/install.sh" >"$WORK/out" 2>&1 &
+inst=$!
+for _ in $(seq 1 50); do [ -s "$WORK/curl.pid" ] && break; sleep 0.1; done
+kill -TERM "$inst" 2>/dev/null
+kill "$(cat "$WORK/curl.pid" 2>/dev/null)" 2>/dev/null
+wait "$inst" 2>/dev/null
+check "after an interrupt the work directory is gone" "0" "$(find "$tmpdir" -mindepth 1 | wc -l | tr -d ' ')"
+rm -f "$WORK/curl.pid"
+
+# --- a small download that unpacks to gigabytes ------------------------------
+#
+# The 8 MB cap is on the compressed bytes. Zeroes compress to almost nothing, so
+# this package is a few kilobytes on the wire and 20 MB once unpacked, in every
+# respect valid and signed. Unpacking runs as root before any fingerprint is
+# compared, so the unpacked size has its own ceiling.
+bomb="$WORK/pkg-bomb"
+rm -rf "$bomb"; mkdir -p "$bomb/DEBIAN" "$bomb/usr/share/keyrings" "$bomb/usr/share/doc"
+printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' \
+	> "$bomb/DEBIAN/control"
+export_ring good "$bomb/usr/share/keyrings/glyndor.gpg"
+head -c $((20 * 1024 * 1024)) /dev/zero > "$bomb/usr/share/doc/zeroes"
+dpkg-deb -Zxz --root-owner-group --build "$bomb" "$WORK/bomb.deb" >/dev/null 2>&1
+sign_deb good "$WORK/bomb.deb"
+check "the bomb really is small on the wire" "1" "$([ "$(stat -c%s "$WORK/bomb.deb")" -lt $((1024 * 1024)) ] && echo 1 || echo 0)"
+rc=0; run_installer "$WORK/bomb.deb" "$FPR_GOOD" || rc=$?
+check "a package that unpacks past the ceiling is refused" "1" "$rc"
+check "and the message says it unpacks to more than 8 MB" "1" "$(said 'unpacks to more than 8 MB')"
 check "and nothing was installed" "0" "$(installed)"
 
 # --- a .deb carrying no keyring at all --------------------------------------
@@ -736,7 +815,7 @@ printf '%s' "$saved_apt" > "$BIN/apt-get"; chmod +x "$BIN/apt-get"
 # restricted PATH includes tar because dpkg-deb invokes it during extraction.
 INSTALLER_PATH="$WORK/no-gpg"
 mkdir -p "$INSTALLER_PATH"
-for tool in tr rm mktemp sort comm curl mkdir dpkg-deb tar awk grep sed chmod cat ln head; do
+for tool in tr rm mktemp sort comm curl mkdir dpkg-deb tar awk grep sed chmod cat ln head wc; do
 	ln -s "$(command -v "$tool")" "$INSTALLER_PATH/$tool"
 done
 # Key authentication has its own cases above. Stub it here so this case
