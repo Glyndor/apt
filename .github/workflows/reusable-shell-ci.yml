@@ -71,8 +71,42 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
+
+      # Same decision as the test job: a pull request that changes only the
+      # prose the caller listed in `skip-suite-paths` cannot change any shell
+      # file, so the download of shellcheck and the lint have nothing to read.
+      # A step condition on purpose, for the reason given at the test job.
+      - name: Decide whether the shell lint is needed
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          SKIP_PATHS: ${{ inputs.skip-suite-paths }}
+        run: |
+          set -euo pipefail
+          docs_only=false
+          if [ "$EVENT" = pull_request ] && [ -n "${SKIP_PATHS// /}" ] \
+            && files="$(git diff --name-only --no-renames HEAD^1 HEAD 2>/dev/null)" \
+            && [ -n "$files" ]; then
+            docs_only=true
+            set -f
+            while IFS= read -r f; do
+              matched=false
+              for pattern in $SKIP_PATHS; do
+                # shellcheck disable=SC2053 # the pattern is meant to glob
+                if [[ "$f" == $pattern ]]; then matched=true; break; fi
+              done
+              [ "$matched" = true ] || docs_only=false
+            done <<< "$files"
+            set +f
+          fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          if [ "$docs_only" = true ]; then
+            echo "Only files the suite does not read changed, so the shell lint was skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Collect shell scripts
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
           list="$RUNNER_TEMP/shell-files"
@@ -91,6 +125,7 @@ jobs:
           done < <(find . -type f ! -name '*.*' -not -path './.git/*' -print0)
 
       - name: Install shellcheck
+        if: steps.scope.outputs.docs_only != 'true'
         env:
           SHELLCHECK_VERSION: ${{ inputs.shellcheck-version }}
           SHELLCHECK_SHA256: ${{ inputs.shellcheck-sha256 }}
@@ -113,6 +148,7 @@ jobs:
           echo "$dir" >> "$GITHUB_PATH"
 
       - name: Syntax check
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
           list="$RUNNER_TEMP/shell-files"
@@ -122,6 +158,7 @@ jobs:
           done < "$list"
 
       - name: Run shellcheck
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
           xargs -0 -r shellcheck --severity="$SEVERITY" < "$RUNNER_TEMP/shell-files"
@@ -141,6 +178,7 @@ jobs:
       # and passed. A gate that reads a broken adoption as no adoption opens
       # itself, which is the exact failure this script exists to close.
       - name: Lint the shell embedded in workflows
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           set -euo pipefail
           script=./scripts/quality/lint-workflow-shell.sh
@@ -174,7 +212,7 @@ jobs:
       # consumer sees this until it deliberately bumps its pin, which is the
       # moment to look at a new red.
       - name: Scripts invoked by path must be executable in git
-        if: ${{ inputs.check-exec-bit }}
+        if: ${{ inputs.check-exec-bit && steps.scope.outputs.docs_only != 'true' }}
         run: |
           set -euo pipefail
           # Every `./something.sh` mentioned anywhere in the calling repo's
