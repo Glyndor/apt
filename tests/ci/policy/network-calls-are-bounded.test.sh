@@ -74,7 +74,9 @@ violations() {
 	awk -v dir="$SCRIPTS" '
 		function flush() {
 			if (cmd == "") return
-			if (cmd ~ /--max-time/) { cmd = ""; return }
+			# The flag followed by its value: the bare name also matches
+			# --user-agent '--max-time', which bounds nothing.
+			if (cmd ~ /(^|[[:space:]])--max-time[[:space:]]+[0-9$]/) { cmd = ""; return }
 			sub(/[[:space:]]+\\$/, "", cmd)
 			printf "%s:%d:%s\n", file, startline, orig
 			cmd = ""
@@ -150,6 +152,19 @@ check "a planted curl in a nested folder is named too" \
 	"deep.sh:3:curl -fsSL \"https://example.invalid/deep\"
 planted.sh:3:curl -fsSL \"https://example.invalid/file\"" "$list"
 rm -r "$plant/scripts/area"
+
+# The flag name used as a value is not a deadline.
+mkdir -p "$plant/scripts/fake"
+cat >"$plant/scripts/fake/fake.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+curl -fsSL --user-agent '--max-time' "$url"
+SH
+list="$(SCRIPTS="$plant/scripts" violations)"
+check "the flag name used as a value is not a deadline" \
+	"fake.sh:3:curl -fsSL --user-agent '--max-time' \"\$url\"
+planted.sh:3:curl -fsSL \"https://example.invalid/file\"" "$(printf '%s\n' "$list" | LC_ALL=C sort)"
+rm -r "$plant/scripts/fake"
 
 # --- every shape a real invocation takes ----------------------------------
 #
