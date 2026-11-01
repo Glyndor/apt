@@ -202,7 +202,7 @@ purge_gnupg() {
 		note "removing the gnupg this script installed"
 		# Word splitting on $gnupg_deps is intentional: one package per line.
 		# shellcheck disable=SC2086
-		apt-get purge -y -qq gnupg $gnupg_deps >/dev/null 2>&1 || true
+		apt-get purge -y -qq gnupg $gnupg_deps >/dev/null 2>&1 </dev/null || true
 		installed_gnupg=
 	fi
 	return 0
@@ -216,6 +216,11 @@ cleanup() {
 	return 0
 }
 trap cleanup EXIT
+# dash runs the EXIT trap on `exit` but not when a signal ends the shell, so a
+# Ctrl-C of `curl ... | sudo sh` left the work directory and the gnupg that was
+# installed for the check behind. Turning the signal into an exit runs it.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Allocate $workdir before the gnupg install so the auto-set snapshot below can
 # be written there. Cleanup removes it whether or not the snapshot ever made it
@@ -232,10 +237,10 @@ workdir=$(mktemp -d)
 # only undoes its own install.
 if ! command -v gpg >/dev/null 2>&1; then
 	doing "installing gnupg, needed to check the archive key"
-	apt-get update -qq
+	apt-get update -qq </dev/null
 	auto_before="$(apt-mark showauto 2>/dev/null | LC_ALL=C sort)"
 	printf '%s\n' "$auto_before" > "$workdir/auto-before"
-	apt-get install -y -qq gnupg || fail "could not install gnupg"
+	apt-get install -y -qq gnupg </dev/null || fail "could not install gnupg"
 	gnupg_deps="$(apt-mark showauto 2>/dev/null | LC_ALL=C sort | comm -13 "$workdir/auto-before" -)"
 	installed_gnupg=yes
 fi
@@ -306,7 +311,19 @@ GLYNDOR_APT_FPR="$(printf '%s' "$GLYNDOR_APT_FPR" \
 step "Archive keyring downloaded"
 doing "checking the archive key fingerprint"
 mkdir -p "$workdir/extracted"
-dpkg-deb -x "$workdir/glyndor-archive-keyring.deb" "$workdir/extracted" \
+# The 8 MB cap above is on the COMPRESSED download. A package of a few hundred
+# kilobytes can unpack to gigabytes, and this runs as root before any fingerprint
+# is compared, so the data archive is read through a ceiling of the same size and
+# only then unpacked.
+dpkg-deb --fsys-tarfile "$workdir/glyndor-archive-keyring.deb" 2>/dev/null \
+	| head -c $((8 * 1024 * 1024 + 1)) > "$workdir/keyring.tar" || true
+[ -s "$workdir/keyring.tar" ] || fail "could not extract the keyring package"
+[ "$(wc -c < "$workdir/keyring.tar")" -le $((8 * 1024 * 1024)) ] \
+	|| fail "the keyring package unpacks to more than 8 MB; nothing was installed"
+# From stdin, not by file name: tar looks at a named file and decompresses it
+# when it is gzip or xz, so a data archive that is itself compressed twice would
+# have got past the ceiling above. On stdin tar refuses a compressed stream.
+tar -x -f - -C "$workdir/extracted" --no-same-owner < "$workdir/keyring.tar" \
 	|| fail "could not extract the keyring package"
 
 # EVERY key in the keyring must be one this installer was told to expect, not
@@ -424,7 +441,7 @@ step "Package signature verified"
 purge_gnupg
 
 doing "installing the keyring"
-dpkg -i "$workdir/glyndor-archive-keyring.deb" >/dev/null \
+dpkg -i "$workdir/glyndor-archive-keyring.deb" >/dev/null </dev/null \
 	|| fail "could not install the keyring package"
 
 step "Keyring installed"
@@ -448,8 +465,8 @@ step "Keyring installed"
 # machine whose podman was older than the Depends asks for -- the line that says
 # WHICH package and WHICH version is the line -qq removes.
 doing "installing @PRODUCT@"
-if ! apt_log="$(DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>&1 \
-	&& DEBIAN_FRONTEND=noninteractive apt-get install -y @PRODUCT@ 2>&1)"; then
+if ! apt_log="$(DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>&1 </dev/null \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y @PRODUCT@ 2>&1 </dev/null)"; then
 	# Clear the in-progress line before apt's own output lands, or the two
 	# collide on one row and the first thing a reader sees is a sentence
 	# spliced out of two programs.
@@ -501,7 +518,7 @@ step "@PRODUCT@ installed" "$version"
 upgrade_switch=""
 
 if ! command -v unattended-upgrade >/dev/null 2>&1; then
-	apt-get install -y -qq unattended-upgrades >/dev/null 2>&1 || true
+	apt-get install -y -qq unattended-upgrades >/dev/null 2>&1 </dev/null || true
 fi
 
 if ! command -v unattended-upgrade >/dev/null 2>&1; then
