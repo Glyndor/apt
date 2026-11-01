@@ -251,7 +251,15 @@ case "$1 $2" in
 				[ -n "$asset" ] || continue
 				for pat in "${patterns[@]}"; do
 					case "$asset" in
-						$pat) : > "$dir/$asset" ;;
+						$pat)
+							# STUB_SIG_DELIVERED: a signature that is bigger than the
+							# size the listing advertised, which is how the
+							# post-download cap is reached at all.
+							case "$asset" in
+								*.sig) head -c "${STUB_SIG_DELIVERED:-0}" /dev/zero > "$dir/$asset" ;;
+								*) : > "$dir/$asset" ;;
+							esac
+							;;
 					esac
 				done
 			done < "$ASSETS_FILE"
@@ -355,6 +363,18 @@ check "a non-numeric advertised size fails the publish" "1" "$rc"
 check "and the refusal says the size is not numeric" "1" \
 	"$(printf '%s' "$out" | grep -c 'non-numeric size')"
 check "and it refused before any download" "0" "$(download_calls)"
+
+# --- the delivered bytes are checked too -------------------------------------
+# The listing's size is the publisher's word. A signature that arrives bigger
+# than advertised is caught by the check after the download.
+ASSETS_LIES="1000 podup_1.0.0_amd64.deb
+100 podup_1.0.0_amd64.deb.sig
+1000 podup_1.0.0_arm64.deb
+100 podup_1.0.0_arm64.deb.sig"
+out="$(STUB_SIG_DELIVERED=5000 run_step v1.0.0 "$ASSETS_LIES" podup 'amd64 arm64')"; rc=$?
+check "a signature that arrives over the cap fails the publish" "1" "$rc"
+check "and the refusal is the signature cap, naming the file" "1" \
+	"$(printf '%s' "$out" | grep -c '\.deb\.sig is 5000 bytes, over the')"
 
 # --- an asset name that is itself a glob ------------------------------------
 #
