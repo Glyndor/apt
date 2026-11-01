@@ -57,6 +57,7 @@ jobs:
         ./tests/build/build-installers.test.sh
         ./tests/installer/install-template.test.sh
         ./tests/installer/install-template-behaviour.test.sh
+        ./tests/installer/install-template-limits.test.sh
         ./tests/installer/unattended-upgrades.test.sh
         ./tests/build/architectures-agree.test.sh
         ./tests/installer/readme-bootstrap.test.sh
