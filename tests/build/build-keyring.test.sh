@@ -306,6 +306,81 @@ else
 	no "and no package was written"
 fi
 
+# --- hostile inputs ------------------------------------------------------------
+
+# expect <description> <condition command...>: ok when the command succeeds.
+expect() {
+	local description="$1"; shift
+	if "$@"; then ok "$description"; else no "$description"; fi
+}
+
+# A throwaway copy of the fixture repository with one input changed, built.
+variant() { # $1=name  $2=shell snippet run inside the copy, before the commit
+	local d="$WORK/v-$1"
+	rm -rf "$d"
+	cp -r "$REPO" "$d"
+	( cd "$d" && eval "$2" && git add -A \
+		&& git -c user.name=test -c user.email=test@example.invalid commit -qm "variant $1" )
+	mkdir -p "$WORK/v-$1-out"
+	rc=0
+	out="$("$d/scripts/build/build-keyring.sh" "$WORK/v-$1-out" 2>&1)" || rc=$?
+}
+
+# keyring/version goes into the control file as it is.
+variant multiline-version "printf '1.0\nDepends: evil\n' > keyring/version"
+expect "a version file with a second line is refused" [ "$rc" -ne 0 ]
+expect "and the error says why" grep -q 'not a single Debian upstream version' <<<"$out"
+variant empty-version ": > keyring/version"
+expect "an empty version file is refused" [ "$rc" -ne 0 ]
+
+# A secret key pasted next to the public one is copied by `gpg --dearmor`.
+sk_home="$WORK/sk-gnupg"; mkdir -p "$sk_home"; chmod 700 "$sk_home"
+GNUPGHOME="$sk_home" gpg --batch --quiet --passphrase '' --quick-generate-key "secret test <secret@example.invalid>" ed25519 sign never 2>/dev/null
+variant secret-key "GNUPGHOME='$sk_home' gpg --armor --export >> keyring/glyndor-apt-key.asc; GNUPGHOME='$sk_home' gpg --armor --export-secret-keys >> keyring/glyndor-apt-key.asc"
+expect "a keyring input carrying a secret key is refused" [ "$rc" -ne 0 ]
+expect "and the error names the secret key" grep -q 'SECRET key' <<<"$out"
+expect "and no package was written" test ! -e "$WORK/v-secret-key-out/glyndor-archive-keyring.deb"
+
+# The version has to grow with the commits whatever zone their author is in.
+# 01:00 at +0200 is 23:00 UTC the day before; 00:30 at +0000 is later.
+tz="$WORK/tz"; rm -rf "$tz"; cp -r "$REPO" "$tz"
+git -C "$tz" -c user.name=test -c user.email=test@example.invalid commit -q --allow-empty -m base
+echo "# one" >> "$tz/keyring/glyndor.sources"
+git -C "$tz" add -A
+GIT_COMMITTER_DATE="2026-10-02T01:00:00+0200" GIT_AUTHOR_DATE="2026-10-02T01:00:00+0200" \
+	git -C "$tz" -c user.name=test -c user.email=test@example.invalid commit -qm early
+mkdir -p "$WORK/tz-a"; "$tz/scripts/build/build-keyring.sh" "$WORK/tz-a" >/dev/null
+echo "# two" >> "$tz/keyring/glyndor.sources"
+git -C "$tz" add -A
+GIT_COMMITTER_DATE="2026-10-02T00:30:00+0000" GIT_AUTHOR_DATE="2026-10-02T00:30:00+0000" \
+	git -C "$tz" -c user.name=test -c user.email=test@example.invalid commit -qm late
+mkdir -p "$WORK/tz-b"; "$tz/scripts/build/build-keyring.sh" "$WORK/tz-b" >/dev/null
+va="$(dpkg-deb --field "$WORK/tz-a/glyndor-archive-keyring.deb" Version)"
+vb="$(dpkg-deb --field "$WORK/tz-b/glyndor-archive-keyring.deb" Version)"
+if dpkg --compare-versions "$vb" gt "$va"; then
+	ok "a later commit made from another time zone gets a greater version ($va < $vb)"
+else
+	no "a later commit made from another time zone gets a greater version ($va vs $vb)"
+fi
+
+# Every file that goes into the package moves the version when it changes. The
+# timer units and the maintainer scripts were once missing from the list the
+# date is taken from, so a change to them shipped under an unchanged version.
+n=0
+for input in glyndor-upgrade glyndor-upgrade.service glyndor-upgrade.timer maintainer-postinst maintainer-prerm maintainer-postrm; do
+	n=$((n + 1))
+	day="0$n"
+	d="$WORK/in-$n"; rm -rf "$d"; cp -r "$REPO" "$d"
+	echo "# changed" >> "$d/keyring/upgrade/$input"
+	git -C "$d" add -A
+	GIT_COMMITTER_DATE="2031-01-${day}T12:00:00+0000" GIT_AUTHOR_DATE="2031-01-${day}T12:00:00+0000" \
+		git -C "$d" -c user.name=test -c user.email=test@example.invalid commit -qm "touch $input"
+	mkdir -p "$WORK/in-$n-out"; "$d/scripts/build/build-keyring.sh" "$WORK/in-$n-out" >/dev/null
+	version="$(dpkg-deb --field "$WORK/in-$n-out/glyndor-archive-keyring.deb" Version)"
+	expect "a change to keyring/upgrade/$input moves the package version" \
+		test "${version#*+pkg}" = "203101${day}120000"
+done
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -27,6 +27,9 @@
 set -euo pipefail
 
 ARCHIVE_URL="${1:-}"
+# One slash between the base and a path: "https://x//dists/..." is another URL to
+# Cloudflare, so the purge would succeed and clear nothing that is served.
+ARCHIVE_URL="${ARCHIVE_URL%/}"
 BUILT_DIR="${2:-}"
 CF_API_BASE="${CF_API_BASE:-https://api.cloudflare.com/client/v4}"
 
@@ -63,8 +66,15 @@ index_paths="$(awk '
 ' "$release" | LC_ALL=C sort -u)"
 [ -n "$index_paths" ] \
 	|| { echo "::error::the built Release declares no index files to purge"; exit 1; }
+# The Release is signed by us, but a path that climbs out of dists/ would still
+# be purged as a URL elsewhere on the host.
+case "$index_paths" in
+	*..*) echo "::error::the built Release names an index path containing '..'"; exit 1 ;;
+esac
 
 # And the packages those indices point at.
+compgen -G "$BUILT_DIR/dists/stable/main/binary-*/Packages" >/dev/null \
+	|| { echo "::error::the built tree has no Packages index; there is nothing to purge"; exit 1; }
 pool_paths="$(awk '/^Filename:/ { print $2 }' \
 	"$BUILT_DIR"/dists/stable/main/binary-*/Packages | LC_ALL=C sort -u)"
 [ -n "$pool_paths" ] \
@@ -81,6 +91,8 @@ pool_paths="$(awk '/^Filename:/ { print $2 }' \
 # install-template.sh landed in R2 and the edge kept serving the previous script
 # to `install/podup` while `install/epistle`, less trafficked and so uncached,
 # served the new one. Every step of the publish reported success.
+[ -d "$BUILT_DIR/install" ] \
+	|| { echo "::error::the built tree has no install/ directory; every product's install line would stay stale"; exit 1; }
 installer_paths="$(find "$BUILT_DIR/install" -maxdepth 1 -type f -printf 'install/%f\n' \
 	2>/dev/null | LC_ALL=C sort -u)"
 [ -n "$installer_paths" ] \
