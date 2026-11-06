@@ -361,6 +361,8 @@ jobs:
           [ "$SEC_COUNT" -eq 1 ] || { echo "::error::expected exactly one secret key, found $SEC_COUNT"; exit 1; }
           FPR="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/{print $10; exit}')"
           [ -n "$FPR" ] || { echo "could not determine signing key fingerprint"; exit 1; }
+          # build-repo.sh already checked this in the preceding build step.
+          # Keep the check here too: this step imports the secret independently.
           if ! gpg --batch --with-colons --show-keys keyring/glyndor-apt-key.asc \
             | awk -F: '/^fpr:/{print $10}' | grep -qxF "$FPR"; then
             echo "::error::signing key ($FPR) is not present in keyring/glyndor-apt-key.asc"

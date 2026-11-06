@@ -25,6 +25,15 @@ reset_site; run
 check 'both complete generated installers pass' 0 "$rc"
 check 'the last product is compared too' 1 "$(said 'installer matches generated content for epistle')"
 
+# These names must fail at the verifier's own guard, before file lookup or
+# transfer. A missing local reference alone must not satisfy a rejection.
+for product in Podup 'pod up' 'pod/up' '' p .podup -podup; do
+	rc=0
+	"$VERIFY" "file://$WORK/site" "$WORK/expected" "$product" > "$WORK/out" 2>&1 || rc=$?
+	check "invalid product '$product' is rejected" 1 "$rc"
+	check "invalid product '$product' names the product guard" 1 "$(said 'invalid installer product')"
+done
+
 printf '#!/bin/sh\n' > "$WORK/site/install/podup"
 run
 check 'a one-line shebang is rejected' 1 "$rc"

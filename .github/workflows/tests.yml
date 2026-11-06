@@ -65,6 +65,7 @@ jobs:
         ./tests/build/build-installers.test.sh
         ./tests/installer/install-template.test.sh
         ./tests/installer/install-template-behaviour.test.sh
+        ./tests/installer/install-template-empty-keyring.test.sh
         ./tests/installer/install-template-limits.test.sh
         ./tests/installer/install-template-delivery.test.sh
         ./tests/installer/unattended-upgrades.test.sh
@@ -75,6 +76,7 @@ jobs:
         ./tests/publish/publish-workflow-sync.test.sh
         ./tests/publish/publish-workflow-assets.test.sh
         ./tests/publish/publish-workflow-bootstrap.test.sh
+        ./tests/publish/publish-workflow-signing-key.test.sh
         ./tests/publish/sync-archive.test.sh
         ./tests/publish/prune-installers.test.sh
         ./tests/publish/purge-cache-pruned.test.sh
