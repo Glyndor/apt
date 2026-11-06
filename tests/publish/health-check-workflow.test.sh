@@ -199,6 +199,7 @@ check "the installer step was extracted from the workflow" "1" \
 site() {
 	local dir="$1" products="$2"; shift 2
 	rm -rf "$dir"; mkdir -p "$dir/.github/workflows" "$dir/install"
+	cp -r "$HERE/scripts" "$dir/scripts"
 	{
 		echo "env:"
 		[ "$products" = "-" ] || echo "  PRODUCTS: \"$products\""
@@ -206,7 +207,11 @@ site() {
 	local spec name
 	for spec in "$@"; do
 		name="${spec%%:*}"
-		printf '%s\n' "${spec#*:}" > "$dir/install/$name"
+		if [ "${spec#*:}" = generated ]; then
+			"$dir/scripts/build/build-installers.sh" "$dir/install" "$name" >/dev/null
+		else
+			printf '%s\n' "${spec#*:}" > "$dir/install/$name"
+		fi
 	done
 	echo "$dir"
 }
@@ -216,22 +221,22 @@ run_install() { # $1=site dir
 }
 
 S="$(site "$WORK/site-ok" "alpha beta" \
-	'alpha:#!/bin/sh' 'beta:#!/bin/sh')"
+	'alpha:generated' 'beta:generated')"
 rc=0; run_install "$S" || rc=$?
 check "every advertised installer being served passes" "0" "$rc"
-check "and the first product was asked for" "1" "$(said 'installer served for alpha')"
+check "and the first product was compared" "1" "$(said 'installer matches generated content for alpha')"
 check "and the second one too, not only the first" "1" \
-	"$(said 'installer served for beta')"
+	"$(said 'installer matches generated content for beta')"
 
 # A product in the roster whose installer was never rendered. This is the shape
 # that reaches users: the archive is fine, the page advertises the command, and
 # the path behind it is not there.
-S="$(site "$WORK/site-missing" "alpha beta" 'alpha:#!/bin/sh')"
+S="$(site "$WORK/site-missing" "alpha beta" 'alpha:generated')"
 rc=0; run_install "$S" || rc=$?
 check "a product whose installer is missing fails" "1" "$rc"
 check "and the error names the url it asked for" "1" "$(said '/install/beta')"
-check "and it is the unreachable message, not the body one" "1" \
-	"$(said 'is unreachable at')"
+check "and it is the transfer message, not the body one" "1" \
+	"$(said 'installer transfer failed at')"
 
 # An edge serving its own error page answers 200 as happily as the script does,
 # and the page pipes the answer into a root shell, so the status alone is not
@@ -239,9 +244,9 @@ check "and it is the unreachable message, not the body one" "1" \
 S="$(site "$WORK/site-html" "alpha" 'alpha:<!doctype html>')"
 rc=0; run_install "$S" || rc=$?
 check "a body that is not a script fails even though it was served" "1" "$rc"
-check "and the error says the body is not a shell script" "1" \
-	"$(said 'the body is not a shell script')"
-check "and it is not reported as unreachable" "0" "$(said 'is unreachable at')"
+check "and the error says the body differs from the generated installer" "1" \
+	"$(said 'installer content differs at')"
+check "and it is not reported as a transfer failure" "0" "$(said 'installer transfer failed at')"
 
 # The roster is read from publish.yml. If that read comes back empty the step
 # has nothing to ask for, and passing would be a check that inspects nothing.
@@ -252,11 +257,11 @@ check "and says it cannot tell which installers to ask for" "1" \
 	"$(said 'cannot tell which installers to ask for')"
 
 # An architecture spec in the roster is not part of the path.
-S="$(site "$WORK/site-arch" "klyradb:amd64" 'klyradb:#!/bin/sh')"
+S="$(site "$WORK/site-arch" "klyradb:amd64" 'klyradb:generated')"
 rc=0; run_install "$S" || rc=$?
 check "a product carrying an architecture spec is asked for by name alone" "0" "$rc"
 check "and the name it used is the product, not the spec" "1" \
-	"$(said 'installer served for klyradb')"
+	"$(said 'installer matches generated content for klyradb')"
 
 echo
 

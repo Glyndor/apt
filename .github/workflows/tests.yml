@@ -50,6 +50,7 @@ jobs:
         ./tests/verify/verify-debs.test.sh
         ./tests/verify/verify-published.test.sh
         ./tests/verify/verify-published-build.test.sh
+        ./tests/verify/verify-installers.test.sh
         ./tests/build/build-keyring.test.sh
         ./tests/build/build-keyring-generator.test.sh
         ./tests/keyring/glyndor-upgrade.test.sh
@@ -60,6 +61,7 @@ jobs:
         ./tests/installer/install-template.test.sh
         ./tests/installer/install-template-behaviour.test.sh
         ./tests/installer/install-template-limits.test.sh
+        ./tests/installer/install-template-delivery.test.sh
         ./tests/installer/unattended-upgrades.test.sh
         ./tests/build/architectures-agree.test.sh
         ./tests/installer/readme-bootstrap.test.sh
