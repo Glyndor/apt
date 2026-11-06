@@ -58,9 +58,22 @@
 # recorded, so the sets below are measured rather than guessed. They were then
 # widened to the area that contains them: a suite that read one file of
 # scripts/verify/ depends on scripts/verify/, because the next change in that
-# folder may be the one it reads. Where a suite reads a whole tree -- the
-# ones that copy scripts/ into a fixture, and the ones that walk it -- the
-# tree itself is the entry, because its NAMES are part of the verdict.
+# folder may be the one it reads.
+#
+# Two shapes need saying apart, because the measurement alone does not tell
+# them apart:
+#
+#   * A suite that WALKS a tree -- find, ls, `git ls-files` -- depends on the
+#     whole tree BY NAME. The coverage gate walks scripts/ and requires a
+#     test of the same name in tests/, so its entry is scripts/** and
+#     tests/**: a script added without a test, or a test removed while its
+#     script stays, changes what it concludes.
+#
+#   * A suite that COPIES a tree into its fixture -- `cp -r scripts` -- and
+#     then runs two of the copies depends on those two, not on the tree.
+#     Copying is not reading: the members that are never executed cannot
+#     change the verdict. The entries below that copy the tree name the
+#     scripts they execute and whatever those read.
 #
 # PATTERN SYNTAX
 #
@@ -113,11 +126,15 @@ tests/verify/verify-published-build.test.sh
 	keyring/**
 	.github/workflows/publish.yml
 
-# This one copies the whole scripts/ tree into its fixture too, and executes
-# the same two scripts the health check does.
+# It copies the whole scripts/ tree into its fixture so the workflow steps can
+# run from it, and the steps run scripts/build/build-installers.sh and
+# scripts/verify/verify-installers.sh -- the same two the health check does.
+# The first of those reads the installer template, so scripts/installer/ is an
+# input of the verdict even though the tree copy is not.
 
 tests/verify/verify-installers.test.sh
 	scripts/build/**
+	scripts/installer/**
 	scripts/verify/**
 	tests/verify/**
 	.github/workflows/health-check.yml
@@ -256,11 +273,14 @@ tests/publish/publish-workflow-bootstrap.test.sh
 # This one copies the whole scripts/ tree into its fixture, but the only
 # scripts it executes are scripts/build/build-installers.sh and
 # scripts/verify/verify-installers.sh, so the entry names the two areas
-# rather than the whole tree. A change to .github/workflows/health-check.yml
-# that starts calling a script in another area has to add that area here.
+# rather than the whole tree. The first of those reads the installer template,
+# so scripts/installer/ belongs here too. A change to
+# .github/workflows/health-check.yml that starts calling a script in another
+# area has to add that area here.
 
 tests/publish/health-check-workflow.test.sh
 	scripts/build/**
+	scripts/installer/**
 	scripts/verify/**
 	tests/publish/**
 	keyring/**
@@ -288,6 +308,15 @@ tests/ci/policy/jobs-are-bounded.test.sh
 
 tests/ci/policy/cancel-policy.test.sh
 	.github/workflows/**
+
+# The freshness watcher guards its own pull-request filter: the verdict is
+# what the filter of freshness.yml says, so that file and the two reusables
+# the filter has to name are the inputs.
+
+tests/ci/policy/freshness-pr-scope.test.sh
+	.github/workflows/freshness.yml
+	.github/workflows/reusable-dependabot-freshness.yml
+	.github/workflows/reusable-schedule-freshness.yml
 
 # The reusable gates read the reusable they cover.
 
@@ -321,6 +350,16 @@ tests/ci/reusable/reusable-workflow-lint.test.sh
 
 tests/ci/suites/ci-runs-every-test.test.sh
 	tests/**
+	.github/workflows/**
+
+# The runner is the suite that runs the others, so its verdict is the verdict
+# of every suite it is given and of the workflow that names them. It never
+# runs itself, but the entry is here so that every suite the workflow names
+# has one, and so that the file is named in the same place as the rest.
+
+tests/ci/suites/check-suite-completeness.test.sh
+	tests/**
+	scripts/**
 	.github/workflows/**
 
 tests/ci/suites/shell-ci-scope.test.sh
@@ -359,9 +398,15 @@ tests/monitoring/check-suite-on-main-push.test.sh
 tests/quality/check-editorconfig.test.sh
 	**
 
+# The coverage gate walks EVERY script under scripts/ and requires a test of
+# the same name in the mirrored folder of tests/, so both trees are inputs of
+# its verdict by name: a script added without a test, or a test removed while
+# its script stays, changes what it concludes. Naming only the gate itself
+# and the quality folder would let exactly that pull request through.
+
 tests/quality/check-test-coverage.test.sh
-	scripts/quality/check-test-coverage.sh
-	tests/quality/**
+	scripts/**
+	tests/**
 
 tests/quality/ci-job-scope.test.sh
 	scripts/quality/ci-job-scope.sh

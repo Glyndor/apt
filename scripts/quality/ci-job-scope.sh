@@ -40,12 +40,36 @@ def git(*args):
                           stderr=subprocess.PIPE).stdout
 
 
+def merge_commit():
+    """True when HEAD is a merge commit with two parents.
+
+    The scope is decided by comparing HEAD^1 (the base) with HEAD. That is
+    the whole pull request only when the checkout is the merge commit GitHub
+    builds for refs/pull/N/merge, whose first parent is the base branch tip.
+    On a checkout of the branch head instead, HEAD^1 is the previous commit
+    of the branch, the comparison covers only the last commit, and suites a
+    pull request can affect are skipped. Reading the parent count from the
+    commit object answers the same in a shallow clone, where resolving a
+    parent NAME does not.
+    """
+    try:
+        body = git("cat-file", "-p", "HEAD")
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    parents = sum(1 for line in body.splitlines() if line.startswith(b"parent "))
+    return parents == 2
+
+
 def changed_paths():
     """The paths this pull request changes.
 
     None when that cannot be established: an unreadable diff, a rename, a
     copy, a type change or an unknown record. A rename in particular is two
     paths, and both count, so moving a script cannot hide it."""
+    if not merge_commit():
+        # The checkout is not the merge commit, so HEAD^1..HEAD is not the
+        # pull request and the scope cannot be established from it.
+        return None
     raw = git("diff", "--name-status", "-z", "--find-renames", "HEAD^1", "HEAD", "--")
     if not raw or not raw.endswith(b"\0"):
         return None

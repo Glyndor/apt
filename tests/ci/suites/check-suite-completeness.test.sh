@@ -79,9 +79,10 @@ self="${BASH_SOURCE[0]##*/}"
 # base commit, never from the checkout of the pull request it is judging.
 #
 # Everything here fails open. A push, a schedule, an unreadable diff, a
-# rename, a resolver that cannot be read from the base commit, a decision
-# that names a suite this job was not given: all of them run every suite. A
-# wrong skip lets a change merge untested; a wrong run costs seconds.
+# rename, a resolver that cannot be read from the base commit, a runner that
+# is not the base copy, a decision that names a suite this job was not given:
+# all of them run every suite. A wrong skip lets a change merge untested; a
+# wrong run costs seconds.
 #
 # The job and its required check `shell / test` report exactly as before.
 # Only the decision to EXECUTE a suite changes, and the workflow still names
@@ -106,6 +107,25 @@ scoped=0
 if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ] \
 	&& [ "${CHECK_SUITE_COMPLETENESS_SKIP_FIXTURE_TEST:-0}" != 1 ] \
 	&& [ "$#" -gt 0 ]; then
+	# The runner is the one piece of this mechanism a pull request can
+	# rewrite. The resolver and the map are read from the BASE commit, so a
+	# pull request that narrows them gets the full set; the runner is the
+	# file that is running, and nothing else decides what it does with the
+	# decision. So it does not get to narrow anything on a pull request that
+	# touched it: compare it with the base copy and refuse to scope when the
+	# two differ. A pull request that rewrites the file from scratch can
+	# still delete this comparison -- no check inside the job can stop that,
+	# because the thing that would stop it is the thing being rewritten.
+	# What this closes is the pull request that EDITS the runner, which is
+	# the one a reviewer reads.
+	self_rel="tests/ci/suites/check-suite-completeness.test.sh"
+	base_self="$(mktemp "${TMPDIR:-/tmp}/suite-scope-self.XXXXXX" 2>/dev/null)" || base_self=""
+	self_is_base=0
+	if [ -n "$base_self" ] && git show "HEAD^1:$self_rel" > "$base_self" 2>/dev/null; then
+		cmp -s "$self_rel" "$base_self" && self_is_base=1
+	fi
+	[ -n "$base_self" ] && rm -f "$base_self"
+
 	resolver="$(mktemp "${TMPDIR:-/tmp}/suite-scope.XXXXXX" 2>/dev/null)" || resolver=""
 	decision=""
 	if [ -n "$resolver" ] \
@@ -119,6 +139,7 @@ if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ] \
 	# an established scope is the only thing that may skip a suite.
 	usable=1
 	[ -n "$decision" ] || usable=0
+	[ "$self_is_base" = 1 ] || usable=0
 	while IFS= read -r name; do
 		[ -n "$name" ] || continue
 		case "$name" in
