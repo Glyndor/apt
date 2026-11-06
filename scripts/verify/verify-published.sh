@@ -187,7 +187,14 @@ declared_files() {
 # link of the chain: the signed index vouches for these Packages bytes, and
 # these Packages bytes vouch for the .deb files an apt client actually installs.
 declared_packages() {
+	# A `Package:` line opens a stanza, so it also closes the previous one. Without
+	# that, two stanzas that lost the blank line between them were read as one and
+	# only the last one's fields survived: the first package was never verified.
 	awk '
+		/^Package:/ {
+			if (filename != "") { print hash, size, filename }
+			filename = ""; size = ""; hash = ""
+		}
 		/^Filename:/ { filename = $2 }
 		/^Size:/ { size = $2 }
 		/^SHA256:/ { hash = $2 }
@@ -240,7 +247,7 @@ reject_unsafe_paths() {
 	local label="$1" path
 	while read -r _ _ path; do
 		case "$path" in
-			*/../* | ../* | */.. | /* | *//*)
+			. | .. | ./* | */./* | */. | */../* | ../* | */.. | /* | *//*)
 				echo "::error::the $label declares a path that is not a plain relative path: $path" >&2
 				exit 1
 				;;

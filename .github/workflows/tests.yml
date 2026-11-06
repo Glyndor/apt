@@ -51,6 +51,7 @@ jobs:
         ./tests/verify/verify-published.test.sh
         ./tests/verify/verify-published-bootstrap.test.sh
         ./tests/verify/verify-published-budget.test.sh
+        ./tests/verify/verify-published-packages.test.sh
         ./tests/verify/verify-published-build.test.sh
         ./tests/verify/verify-installers.test.sh
         ./tests/build/build-keyring.test.sh
