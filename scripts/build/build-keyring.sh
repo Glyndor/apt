@@ -10,8 +10,9 @@
 #   build-keyring.sh <output-dir>
 #
 # Produces: <output-dir>/glyndor-archive-keyring.deb (version comes from
-# keyring/version plus the date the packaged inputs last changed, not the
-# filename, so the published asset URL is stable).
+# keyring/version plus the date the build inputs last changed, not the
+# filename, so the published asset URL moves only when the package itself
+# does).
 #
 # The version suffix tracks EVERY file this package installs, the key and the
 # sources list, not just the key. Tracking only the key meant that editing
@@ -21,6 +22,15 @@
 # exists to prevent. Nothing catches that either, because the published archive
 # stays perfectly self-consistent while being wrong (#56). keyring/version needs
 # no tracking, being the base version itself.
+#
+# It tracks this script as well. The generator decides the bytes as much as
+# the files do: it writes the control file and the conffiles, and it fixes the
+# modes and the paths of everything the package installs. Tracking only what
+# lives under keyring/ meant that editing the generator produced a different
+# package under the version apt already had, so apt never delivered it and the
+# change reached the archive and no client, silently. A file the build reads
+# and the list below does not name would have the same fate, so the list is
+# every file the build reads, and a test holds it to that.
 #
 # Key rotation (two-phase, automatic to clients): put both the old and the new
 # armored key blocks in keyring/glyndor-apt-key.asc during the overlap window
@@ -34,7 +44,7 @@
 # also meant a keyring carrying the published key alongside an attacker's was
 # admitted, and the sources.list this same package installs decides where apt
 # fetches from. Ordering the rotation is what that closure costs.
-# Any change to a packaged input yields a strictly higher version that
+# Any change to a build input yields a strictly higher version that
 # `apt upgrade` delivers, while an unchanged input set keeps the same version
 # (no churn). Requires the script to run inside a git checkout with history
 # (CI uses fetch-depth: 0).
@@ -48,12 +58,41 @@ PUBKEY_ASC="$HERE/keyring/glyndor-apt-key.asc"
 SOURCES="$HERE/keyring/glyndor.sources"
 UNATTENDED="$HERE/keyring/glyndor-unattended-upgrades"
 
-# Every file this package installs. The version suffix is the date the newest of
-# them last changed, so any edit to what clients receive bumps the version that
-# reaches them.
-PACKAGED_INPUTS=(keyring/glyndor-apt-key.asc keyring/glyndor.sources keyring/glyndor-unattended-upgrades
-	keyring/upgrade/glyndor-upgrade keyring/upgrade/glyndor-upgrade.service keyring/upgrade/glyndor-upgrade.timer
-	keyring/upgrade/maintainer-postinst keyring/upgrade/maintainer-prerm keyring/upgrade/maintainer-postrm)
+# This script's own path, relative to the repository root. Derived from the
+# running script rather than written down, so the version can never end up
+# tracking a path that is no longer the file that builds the package: a
+# hardcoded name would keep naming whatever took its place, or nothing at all,
+# and the coverage would go missing without a word.
+GENERATOR_REL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+GENERATOR_REL="${GENERATOR_REL#"$HERE"/}"
+
+# Every file the build reads out of the repository. The version suffix is the
+# date the newest of them last changed, so any edit to what clients receive
+# bumps the version that reaches them.
+#
+# One item per line, the closing parenthesis on a line of its own:
+# tests/build/build-keyring-generator.test.sh reads this list to check that
+# nothing the build reads is missing from it.
+VERSION_INPUTS=(
+	"$GENERATOR_REL"
+	keyring/glyndor-apt-key.asc
+	keyring/glyndor.sources
+	keyring/glyndor-unattended-upgrades
+	keyring/upgrade/glyndor-upgrade
+	keyring/upgrade/glyndor-upgrade.service
+	keyring/upgrade/glyndor-upgrade.timer
+	keyring/upgrade/maintainer-postinst
+	keyring/upgrade/maintainer-prerm
+	keyring/upgrade/maintainer-postrm
+)
+
+# Every input has to be there before the version is derived from it. A path
+# that does not resolve drops out of the history the version is read from, and
+# the version then goes on as if that input had never changed, which is the
+# failure this package exists to prevent.
+for f in "${VERSION_INPUTS[@]}"; do
+	[ -f "$HERE/$f" ] || { echo "::error::missing build input: $f" >&2; exit 1; }
+done
 
 # Base version from keyring/version, suffixed with that date.
 BASE_VERSION="$(cat "$HERE/keyring/version")"
@@ -64,33 +103,26 @@ BASE_VERSION="$(cat "$HERE/keyring/version")"
 # UTC, not the committer's zone: the version has to grow with the commits, and
 # the same instant written from +0200 and from +0000 sorts the other way round.
 PKG_DATE="$(TZ=UTC git -C "$HERE" log -1 --format=%cd --date=format-local:%Y%m%d%H%M%S \
-	-- "${PACKAGED_INPUTS[@]}" 2>/dev/null || true)"
+	-- "${VERSION_INPUTS[@]}" 2>/dev/null || true)"
 # The same commit as a Unix timestamp, used below to make the build
 # reproducible. Derived from repository state rather than the clock, so two
 # builds of the same checkout are byte-identical.
 PKG_EPOCH="$(git -C "$HERE" log -1 --format=%ct \
-	-- "${PACKAGED_INPUTS[@]}" 2>/dev/null || true)"
+	-- "${VERSION_INPUTS[@]}" 2>/dev/null || true)"
 # Fail closed if that date can't be derived. A bare version would not bump when
 # the key or the sources list changed, so apt upgrade would silently fail to
 # deliver it, the opposite of the guarantee this package exists to provide. The
 # build must run inside a full checkout (CI uses fetch-depth: 0).
 if [ -z "$PKG_DATE" ] || [ -z "$PKG_EPOCH" ]; then
-	echo "::error::no git history for the packaged inputs (${PACKAGED_INPUTS[*]}); cannot derive an upgrade-safe version (run inside a full git checkout)" >&2
+	echo "::error::no git history for the build inputs (${VERSION_INPUTS[*]}); cannot derive an upgrade-safe version (run inside a full git checkout)" >&2
 	exit 1
 fi
-# The suffix is +pkg, not +key: it tracks the packaged inputs, and a name that
+# The suffix is +pkg, not +key: it tracks the build inputs, and a name that
 # says "key" would be a claim the code stopped honouring. Checked with
 # `dpkg --compare-versions` before the rename: 1.0.0+pkg<date> sorts strictly
 # above the 1.0.0+key<date> already published, so no installed client is
 # stranded on a version apt would refuse to upgrade.
 VERSION="${BASE_VERSION}+pkg${PKG_DATE}"
-
-[ -f "$PUBKEY_ASC" ] || { echo "missing public key: $PUBKEY_ASC" >&2; exit 1; }
-[ -f "$SOURCES" ]    || { echo "missing sources file: $SOURCES" >&2; exit 1; }
-[ -f "$UNATTENDED" ] || { echo "missing unattended-upgrades config: $UNATTENDED" >&2; exit 1; }
-for f in "${PACKAGED_INPUTS[@]}"; do
-	[ -f "$HERE/$f" ] || { echo "missing packaged input: $f" >&2; exit 1; }
-done
 
 mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
@@ -217,7 +249,7 @@ EOF
 # into the .deb's tar members, and two builds of the same checkout differ in
 # both content AND size (measured: 1296 vs 1298 bytes, two seconds apart).
 #
-# That is not cosmetic here. The version encodes when the packaged inputs last
+# That is not cosmetic here. The version encodes when the build inputs last
 # changed, so the pool filename stays the same across rebuilds while the bytes
 # do not, and the publish syncs pool/ with --size-only. When a rebuild happened
 # to land on the same size, the upload was skipped while reprepro had already
@@ -225,7 +257,7 @@ EOF
 # index rejected. Making the build a pure function of the inputs is what earns
 # the version's claim.
 #
-# The epoch comes from the packaged inputs' newest commit, so it is repository
+# The epoch comes from the build inputs' newest commit, so it is repository
 # state and not the clock; dpkg-deb reads SOURCE_DATE_EPOCH, and the touch
 # covers the tree, which install(1) stamped with the current time.
 export SOURCE_DATE_EPOCH="$PKG_EPOCH"
