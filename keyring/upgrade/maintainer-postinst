@@ -81,8 +81,20 @@ offer_timer() {
 # unattended-upgrade on a machine that was otherwise healthy, which is worse
 # than the warning it replaces. A symlink is left alone: chmod would follow it
 # and change a directory the package knows nothing about.
+unsafe=0   # set when the trust anchor is left in a state this package will not build on
+
 close_dir() { # $1 = the directory
-	[ -d "$1" ] && [ ! -L "$1" ] || return 0
+	[ -d "$1" ] || return 0
+	if [ -L "$1" ]; then
+		# Followed for reading only: chmod through it would change a
+		# directory the package knows nothing about. If the target is
+		# writable by others the anchor is just as exposed, so say so.
+		if [ -n "$(find -L "$1" -maxdepth 0 -perm /022 -print 2>/dev/null)" ]; then
+			echo "glyndor-archive-keyring: $1 is a symlink to a directory writable by group or others; the trust anchor of this archive is not safe, fix it by hand" >&2
+			unsafe=1
+		fi
+		return 0
+	fi
 	# 022 are the write bits of group and others.
 	if [ -z "$(find "$1" -maxdepth 0 -perm /022 -print 2>/dev/null)" ]; then
 		return 0
@@ -91,6 +103,7 @@ close_dir() { # $1 = the directory
 		echo "glyndor-archive-keyring: $1 was writable by group or others and is now 0755" >&2
 	else
 		echo "glyndor-archive-keyring: $1 is writable by group or others and could not be closed; the trust anchor of this archive is not safe, fix its mode by hand" >&2
+		unsafe=1
 	fi
 	return 0
 }
@@ -112,6 +125,7 @@ close_dir() { # $1 = the directory
 check_sources() {
 	if [ ! -e "$sources_file" ] && [ ! -L "$sources_file" ]; then
 		echo "glyndor-archive-keyring: $sources_file is missing; this machine no longer receives the Glyndor archive, reinstall the package to restore it" >&2
+		unsafe=1
 		return 0
 	fi
 	reason=""
@@ -135,6 +149,7 @@ check_sources() {
 		fi
 	done
 	echo "glyndor-archive-keyring: $sources_file is not what this package ships ($reason); it was left as it is, $hint" >&2
+	unsafe=1
 	return 0
 }
 
@@ -165,7 +180,15 @@ case "$1" in
 					echo "glyndor-archive-keyring: the offer of the upgrade timer was interrupted and the timer is not on; the timer is left as it is, switch it on with 'systemctl enable --now glyndor-upgrade.timer' if you want it" >&2
 				fi
 			elif [ ! -e "$state/timer-offered" ]; then
-				offer_timer
+				if [ "$unsafe" -eq 0 ]; then
+					offer_timer
+				else
+					# No unattended upgrades over a trust anchor this
+					# package just reported as unsafe, and no marker, so
+					# the offer is made on the first configure that finds
+					# the anchor in order.
+					echo "glyndor-archive-keyring: the upgrade timer was not offered because of the warnings above; it is offered again on the next configure once they are fixed" >&2
+				fi
 			fi
 		fi
 		;;

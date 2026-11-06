@@ -74,6 +74,7 @@ fresh; good_sources > "$WORK/t/sources/glyndor.sources"; chmod 777 "$WORK/t/keyr
 printf '#!/bin/sh\nexit 1\n' > "$WORK/sbin/chmod"; chmod +x "$WORK/sbin/chmod"
 post
 check "a directory that cannot be closed does NOT fail the configure" "0" "$rc"
+check "but the timer is not offered over it" "0" "$([ -f "$WORK/unit-state" ] && echo 1 || echo 0)"
 check "and the warning says the trust anchor is not safe" "1" "$(said 'is not safe')"
 rm -f "$WORK/sbin/chmod"
 
@@ -83,6 +84,10 @@ rm -rf "$WORK/t/keyrings"; ln -s "$WORK/elsewhere" "$WORK/t/keyrings"
 post
 check "a symlinked directory is not chmodded through the link" "777" "$(mode "$WORK/elsewhere")"
 check "and the configure succeeds" "0" "$rc"
+check "but the exposure behind the link is reported" "1" "$(said 'symlink to a directory writable')"
+check "and the timer is not offered over it" "0" "$([ -f "$WORK/unit-state" ] && echo 1 || echo 0)"
+check "with no marker, so it is offered once the anchor is fixed" "0" "$(find "$WORK/t/state" -type f | wc -l)"
+check "and the warning says so" "1" "$(said 'was not offered because of the warnings above')"
 
 # --- the apt source file: said, never rewritten --------------------------------------
 fresh; good_sources > "$WORK/t/sources/glyndor.sources"
@@ -105,6 +110,7 @@ cp "$WORK/t/sources/glyndor.sources" "$WORK/custom"
 post
 check "a Signed-By that points at another key is reported" "1" "$(said "it trusts '/etc/apt/trusted.gpg.d/other.gpg'")"
 check "with the consequence for a key rotation" "1" "$(said 'rotation of the archive key')"
+check "and the timer is not offered over a source that trusts another key" "0" "$([ -f "$WORK/unit-state" ] && echo 1 || echo 0)"
 check "and the operator's file is byte for byte as they left it" "$(cksum < "$WORK/custom")" "$(cksum < "$WORK/t/sources/glyndor.sources")"
 check "and the configure succeeds" "0" "$rc"
 
@@ -112,6 +118,7 @@ fresh; good_sources > "$WORK/t/sources/glyndor.sources"; sed -i 's|^URIs: .*|URI
 cp "$WORK/t/sources/glyndor.sources" "$WORK/custom"
 post
 check "a mirror the operator chose is not a warning" "0" "$(said 'is not what this package ships')"
+check "and the timer is offered as usual" "enabled" "$(cat "$WORK/unit-state" 2>/dev/null)"
 check "and is not touched" "$(cksum < "$WORK/custom")" "$(cksum < "$WORK/t/sources/glyndor.sources")"
 
 fresh
