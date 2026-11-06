@@ -196,6 +196,88 @@ command -v dpkg >/dev/null 2>&1 || fail "no dpkg found"
 # instead of "dpkg-deb: command not found" halfway through the keyring step.
 command -v dpkg-deb >/dev/null 2>&1 || fail "no dpkg-deb found"
 
+# --- the temporary directory --------------------------------------------------
+#
+# The work directory holds the package whose signature is checked and the path
+# dpkg is given, and those have to be the same bytes. The gap between the check
+# and the install is where another user steps in: whoever can rename the work
+# directory puts their own package where the verified one was, and dpkg then
+# installs that one.
+#
+# So the temporary path is examined before anything is downloaded. A directory
+# writable by group or by others is only safe with the sticky bit: with the
+# sticky bit set only the owner of an entry may rename or remove it, and
+# without it any user with write access may rename the work directory this
+# script created.
+#
+# The whole chain is examined, not only its last directory: a TMPDIR under a
+# /tmp that lost its sticky bit is as unsafe as /tmp itself, because that /tmp
+# can be renamed too.
+
+# Is this directory one another user could rename an entry in?
+#
+# find answers the question directly, so the answer does not depend on how any
+# particular ls formats its output. -prune keeps find from walking into the
+# directory it was asked about.
+dir_shared() { # $1 = directory -> 0 when group or others may write in it
+	find "$1" -prune \( -perm -020 -o -perm -002 \) -print 2>/dev/null | grep -q .
+}
+
+# The first directory on the path that another user could work in, or nothing
+# when the whole path holds. The sticky bit is what makes a shared directory
+# safe: with it, only the owner of an entry may rename it.
+unsafe_dir_on_path() { # $1 = absolute path -> prints the directory, or nothing
+	_dir="$1"
+	while [ -n "$_dir" ]; do
+		if [ ! -k "$_dir" ] && dir_shared "$_dir"; then
+			printf '%s\n' "$_dir"
+			return 0
+		fi
+		if [ "$_dir" = "/" ]; then
+			return 0
+		fi
+		_dir="${_dir%/*}"
+		if [ -z "$_dir" ]; then
+			_dir="/"
+		fi
+	done
+	return 0
+}
+
+# The sha256 of a file, or nothing when sha256sum is not installed. The
+# comparison it feeds is a second gate, not the only one: a machine without
+# sha256sum still refuses anything that was not verified.
+file_sha256() { # $1 = file
+	command -v sha256sum >/dev/null 2>&1 || return 0
+	_digest="$(sha256sum "$1" 2>/dev/null)" || return 0
+	printf '%s' "${_digest%% *}"
+}
+
+# The directory the work directory is created in: TMPDIR when the environment
+# names one, /tmp otherwise. Resolved to an absolute path with the symlinks
+# followed, because the mode that matters is the one of the directory the work
+# directory really lands in, and a symlink to a shared directory is as unsafe
+# as the directory it points at.
+temp_root="${TMPDIR:-/tmp}"
+temp_root_abs="$(cd "$temp_root" 2>/dev/null && pwd -P)" || temp_root_abs=
+
+if [ -n "$temp_root_abs" ]; then
+	if command -v find >/dev/null 2>&1; then
+		unsafe_dir="$(unsafe_dir_on_path "$temp_root_abs")"
+		if [ -n "$unsafe_dir" ]; then
+			fail "the temporary directory $unsafe_dir is writable by its group or by other \
+users and has no sticky bit, so another user could replace the package this installer \
+verifies before it is installed; point TMPDIR at a directory only you can write to and \
+run again"
+		fi
+	else
+		# No way to read the mode bits. The copy and the second signature
+		# check below stand in for it, and the operator is told that the path
+		# was not examined.
+		note "the temporary directory could not be examined (find is not installed), so the package is copied and checked again before it is installed"
+	fi
+fi
+
 workdir=
 installed_gnupg=
 gnupg_deps=
@@ -233,6 +315,12 @@ trap 'exit 143' TERM
 # be written there. Cleanup removes it whether or not the snapshot ever made it
 # to disk.
 workdir=$(mktemp -d)
+
+# The two files below are the same package at two moments: the one that is
+# downloaded and signed-checked, and the one dpkg is finally given. They are
+# kept apart on purpose -- see where the copy is made.
+verified_deb="$workdir/glyndor-archive-keyring.deb"
+install_deb="$workdir/install/glyndor-archive-keyring.deb"
 
 # gpg comes from the distribution's own trusted repositories, not ours, so
 # installing it here does not widen what has to be trusted. It is needed for the
@@ -286,7 +374,7 @@ doing "downloading the archive keyring"
 # is a few kilobytes against an 8 MB ceiling.
 curl -fsSL --proto-redir =https --max-filesize $((8 * 1024 * 1024)) \
 	--connect-timeout 20 --max-time 300 \
-	-o "$workdir/glyndor-archive-keyring.deb" "$KEYRING_URL" \
+	-o "$verified_deb" "$KEYRING_URL" \
 	|| fail "could not download $KEYRING_URL (over 8 MB, or the transfer failed)"
 
 # And the detached signature over it, under the same bounds against a smaller
@@ -322,7 +410,7 @@ mkdir -p "$workdir/extracted"
 # kilobytes can unpack to gigabytes, and this runs as root before any fingerprint
 # is compared, so the data archive is read through a ceiling of the same size and
 # only then unpacked.
-dpkg-deb --fsys-tarfile "$workdir/glyndor-archive-keyring.deb" 2>/dev/null \
+dpkg-deb --fsys-tarfile "$verified_deb" 2>/dev/null \
 	| head -c $((8 * 1024 * 1024 + 1)) > "$workdir/keyring.tar" || true
 [ -s "$workdir/keyring.tar" ] || fail "could not extract the keyring package"
 [ "$(wc -c < "$workdir/keyring.tar")" -le $((8 * 1024 * 1024)) ] \
@@ -419,13 +507,54 @@ doing "checking the archive signature"
 # running it, and an unredirected child would consume the rest of the program.
 mkdir -p "$workdir/gnupg"
 chmod 700 "$workdir/gnupg"
+# The digest of what was downloaded, taken before the signature is checked, so
+# the copy made below can be compared with the bytes that were signed.
+# sha256sum is not on every machine; without it the signature check over the
+# copy is what carries the comparison.
+verified_digest="$(file_sha256 "$verified_deb")"
+
 GNUPGHOME="$workdir/gnupg" gpg --no-default-keyring \
 	--keyring "$workdir/extracted$KEYRING_PATH" \
 	--verify "$workdir/glyndor-archive-keyring.deb.asc" \
-	"$workdir/glyndor-archive-keyring.deb" </dev/null >/dev/null 2>&1 \
+	"$verified_deb" </dev/null >/dev/null 2>&1 \
 	|| fail "the downloaded package is not signed by the archive key it carries; nothing was installed"
 
 step "Package signature verified"
+
+# The package that gets installed is the package that was verified.
+#
+# Between the check above and the install below there is a gap, and in that gap
+# the file the check read can be replaced: whoever can rename the work
+# directory puts their own package where the verified one was. So the verified
+# bytes are copied into a file this script creates, that file is compared with
+# what was signed, and the signature is checked over it again. What dpkg reads
+# is then a file this script made, holding the bytes the archive signed.
+#
+# The copy is made before gnupg is purged, because checking the copy needs gpg.
+
+# A new file, private to this script: umask 077 so nobody else can read it, and
+# no-clobber so it cannot be a file somebody else created and pointed
+# somewhere else. The directory is made in the same breath, under the same
+# umask, for the same reason.
+( umask 077; set -C; mkdir -p "$workdir/install" \
+	&& cat "$verified_deb" > "$install_deb" ) \
+	|| fail "could not prepare the verified package for installation; nothing was installed"
+chmod 600 "$install_deb" \
+	|| fail "could not make the verified package private; nothing was installed"
+
+if [ -n "$verified_digest" ]; then
+	install_digest="$(file_sha256 "$install_deb")"
+	[ "$install_digest" = "$verified_digest" ] \
+		|| fail "the package changed between the signature check and the installation; nothing was installed"
+fi
+
+# And the signature over the copy itself: equal bytes are not the claim, a
+# valid signature over those bytes is.
+GNUPGHOME="$workdir/gnupg" gpg --no-default-keyring \
+	--keyring "$workdir/extracted$KEYRING_PATH" \
+	--verify "$workdir/glyndor-archive-keyring.deb.asc" \
+	"$install_deb" </dev/null >/dev/null 2>&1 \
+	|| fail "the package to install is not the one that was verified; nothing was installed"
 
 # The product may depend on libraries gnupg pulled in. Purge those packages
 # before installing the keyring or product, or apt can remove the product too.
@@ -433,7 +562,7 @@ step "Package signature verified"
 purge_gnupg
 
 doing "installing the keyring"
-dpkg -i "$workdir/glyndor-archive-keyring.deb" >/dev/null </dev/null \
+dpkg -i "$install_deb" >/dev/null </dev/null \
 	|| fail "could not install the keyring package"
 
 step "Keyring installed"
