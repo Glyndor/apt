@@ -90,6 +90,8 @@ jobs:
         ./tests/ci/policy/locale-pinned.test.sh
         ./tests/quality/check-test-coverage.test.sh
         ./tests/quality/ci-job-scope.test.sh
+        ./tests/quality/ci-job-scope-suites.test.sh
+        ./tests/quality/suite-scope-map.test.sh
         ./tests/ci/suites/ci-runs-every-test.test.sh
         ./tests/quality/lint-workflow-shell.test.sh
         ./tests/ci/reusable/reusable-line-limit.test.sh

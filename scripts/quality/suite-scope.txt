@@ -251,6 +251,16 @@ tests/publish/sync-archive.test.sh
 	tests/publish/**
 	.github/workflows/publish.yml
 
+tests/publish/prune-installers.test.sh
+	scripts/publish/**
+	tests/publish/**
+	.github/workflows/publish.yml
+
+tests/publish/purge-cache-pruned.test.sh
+	scripts/publish/**
+	tests/publish/**
+	.github/workflows/publish.yml
+
 tests/publish/publish-workflow.test.sh
 	scripts/publish/**
 	tests/publish/**
@@ -411,6 +421,17 @@ tests/quality/check-test-coverage.test.sh
 tests/quality/ci-job-scope.test.sh
 	scripts/quality/ci-job-scope.sh
 	tests/quality/**
+
+tests/quality/ci-job-scope-suites.test.sh
+	scripts/quality/ci-job-scope.sh
+	scripts/quality/suite-scope.txt
+	tests/quality/**
+
+tests/quality/suite-scope-map.test.sh
+	scripts/quality/suite-scope.txt
+	.github/workflows/tests.yml
+	tests/**
+	scripts/**
 
 tests/quality/lint-workflow-shell.test.sh
 	scripts/quality/lint-workflow-shell.sh
