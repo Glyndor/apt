@@ -17,9 +17,10 @@
 # new served file had to be remembered somewhere separate from where it is
 # produced.
 #
-# Usage: purge-cache.sh <archive-url> <built-dir>
-#   <archive-url>  public base URL, e.g. https://apt.glyndor.net
-#   <built-dir>    the directory build-repo.sh wrote (contains dists/, pool/)
+# Usage: purge-cache.sh <archive-url> <built-dir> [<budget-seconds>]
+#   <archive-url>     public base URL, e.g. https://apt.glyndor.net
+#   <built-dir>       the directory build-repo.sh wrote (contains dists/, pool/)
+#   <budget-seconds>  the time the WHOLE purge may take (default 120)
 #
 # Environment: CF_TOKEN (Cloudflare Bearer token), CF_ZONE (zone id),
 # and optionally CF_API_BASE to point the request somewhere else (the tests
@@ -33,16 +34,66 @@ ARCHIVE_URL="${ARCHIVE_URL%/}"
 BUILT_DIR="${2:-}"
 CF_API_BASE="${CF_API_BASE:-https://api.cloudflare.com/client/v4}"
 
+# The budget for the WHOLE purge, in seconds.
+#
+# It exists because curl's own retry multiplies the per-attempt deadline. One
+# hung purge request was four attempts of --max-time 300 plus the delays
+# between them: 1200s of transfer, against a publish job allowed 900s, and the
+# operator read "cancelled after 15 minutes" instead of which group of URLs
+# was not purged. The read-back that follows this step in the publish got a
+# budget for exactly this reason on 2026-09-08; the purge, which runs first,
+# did not have one.
+#
+# publish.yml passes it from beside the job's `timeout-minutes: 15` rather than
+# letting it default here, so the two numbers are read together instead of
+# drifting apart in two files.
+BUDGET="${3:-120}"
+
 # Cloudflare rejects a purge-by-URL request carrying more than this many files.
 # The list grows with every product and every architecture, so the request is
 # split rather than refused: at the roster in the product context, two
 # architectures fit in one request and three do not.
 BATCH_SIZE=30
 
+# The ceiling for ONE attempt of one request. A purge carries at most 30 URLs
+# of metadata, so this is generous against the clock and tight against the
+# budget: it is what keeps a single hung request from eating the whole purge.
+#
+# Overridable so the suite can exercise the budget without waiting out a
+# 30-second deadline. Production never sets it. It is validated below like
+# the budget, so the expansion below is a number and nothing else.
+TRANSFER_MAX="${PURGE_TRANSFER_MAX:-30}"
+# The connect phase is short or the peer is not there at all.
+CONNECT_MAX=20
+# The wait between two attempts.
+RETRY_DELAY=5
+
 if [ -z "$ARCHIVE_URL" ] || [ -z "$BUILT_DIR" ]; then
-	echo "usage: purge-cache.sh <archive-url> <built-dir>" >&2
+	echo "usage: purge-cache.sh <archive-url> <built-dir> [<budget-seconds>]" >&2
 	exit 2
 fi
+
+case "$BUDGET" in '' | *[!0-9]*)
+	echo "::error::the purge budget must be a positive integer, got '$BUDGET'" >&2
+	exit 1
+	;;
+esac
+[ "$BUDGET" -ge 1 ] || { echo "::error::the purge budget must be at least 1 second" >&2; exit 1; }
+case "$TRANSFER_MAX" in '' | *[!0-9]*)
+	echo "::error::the per-attempt ceiling must be a positive integer, got '$TRANSFER_MAX'" >&2
+	exit 1
+	;;
+esac
+[ "$TRANSFER_MAX" -ge 1 ] || { echo "::error::the per-attempt ceiling must be at least 1 second" >&2; exit 1; }
+
+# Seconds since the purge started. The budget covers the whole script, not
+# only the requests, so the time spent deriving the purge list counts too.
+STARTED_AT="$(date -u +%s)"
+elapsed() { echo $(( $(date -u +%s) - STARTED_AT )); }
+# What is left of the budget. Read before every request rather than once at
+# the start: a purge that spends its budget on the first batch must not start
+# the second one with the deadline it would have had at the beginning.
+remaining() { echo $(( BUDGET - $(elapsed) )); }
 
 for v in CF_TOKEN CF_ZONE; do
 	eval "[ -n \"\${$v:-}\" ]" \
@@ -170,40 +221,101 @@ printf 'Authorization: Bearer %s\n' "$CF_TOKEN" > "$hdr"
 
 batches=0
 
+# What a failed purge leaves behind, said the same way whichever group failed.
+#
+# Either way the indices were not purged while the pool was: the sync has
+# already dropped the superseded packages from R2, so an edge still serving
+# the previous index names packages that are no longer there. A client on that
+# edge sees a missing package until the next successful purge or cache
+# expiry. The operator reading a red run needs to know which of those it is,
+# because they call for very different responses.
+warn_indices_not_purged() {
+	echo "::warning::the indices were not purged; edges may keep serving the previous index while the pool already lost its superseded packages, so a client on a stale edge can see a missing package until the next successful purge or cache expiry"
+}
+
+# The diagnosis the job's timeout would otherwise never let the script print.
+# It runs while there is still time, it names the group and the batch that
+# were in flight, and it says that the budget is what stopped it.
+budget_stop() { # $1=group label $2=batch number $3=before|on $4=curl exit (optional)
+	if [ "$3" = "before" ]; then
+		echo "::error::the ${BUDGET}s purge budget ran out before the $1 batch $2 request; the Cloudflare purge did not finish, so the edge may keep serving the previous index"
+	else
+		echo "::error::the ${BUDGET}s purge budget ran out on the $1 batch $2 request: curl exited with $4, and the Cloudflare purge did not finish, so the edge may keep serving the previous index"
+	fi
+	warn_indices_not_purged
+	exit 1
+}
+
 # Purge one file's worth of URLs in BATCH_SIZE-sized requests. $2 names the
 # group for the error message, so a failure says which half stopped.
 purge_file() { # $1=path $2=label
 	_count="$(wc -l < "$1")"
 	_sent=0
 	while [ "$_sent" -lt "$_count" ]; do
+		_batch=$((batches + 1))
+
+		_left="$(remaining)"
+		if [ "$_left" -le 0 ]; then
+			budget_stop "$2" "$_batch" "before"
+		fi
+
 		# jq -R/-s builds the JSON array from the raw lines, so a URL can never
 		# break out of the payload the way hand-assembled quoting could.
 		body="$(sed -n "$((_sent + 1)),$((_sent + BATCH_SIZE))p" "$1" \
 			| jq -R . | jq -sc '{files: .}')"
 
-		# Bound this curl: without --connect-timeout 20 --max-time 300 a hung
-		# purge would leave a fresh archive behind a stale edge cache with the
-		# job wedged rather than failed, because the step runs after the sync
-		# has already landed: every step of the publish reports success, the
-		# new Packages pairs with the previous InRelease the cache keeps
-		# serving, and CI does not turn red. The numbers match the keyring
-		# fetch in install-template.sh.
-		resp="$(curl -sS --retry 3 --retry-all-errors --retry-delay 5 -X POST \
-			--connect-timeout 20 --max-time 300 \
+		# Bound this curl: without a deadline a hung purge would leave a fresh
+		# archive behind a stale edge cache with the job wedged rather than
+		# failed, because the step runs after the sync has already landed:
+		# every step of the publish reports success, the new Packages pairs
+		# with the previous InRelease the cache keeps serving, and CI does not
+		# turn red.
+		#
+		# Every deadline below is the time that is LEFT, not a fixed number:
+		# --max-time bounds one attempt, --retry-max-time bounds the whole
+		# retry sequence, and the delay between two attempts cannot outlast
+		# the budget either. A fixed --max-time 300 with curl's own retries
+		# is four attempts of five minutes each, which is how this step used
+		# to cost more than the job it runs in.
+		#
+		# The deadlines are expanded unquoted because each of them is an
+		# integer this script computed or validated above. --max-time is
+		# the one that has to be: the repository's own "every curl carries
+		# --max-time" gate reads a deadline as that flag followed by a
+		# number or a variable, and a quoted expansion is not a shape it
+		# recognises.
+		_max=$(( _left < TRANSFER_MAX ? _left : TRANSFER_MAX ))
+		_connect=$(( _left < CONNECT_MAX ? _left : CONNECT_MAX ))
+		_delay=$(( _left < RETRY_DELAY ? _left : RETRY_DELAY ))
+
+		_rc=0
+		resp="$(curl -sS --retry 3 --retry-all-errors --retry-delay "$_delay" \
+			--retry-max-time "$_left" -X POST \
+			--connect-timeout "$_connect" --max-time $_max \
 			"$CF_API_BASE/zones/$CF_ZONE/purge_cache" \
 			-H @"$hdr" \
 			-H "Content-Type: application/json" \
-			--data "$body")"
+			--data "$body" 2> "$work/curl.err")" || _rc=$?
+
+		if [ "$_rc" -ne 0 ]; then
+			# The budget is measured again here rather than assumed: the
+			# request can fail for its own reasons with time to spare, and
+			# the two need different words.
+			if [ "$(remaining)" -le 0 ]; then
+				budget_stop "$2" "$_batch" "on" "$_rc"
+			fi
+			echo "::error::Cloudflare purge failed on $2 batch $_batch: curl exited with $_rc: $(cat "$work/curl.err")"
+			warn_indices_not_purged
+			exit 1
+		fi
 
 		# jq -e parses the actual JSON structure instead of grep matching the raw
 		# response text, which a `"success":true` embedded in an unrelated field
 		# (or a differently formatted but still successful response) could fool
 		# either way.
 		echo "$resp" | jq -e '.success == true' >/dev/null || {
-			echo "::error::Cloudflare purge failed on $2 batch $((batches + 1)): $resp"
-			if [ "$2" = "content" ]; then
-				echo "::warning::the indices were not purged; edges may keep serving the previous index while the pool already lost its superseded packages, so a client on a stale edge can see a missing package until the next successful purge or cache expiry"
-			fi
+			echo "::error::Cloudflare purge failed on $2 batch $_batch: $resp"
+			warn_indices_not_purged
 			exit 1
 		}
 
@@ -220,5 +332,5 @@ purge_file "$work/urls-index" "index"
 
 # Print what was purged. The list is derived rather than written, so the run log
 # is the only place it can be audited after the fact.
-echo "Cloudflare cache purged, $total URL(s) in $batches request(s):"
+echo "Cloudflare cache purged, $total URL(s) in $batches request(s), $(elapsed)s of the ${BUDGET}s budget:"
 sed 's/^/  /' "$work/urls"

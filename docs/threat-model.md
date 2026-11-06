@@ -86,6 +86,7 @@ Not considered: an adversary holding the archive signing key, an adversary holdi
 | A change to the publish workflow ships untested | the workflow's shell is extracted and linted, and its steps are exercised by the workflow suites, on every pull request | gate: `shell / test`, `shell / shellcheck`, `workflow-lint / workflow-lint`, all required on `main` |
 | A test exists and no workflow runs it | a watcher fails when a suite under `tests/` is not invoked by any workflow, and another fails when a script has no suite | test: `tests/ci/suites/ci-runs-every-test.test.sh`, `tests/quality/check-test-coverage.test.sh`, each including itself |
 | A hung publish holds the archive a day | `timeout-minutes` from a measured 31 to 50 seconds | measurement: the last ten runs, 2026-09-01 |
+| A hung purge spends the whole job and is cancelled without saying anything | the purge takes a budget for the whole run, every transfer and every retry inside it are limited to the time that is left, and the failure names the group and the batch that were in flight | test: `tests/publish/purge-cache-budget.test.sh`, against a fake Cloudflare API that accepts the request and never answers; measurement: before, one hung purge request was four attempts of `--max-time 300` -- 1200s of transfer against a 900s job -- and the operator read "cancelled after 15 minutes" |
 
 ## How the evidence is kept honest
 

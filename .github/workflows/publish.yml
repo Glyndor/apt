@@ -509,8 +509,22 @@ jobs:
           # context on three architectures, and it would have failed the run
           # AFTER the sync, leaving a fresh archive behind a stale edge cache.
           # tests/publish/purge-cache.test.sh covers the batching and the fail-closed
-          # paths.
-          ./scripts/publish/purge-cache.sh "$ARCHIVE_URL" public
+          # paths, and tests/publish/purge-cache-budget.test.sh covers the budget.
+          #
+          # The budget is the third argument. It lives here rather than in the
+          # script's default so that it can be read next to this job's
+          # `timeout-minutes: 15` above: 120s of the 900s job, and the
+          # read-back below already claims 600s of it, so the two budgets
+          # together leave 180s for the download, the build, the sync and for
+          # the diagnosis the purge prints when it runs out of time.
+          #
+          # It is needed because curl's own retry multiplies the deadline: one
+          # hung purge request was four attempts of --max-time 300 plus the
+          # delays between them, so a single request could cost more than
+          # the whole job. The job was then cancelled and the operator read
+          # "cancelled after 15 minutes" instead of which group of URLs was
+          # not purged.
+          ./scripts/publish/purge-cache.sh "$ARCHIVE_URL" public 120
 
       - name: Verify the published installers match the build
         run: |
