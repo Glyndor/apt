@@ -1,0 +1,472 @@
+# suite-scope.txt -- which paths can change each suite's verdict.
+#
+# WHAT THIS FILE IS
+#
+# The test job of .github/workflows/reusable-shell-ci.yml runs every suite on
+# every pull request. Most of them are cheap; three are not, and their cost
+# does not depend on the change: tests/verify/verify-published.test.sh,
+# tests/publish/purge-cache-budget.test.sh and
+# tests/publish/health-check-workflow.test.sh are integration suites that
+# build a signed archive, serve it over a local HTTP server and wait on
+# retries and budgets. Measured on this repository on 2026-11-06, the whole
+# suite is 151.0 s locally and those three are 69.7 s of it (46 %).
+#
+# This file says, per suite, the paths whose change can alter what that suite
+# concludes. A pull request that touches none of them cannot change that
+# suite's verdict, so the suite does not need to run to learn something it
+# already knows. The decision is made by scripts/quality/ci-job-scope.sh, in
+# its `suites` mode, and the job and its required check `shell / test` still
+# report exactly as before.
+#
+# WHY IT IS SAFE
+#
+#   * It fails open, in every direction. A suite with no entry here always
+#     runs. A suite whose entry has no pattern is refused. A diff that cannot
+#     be read, a rename, a copy, a type change, a push, a schedule or a
+#     workflow dispatch runs every suite. A wrong skip lets a change merge
+#     untested; a wrong run costs seconds. The asymmetry decides every
+#     borderline case in favour of running.
+#
+#   * The decision is taken with the resolver and this map as they are in the
+#     BASE commit, not as the pull request ships them. A pull request that
+#     rewrites the map or the resolver to narrow its own scope gets the full
+#     suite instead, because the base copy is what decides. This is the same
+#     rule the shellcheck job of the reusable already follows for
+#     scripts/quality/ci-job-scope.sh, and the rule the CI standard states:
+#     a gate script is read from the base commit, never from the checkout of
+#     the pull request it is judging.
+#
+#   * The map, the resolver and the runner are an input of every suite. A
+#     change to any of the three runs the whole suite set, so the thing that
+#     decides what runs cannot be changed in order to decide less, and the
+#     thing that runs the suites cannot be changed in order to run fewer.
+#     The rule is in scripts/quality/ci-job-scope.sh rather than in an entry
+#     per suite here, so a suite added below later cannot forget it.
+#
+#   * The names of the suites here are the paths the workflow passes to
+#     tests/ci/suites/check-suite-completeness.test.sh, so the workflow still
+#     names every suite and tests/ci/suites/ci-runs-every-test.test.sh still
+#     sees a complete list. Only the decision to EXECUTE a suite changes.
+#
+#   * A push to main runs every suite. Nothing is ever removed from the set
+#     that runs there; the mechanism only ever removes suites from a pull
+#     request, and only those a pull request cannot affect.
+#
+# HOW THE ENTRIES WERE DERIVED
+#
+# Each suite was run under strace on 2026-11-06 and the files it opened were
+# recorded, so the sets below are measured rather than guessed. They were then
+# widened to the area that contains them: a suite that read one file of
+# scripts/verify/ depends on scripts/verify/, because the next change in that
+# folder may be the one it reads.
+#
+# Two shapes need saying apart, because the measurement alone does not tell
+# them apart:
+#
+#   * A suite that WALKS a tree -- find, ls, `git ls-files` -- depends on the
+#     whole tree BY NAME. The coverage gate walks scripts/ and requires a
+#     test of the same name in tests/, so its entry is scripts/** and
+#     tests/**: a script added without a test, or a test removed while its
+#     script stays, changes what it concludes.
+#
+#   * A suite that COPIES a tree into its fixture -- `cp -r scripts` -- and
+#     then runs two of the copies depends on those two, not on the tree.
+#     Copying is not reading: the members that are never executed cannot
+#     change the verdict. The entries below that copy the tree name the
+#     scripts they execute and whatever those read.
+#
+# PATTERN SYNTAX
+#
+#   *   matches within one path segment.
+#   ?   matches one character within one path segment.
+#   **  matches any number of segments, including none.
+#   A bare path matches that path exactly.
+#
+#   scripts/verify/**     every file under scripts/verify/
+#   .github/workflows/publish.yml   that one file
+#   **                   every tracked file
+#
+# HOW TO EXTEND IT
+#
+# A new suite arrives without an entry, so it always runs until somebody
+# writes one. That is the safe default and it is why the file is allowed to
+# lag behind the suite list. When you add an entry, measure it the same way
+# this one was measured: run the suite under strace and record the files it
+# opens.
+#
+# ---------------------------------------------------------------------------
+
+# --- the read-back of the published archive ----------------------------------
+# These four read the same script and the same fixture. Their cost is in
+# building and signing an archive, not in what they read.
+
+tests/verify/verify-published.test.sh
+	scripts/verify/**
+	tests/verify/**
+
+tests/verify/verify-published-bootstrap.test.sh
+	scripts/verify/**
+	tests/verify/**
+
+tests/verify/verify-published-budget.test.sh
+	scripts/verify/**
+	tests/verify/**
+
+tests/verify/verify-published-packages.test.sh
+	scripts/verify/**
+	tests/verify/**
+
+# The build variant compares two signed archives kept as fixtures, so it also
+# depends on the keyring it verifies them against and on the workflow that
+# publishes them.
+
+tests/verify/verify-published-build.test.sh
+	scripts/verify/**
+	tests/verify/**
+	keyring/**
+	.github/workflows/publish.yml
+
+# It copies the whole scripts/ tree into its fixture so the workflow steps can
+# run from it, and the steps run scripts/build/build-installers.sh and
+# scripts/verify/verify-installers.sh -- the same two the health check does.
+# The first of those reads the installer template, so scripts/installer/ is an
+# input of the verdict even though the tree copy is not.
+
+tests/verify/verify-installers.test.sh
+	scripts/build/**
+	scripts/installer/**
+	scripts/verify/**
+	tests/verify/**
+	.github/workflows/health-check.yml
+	.github/workflows/publish.yml
+
+tests/verify/verify-debs.test.sh
+	scripts/verify/**
+	tests/verify/**
+
+# The distro floor reads the table README.md carries and the workflow that
+# enforces it.
+
+tests/verify/distro-floor.test.sh
+	scripts/verify/**
+	tests/verify/**
+	.github/workflows/distro-floor.yml
+	README.md
+
+# --- the package repository and the keyring -----------------------------------
+
+tests/build/build-repo.test.sh
+	scripts/build/**
+	tests/build/**
+	keyring/**
+
+tests/build/build-repo-expiry.test.sh
+	scripts/build/**
+	tests/build/**
+	keyring/**
+
+tests/build/build-keyring.test.sh
+	scripts/build/**
+	tests/build/**
+	keyring/**
+
+tests/build/build-keyring-contents.test.sh
+	scripts/build/**
+	tests/build/**
+	keyring/**
+
+tests/build/build-keyring-generator.test.sh
+	scripts/build/**
+	tests/build/**
+	keyring/**
+
+tests/build/build-index-page.test.sh
+	scripts/build/**
+	scripts/installer/**
+	tests/build/**
+
+tests/build/build-installers.test.sh
+	scripts/build/**
+	scripts/installer/**
+	tests/build/**
+
+tests/build/architectures-agree.test.sh
+	scripts/build/**
+	tests/build/**
+	keyring/**
+	.github/workflows/publish.yml
+
+tests/keyring/glyndor-upgrade.test.sh
+	keyring/**
+	tests/keyring/**
+
+tests/keyring/maintainer-postinst-trust.test.sh
+	keyring/**
+	tests/keyring/**
+
+tests/keyring/glyndor-upgrade-errors.test.sh
+	keyring/**
+	tests/keyring/**
+
+tests/keyring/maintainer-timer.test.sh
+	keyring/**
+	tests/keyring/**
+
+tests/keyring/keyring-fingerprints.test.sh
+	keyring/**
+	scripts/installer/**
+	tests/keyring/**
+	README.md
+
+# --- the installer ------------------------------------------------------------
+
+tests/installer/install-template.test.sh
+	scripts/installer/**
+	tests/installer/**
+
+tests/installer/install-template-behaviour.test.sh
+	scripts/installer/**
+	tests/fixtures/**
+	tests/installer/**
+
+tests/installer/install-template-empty-keyring.test.sh
+	scripts/installer/**
+	tests/fixtures/**
+	tests/installer/**
+	keyring/**
+
+tests/installer/install-template-tmpdir.test.sh
+	scripts/installer/**
+	tests/fixtures/**
+	tests/installer/**
+
+tests/installer/install-template-limits.test.sh
+	scripts/installer/**
+	tests/fixtures/**
+	tests/installer/**
+
+tests/installer/install-template-delivery.test.sh
+	scripts/installer/**
+	scripts/build/**
+	tests/installer/**
+
+tests/installer/unattended-upgrades.test.sh
+	scripts/installer/**
+	tests/installer/**
+
+# The bootstrap command is what README.md and docs/ tell people to run, so
+# both are inputs of its verdict.
+
+tests/installer/readme-bootstrap.test.sh
+	scripts/installer/**
+	scripts/build/**
+	tests/installer/**
+	README.md
+	docs/**
+
+# --- the publish job ----------------------------------------------------------
+
+tests/publish/purge-cache.test.sh
+	scripts/publish/**
+	tests/publish/**
+
+tests/publish/purge-cache-budget.test.sh
+	scripts/publish/**
+	tests/publish/**
+
+tests/publish/sync-archive.test.sh
+	scripts/publish/**
+	tests/publish/**
+	.github/workflows/publish.yml
+
+tests/publish/prune-installers.test.sh
+	scripts/publish/**
+	tests/publish/**
+	.github/workflows/publish.yml
+
+tests/publish/purge-cache-pruned.test.sh
+	scripts/publish/**
+	tests/publish/**
+	.github/workflows/publish.yml
+
+tests/publish/publish-workflow.test.sh
+	scripts/publish/**
+	tests/publish/**
+	.github/workflows/publish.yml
+
+tests/publish/publish-workflow-sync.test.sh
+	scripts/publish/**
+	tests/publish/**
+	.github/workflows/publish.yml
+
+tests/publish/publish-workflow-assets.test.sh
+	tests/publish/**
+	.github/workflows/publish.yml
+
+tests/publish/publish-workflow-signing-key.test.sh
+	scripts/publish/**
+	tests/publish/**
+	keyring/**
+	.github/workflows/publish.yml
+
+tests/publish/publish-workflow-bootstrap.test.sh
+	tests/publish/**
+	keyring/**
+	.github/workflows/publish.yml
+
+# This one copies the whole scripts/ tree into its fixture, but the only
+# scripts it executes are scripts/build/build-installers.sh and
+# scripts/verify/verify-installers.sh, so the entry names the two areas
+# rather than the whole tree. The first of those reads the installer template,
+# so scripts/installer/ belongs here too. A change to
+# .github/workflows/health-check.yml that starts calling a script in another
+# area has to add that area here.
+
+tests/publish/health-check-workflow.test.sh
+	scripts/build/**
+	scripts/installer/**
+	scripts/verify/**
+	tests/publish/**
+	keyring/**
+	.github/workflows/health-check.yml
+	.github/workflows/publish.yml
+
+# --- the gates this repository puts on itself ---------------------------------
+
+# The locale and the network gates walk every script, so every script is an
+# input of their verdict.
+
+tests/ci/policy/locale-pinned.test.sh
+	scripts/**
+
+tests/ci/policy/network-calls-are-bounded.test.sh
+	scripts/**
+
+# The workflow gates walk every workflow.
+
+tests/ci/policy/workflow-shape.test.sh
+	.github/workflows/**
+
+tests/ci/policy/jobs-are-bounded.test.sh
+	.github/workflows/**
+
+tests/ci/policy/cancel-policy.test.sh
+	.github/workflows/**
+
+# The freshness watcher guards its own pull-request filter: the verdict is
+# what the filter of freshness.yml says, so that file and the two reusables
+# the filter has to name are the inputs.
+
+tests/ci/policy/freshness-pr-scope.test.sh
+	.github/workflows/freshness.yml
+	.github/workflows/reusable-dependabot-freshness.yml
+	.github/workflows/reusable-schedule-freshness.yml
+
+# The reusable gates read the reusable they cover.
+
+tests/ci/reusable/reusable-dco.test.sh
+	.github/workflows/reusable-dco.yml
+
+tests/ci/reusable/reusable-empty-diff.test.sh
+	.github/workflows/reusable-empty-diff.yml
+
+tests/ci/reusable/reusable-line-limit.test.sh
+	.github/workflows/reusable-line-limit.yml
+
+tests/ci/reusable/reusable-shell-ci.test.sh
+	.github/workflows/reusable-shell-ci.yml
+
+tests/ci/reusable/reusable-dependabot-freshness.test.sh
+	.github/workflows/reusable-dependabot-freshness.yml
+
+tests/ci/reusable/reusable-schedule-freshness.test.sh
+	.github/workflows/reusable-schedule-freshness.yml
+
+tests/ci/reusable/reusable-workflow-lint.test.sh
+	.github/workflows/reusable-workflow-lint.yml
+	.github/workflows/reusable-shell-ci.yml
+	.github/workflows/tests.yml
+
+# The suites that check the wiring itself. ci-runs-every-test walks tests/
+# and every workflow, so a new test file or a new workflow is an input of its
+# verdict. shell-ci-scope greps tests/ and scripts/ for the paths the caller
+# declares inert, so their contents are inputs of its verdict too.
+
+tests/ci/suites/ci-runs-every-test.test.sh
+	tests/**
+	.github/workflows/**
+
+# The runner is the suite that runs the others, so its verdict is the verdict
+# of every suite it is given and of the workflow that names them. It never
+# runs itself, but the entry is here so that every suite the workflow names
+# has one, and so that the file is named in the same place as the rest.
+
+tests/ci/suites/check-suite-completeness.test.sh
+	tests/**
+	scripts/**
+	.github/workflows/**
+
+tests/ci/suites/shell-ci-scope.test.sh
+	tests/**
+	scripts/**
+	.github/workflows/**
+
+tests/ci/suites/lint-job-scope.test.sh
+	scripts/quality/ci-job-scope.sh
+	.github/workflows/**
+
+# The drift check compares the seven reusables of this repository against the
+# copies the two sibling repositories carry.
+
+tests/monitoring/check-reusable-drift.test.sh
+	scripts/monitoring/**
+	.github/workflows/**
+
+tests/monitoring/check-suite-on-main.test.sh
+	scripts/monitoring/**
+	tests/monitoring/**
+	.github/workflows/freshness.yml
+
+tests/monitoring/check-suite-on-main-cron.test.sh
+	scripts/monitoring/**
+	tests/monitoring/**
+
+tests/monitoring/check-suite-on-main-push.test.sh
+	scripts/monitoring/**
+	tests/monitoring/**
+
+# The quality gates read the script they cover. check-editorconfig walks every
+# tracked file, so every tracked file is an input of its verdict and it runs
+# on every pull request.
+
+tests/quality/check-editorconfig.test.sh
+	**
+
+# The coverage gate walks EVERY script under scripts/ and requires a test of
+# the same name in the mirrored folder of tests/, so both trees are inputs of
+# its verdict by name: a script added without a test, or a test removed while
+# its script stays, changes what it concludes. Naming only the gate itself
+# and the quality folder would let exactly that pull request through.
+
+tests/quality/check-test-coverage.test.sh
+	scripts/**
+	tests/**
+
+tests/quality/ci-job-scope.test.sh
+	scripts/quality/ci-job-scope.sh
+	tests/quality/**
+
+tests/quality/ci-job-scope-suites.test.sh
+	scripts/quality/ci-job-scope.sh
+	scripts/quality/suite-scope.txt
+	tests/quality/**
+
+tests/quality/suite-scope-map.test.sh
+	scripts/quality/suite-scope.txt
+	.github/workflows/tests.yml
+	tests/**
+	scripts/**
+
+tests/quality/lint-workflow-shell.test.sh
+	scripts/quality/lint-workflow-shell.sh
+	.github/workflows/**
