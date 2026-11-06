@@ -72,12 +72,35 @@ fi
 
 # Only what is installed: --only-upgrade never installs a Glyndor package the
 # operator did not choose.
-# shellcheck disable=SC2086 # one argument per package name
 # ${binary:Package} keeps the ":arch" of a foreign-architecture package. Without
 # it apt is asked about the native package of that name, which is not installed,
 # and a pending upgrade of the foreign one is reported as current.
-installed="$(dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package}\n' $names 2>/dev/null \
-	| awk '$1 == "ii" {print $2}')"
+#
+# The whole installed set is asked of dpkg and the Glyndor names are picked out
+# of it, instead of asking about those names one by one. Asking by name makes
+# "not installed" and "the query failed" the same answer: dpkg-query answers 1
+# for a package it does not know, which is the normal case here (the index lists
+# every package the archive publishes and most of them are not on this
+# machine), and a database it could not read would be answered the same way.
+# Asking for everything cannot be answered that way, so the exit status of the
+# query means what it says: not zero, the query did not run.
+installed_all=""
+query_rc=0
+installed_all="$(dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package}\n' 2>/dev/null)" \
+	|| query_rc=$?
+if [ "$query_rc" -ne 0 ]; then
+	echo "glyndor-upgrade: dpkg could not tell which packages are installed, nothing was upgraded" >&2
+	exit 1
+fi
+# The names of the archive, as a set for awk. They go through the environment
+# because a name list with newlines in it would break an awk program given as
+# an argument. A foreign-architecture package is "podup:arm64" here and
+# "podup" in the index, so the architecture is dropped before the comparison
+# and the name with it is what reaches apt.
+installed="$(printf '%s\n' "$installed_all" \
+	| GLYNDOR_NAMES="$(printf '%s\n' "$names" | tr '\n' ' ')" awk '
+		BEGIN { n = split(ENVIRON["GLYNDOR_NAMES"], want, " "); for (i = 1; i <= n; i++) set[want[i]] = 1 }
+		$1 == "ii" { bare = $2; sub(/:[a-z0-9-]+$/, "", bare); if (bare in set) print $2 }')"
 if [ -z "$installed" ]; then
 	echo "glyndor-upgrade: no Glyndor package is installed, nothing to upgrade"
 	exit 0

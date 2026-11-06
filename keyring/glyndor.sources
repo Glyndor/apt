@@ -1,5 +1,11 @@
 # Glyndor apt repository, installed at /etc/apt/sources.list.d/glyndor.sources
 # by the glyndor-archive-keyring package. deb822 format (apt >= 1.1).
+#
+# The Signed-By below names the key this same package installs, and the
+# postinst puts this file back when it says otherwise: a source list that
+# trusts another key does not receive the key rotation, and the client stops
+# verifying the archive. Change the path here and the path the postinst
+# checks together.
 Types: deb
 URIs: https://apt.glyndor.net
 Suites: stable

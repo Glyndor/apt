@@ -57,6 +57,7 @@ chmod +x "$WORK/bin/apt-helper"
 # name, \${binary:Package} keeps the ":arch" of a foreign-architecture package.
 cat > "$WORK/bin/dpkg-query" <<STUB
 #!/bin/sh
+[ -f "$WORK/query-fails" ] && { echo "dpkg-query: error: cannot read the status file" >&2; exit 2; }
 fmt=""
 while [ \$# -gt 0 ]; do
 	case "\$1" in -f) fmt="\$2"; shift ;; -f*) fmt="\${1#-f}" ;; esac
@@ -108,6 +109,17 @@ printf 'un  epistle\n' > "$WORK/installed.txt"
 run_upgrade >/dev/null; rc=$?
 check "with no Glyndor package installed there is nothing to do" "0" "$rc"
 check "and the engine does not run" "0" "$(ran)"
+
+# dpkg-query failing is not "nothing installed": the unit must fail, loudly,
+# instead of reporting a green run that checked nothing.
+printf 'ii  podup\n' > "$WORK/installed.txt"
+: > "$WORK/query-fails"
+run_upgrade > "$WORK/out.q"; rc=$?
+check "when dpkg-query fails the script fails" "1" "$rc"
+check "and says dpkg could not tell what is installed" "1" "$(grep -c 'could not tell which packages are installed' "$WORK/out.q")"
+check "and does not claim there is nothing to upgrade" "0" "$(grep -c 'nothing to upgrade' "$WORK/out.q" || true)"
+check "and the engine does not run" "0" "$(ran)"
+rm -f "$WORK/query-fails"
 
 printf 'ii  podup\nii  libfoo.bar+baz\nun  epistle\n' > "$WORK/installed.txt"
 : > "$WORK/plan.txt"
@@ -253,9 +265,18 @@ chmod +x "$WORK/sbin/systemctl"
 # The scripts hard-code /run/systemd/system and /var/lib; both move into the
 # sandbox so this never touches the machine running the test.
 mkdir -p "$WORK/run/systemd/system"
+# The postinst also looks at the trust anchor (the key directory and the apt
+# source). Those move into the sandbox too, with a source file that is exactly
+# what the package ships, or the result would depend on whether the machine
+# running the test has the package installed.
+mkdir -p "$WORK/keyrings" "$WORK/sources"
+chmod 755 "$WORK/keyrings" "$WORK/sources"
+sed "s|/usr/share/keyrings|$WORK/keyrings|g" "$HERE/keyring/glyndor.sources" > "$WORK/sources/glyndor.sources"
 sandboxed() { # $1 = maintainer script name
 	sed -e "s|/run/systemd/system|$WORK/run/systemd/system|g" \
 		-e "s|/var/lib/glyndor-archive-keyring|$WORK/state|g" \
+		-e "s|/usr/share/keyrings|$WORK/keyrings|g" \
+		-e "s|/etc/apt/sources.list.d|$WORK/sources|g" \
 		"$HERE/keyring/upgrade/maintainer-$1" > "$WORK/$1"
 }
 for s in postinst prerm postrm; do sandboxed "$s"; done
