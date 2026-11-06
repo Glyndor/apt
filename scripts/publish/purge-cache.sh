@@ -25,6 +25,13 @@
 # Environment: CF_TOKEN (Cloudflare Bearer token), CF_ZONE (zone id),
 # and optionally CF_API_BASE to point the request somewhere else (the tests
 # use a local server; production leaves it at the default).
+#
+# PRUNED_PATHS names a file with the archive-relative paths this publish
+# removed from the bucket, one per line: the installers of the products that
+# left the roster. They cannot come from the built tree the way every other
+# path in the list does, because a removed installer is by definition not in
+# it. They still have to be purged: the edge holds an installer for a day, so
+# deleting the object from the bucket does not make the edge forget it.
 set -euo pipefail
 
 ARCHIVE_URL="${1:-}"
@@ -149,6 +156,31 @@ installer_paths="$(find "$BUILT_DIR/install" -maxdepth 1 -type f -printf 'instal
 [ -n "$installer_paths" ] \
 	|| { echo "::error::no bootstrap installer was built; there is nothing to purge and every product's install line is stale"; exit 1; }
 
+# The paths this publish removed from the bucket. Every list above is derived
+# from what was built, and a removed installer is not among them: that is the
+# whole reason it had to be removed. The publish hands them over in a file,
+# because by the time the edge is purged the objects are gone and there is
+# nothing left to list.
+pruned_paths=""
+if [ -n "${PRUNED_PATHS:-}" ]; then
+	[ -r "$PRUNED_PATHS" ] \
+		|| { echo "::error::the list of removed paths at $PRUNED_PATHS is missing; the edge purge cannot cover what this publish removed"; exit 1; }
+	pruned_paths="$(cat "$PRUNED_PATHS")"
+	# A path that climbs out of the archive would be purged as a URL
+	# elsewhere on the host, and one that is not under install/ is not
+	# something this step knows how to have removed.
+	case "$pruned_paths" in
+		*..*) echo "::error::the list of removed paths names a path containing '..'"; exit 1 ;;
+	esac
+	while IFS= read -r _removed; do
+		[ -n "$_removed" ] || continue
+		case "$_removed" in
+			install/*) ;;
+			*) echo "::error::the list of removed paths names '$_removed', which is not under install/"; exit 1 ;;
+		esac
+	done <<< "$pruned_paths"
+fi
+
 # And the files the publish writes to the root of the archive. Derived for the
 # same reason the three lists above are. This one was named by hand, and it
 # stopped matching what is served the moment the publish started putting a
@@ -195,6 +227,10 @@ done
 	printf '%s\n' "$root_paths" | sed "s|^|$ARCHIVE_URL/|"
 	printf '%s\n' "$pool_paths" | sed "s|^|$ARCHIVE_URL/|"
 	printf '%s\n' "$installer_paths" | sed "s|^|$ARCHIVE_URL/|"
+	# The empty list is dropped before the base URL is prefixed: an empty
+	# path prefixed with it would be the archive root, which is not one of
+	# the URLs this step purges.
+	printf '%s\n' "$pruned_paths" | awk 'NF' | sed "s|^|$ARCHIVE_URL/|"
 } | awk 'NF' | LC_ALL=C sort -u > "$work/urls-content"
 
 {
@@ -233,6 +269,14 @@ warn_indices_not_purged() {
 	echo "::warning::the indices were not purged; edges may keep serving the previous index while the pool already lost its superseded packages, so a client on a stale edge can see a missing package until the next successful purge or cache expiry"
 }
 
+# And the installers this publish removed. Their objects are already gone from
+# the bucket, so the edge is the only copy left of the script of a product
+# that no longer exists, and it holds it for a day.
+warn_pruned_not_purged() {
+	[ -n "$pruned_paths" ] || return 0
+	echo "::warning::the installers this publish removed were not purged; edges may keep serving the installer of a product that left the roster until the next successful purge or cache expiry"
+}
+
 # The diagnosis the job's timeout would otherwise never let the script print.
 # It runs while there is still time, it names the group and the batch that
 # were in flight, and it says that the budget is what stopped it.
@@ -243,6 +287,7 @@ budget_stop() { # $1=group label $2=batch number $3=before|on $4=curl exit (opti
 		echo "::error::the ${BUDGET}s purge budget ran out on the $1 batch $2 request: curl exited with $4, and the Cloudflare purge did not finish, so the edge may keep serving the previous index"
 	fi
 	warn_indices_not_purged
+	warn_pruned_not_purged
 	exit 1
 }
 
@@ -306,6 +351,7 @@ purge_file() { # $1=path $2=label
 			fi
 			echo "::error::Cloudflare purge failed on $2 batch $_batch: curl exited with $_rc: $(cat "$work/curl.err")"
 			warn_indices_not_purged
+			warn_pruned_not_purged
 			exit 1
 		fi
 
@@ -316,6 +362,7 @@ purge_file() { # $1=path $2=label
 		echo "$resp" | jq -e '.success == true' >/dev/null || {
 			echo "::error::Cloudflare purge failed on $2 batch $_batch: $resp"
 			warn_indices_not_purged
+			warn_pruned_not_purged
 			exit 1
 		}
 
