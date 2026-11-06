@@ -55,6 +55,7 @@ jobs:
         ./tests/build/build-keyring-generator.test.sh
         ./tests/keyring/glyndor-upgrade.test.sh
         ./tests/build/build-repo.test.sh
+        ./tests/build/build-repo-expiry.test.sh
         ./tests/publish/purge-cache.test.sh
         ./tests/build/build-index-page.test.sh
         ./tests/build/build-installers.test.sh
