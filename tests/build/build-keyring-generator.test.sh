@@ -134,8 +134,12 @@ fi
 # And the change has to be the one that was made, in the part of the package
 # the generator writes. Otherwise a build that produced the same bytes under
 # a new version would satisfy the case above.
-if dpkg-deb --field "$WORK/out-after/glyndor-archive-keyring.deb" Description \
-	| grep -q '(probe)'; then
+# The field is read into a variable first. dpkg-deb piped into `grep -q` is
+# a race under pipefail: grep exits at the first match, dpkg-deb can still be
+# writing, gets SIGPIPE and the pipeline reports 141 for a correct package.
+# It failed about 3 percent of the runs.
+description="$(dpkg-deb --field "$WORK/out-after/glyndor-archive-keyring.deb" Description)"
+if grep -q '(probe)' <<< "$description"; then
 	ok "and the package carries the new description"
 else
 	no "and the package carries the new description"
@@ -166,7 +170,7 @@ read_paths() { # $1=generator
 
 tracked="$(tracked_inputs "$HERE/$GENERATOR")"
 
-if printf '%s\n' "$tracked" | grep -qxF "$GENERATOR"; then
+if grep -qxF "$GENERATOR" <<< "$tracked"; then
 	ok "the generator is among the version-tracked inputs"
 else
 	no "the generator is among the version-tracked inputs"
@@ -184,7 +188,7 @@ untracked=""
 while IFS= read -r p; do
 	[ -n "$p" ] || continue
 	[ "$p" = "keyring/version" ] && continue
-	if printf '%s\n' "$tracked" | grep -qxF "$p"; then
+	if grep -qxF "$p" <<< "$tracked"; then
 		continue
 	fi
 	untracked="$untracked $p"
