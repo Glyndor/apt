@@ -170,6 +170,11 @@ tests/build/build-keyring.test.sh
 	tests/build/**
 	keyring/**
 
+tests/build/build-keyring-contents.test.sh
+	scripts/build/**
+	tests/build/**
+	keyring/**
+
 tests/build/build-keyring-generator.test.sh
 	scripts/build/**
 	tests/build/**
@@ -195,6 +200,18 @@ tests/keyring/glyndor-upgrade.test.sh
 	keyring/**
 	tests/keyring/**
 
+tests/keyring/maintainer-postinst-trust.test.sh
+	keyring/**
+	tests/keyring/**
+
+tests/keyring/glyndor-upgrade-errors.test.sh
+	keyring/**
+	tests/keyring/**
+
+tests/keyring/maintainer-timer.test.sh
+	keyring/**
+	tests/keyring/**
+
 tests/keyring/keyring-fingerprints.test.sh
 	keyring/**
 	scripts/installer/**
@@ -208,6 +225,17 @@ tests/installer/install-template.test.sh
 	tests/installer/**
 
 tests/installer/install-template-behaviour.test.sh
+	scripts/installer/**
+	tests/fixtures/**
+	tests/installer/**
+
+tests/installer/install-template-empty-keyring.test.sh
+	scripts/installer/**
+	tests/fixtures/**
+	tests/installer/**
+	keyring/**
+
+tests/installer/install-template-tmpdir.test.sh
 	scripts/installer/**
 	tests/fixtures/**
 	tests/installer/**
@@ -273,6 +301,12 @@ tests/publish/publish-workflow-sync.test.sh
 
 tests/publish/publish-workflow-assets.test.sh
 	tests/publish/**
+	.github/workflows/publish.yml
+
+tests/publish/publish-workflow-signing-key.test.sh
+	scripts/publish/**
+	tests/publish/**
+	keyring/**
 	.github/workflows/publish.yml
 
 tests/publish/publish-workflow-bootstrap.test.sh
