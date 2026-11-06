@@ -368,6 +368,12 @@ tests/ci/policy/freshness-pr-scope.test.sh
 	.github/workflows/reusable-dependabot-freshness.yml
 	.github/workflows/reusable-schedule-freshness.yml
 
+# This policy watches the exact trigger contracts of the credentialed
+# publisher and archive health checker.
+tests/ci/policy/publish-workflow-triggers.test.sh
+	.github/workflows/publish.yml
+	.github/workflows/health-check.yml
+
 # The reusable gates read the reusable they cover.
 
 tests/ci/reusable/reusable-dco.test.sh
