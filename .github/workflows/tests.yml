@@ -77,15 +77,15 @@ jobs:
         ./tests/build/architectures-agree.test.sh
         ./tests/installer/readme-bootstrap.test.sh
         ./tests/keyring/keyring-fingerprints.test.sh
-        ./tests/publish/publish-workflow.test.sh
-        ./tests/publish/publish-workflow-sync.test.sh
-        ./tests/publish/publish-workflow-assets.test.sh
-        ./tests/publish/publish-workflow-bootstrap.test.sh
-        ./tests/publish/publish-workflow-signing-key.test.sh
+        ./tests/publication/publish/publish-workflow.test.sh
+        ./tests/publication/publish/publish-workflow-sync.test.sh
+        ./tests/publication/publish/publish-workflow-assets.test.sh
+        ./tests/publication/publish/publish-workflow-bootstrap.test.sh
+        ./tests/publication/publish/publish-workflow-signing-key.test.sh
         ./tests/publish/sync-archive.test.sh
         ./tests/publish/prune-installers.test.sh
         ./tests/publish/purge-cache-pruned.test.sh
-        ./tests/publish/health-check-workflow.test.sh
+        ./tests/publication/health-check/health-check-workflow.test.sh
         ./tests/verify/distro-floor.test.sh
         ./tests/ci/policy/locale-pinned.test.sh
         ./tests/quality/check-test-coverage.test.sh

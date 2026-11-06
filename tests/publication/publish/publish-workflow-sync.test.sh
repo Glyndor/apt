@@ -14,12 +14,12 @@
 # reported five passes where there are three.
 #
 # The order of the steps around the sync, and the purge that follows it, are in
-# tests/publish/publish-workflow.test.sh.
+# tests/publication/publish/publish-workflow.test.sh.
 #
 # Requires: nothing beyond coreutils and grep.
 set -u
 
-cd "$(dirname "$0")/../.." || exit 1
+cd "$(dirname "$0")/../../.." || exit 1
 WF=".github/workflows/publish.yml"
 # The workflow delegates the unchanged three passes to this script.
 SYNC="scripts/publish/sync-archive.sh"

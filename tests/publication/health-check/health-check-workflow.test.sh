@@ -21,7 +21,7 @@
 # Requires: gpg, curl with the file:// protocol, python3.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 WORKFLOW="$HERE/.github/workflows/health-check.yml"
 WORK="$(mktemp -d)"
 trap 'gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK"' EXIT
