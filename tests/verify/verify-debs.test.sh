@@ -313,6 +313,24 @@ assert_error 1 "version mismatch" \
 	"and the same package is refused under another pre-release of the base" \
 	-- "$VERIFY" "$d" "$WORK/key.b64" podup v5.10.0-rc2
 
+# The same signed pre-release bytes, renamed to the stable name and offered
+# under the stable tag, must be refused: cutting everything after the last
+# hyphen turned 5.10.0-rc1 into 5.10.0 and admitted it as the release.
+assert_error 1 "version mismatch" \
+	"a signed pre-release package is refused under the stable tag" \
+	-- "$VERIFY" "$d" "$WORK/key.b64" podup v5.10.0
+d="$WORK/case17d"; mkdir -p "$d"
+deb="$(make_deb prerelease2 podup 5.10.0-rc1)"; cp "$deb" "$d/podup_5.10.0_amd64.deb"
+sign "$d/podup_5.10.0_amd64.deb"
+assert_error 1 "version mismatch" \
+	"the pre-release bytes renamed to the stable filename are refused under the stable tag" \
+	-- "$VERIFY" "$d" "$WORK/key.b64" podup v5.10.0
+d="$WORK/case17e"; mkdir -p "$d"
+deb="$(make_deb revision podup 5.10.0-3ubuntu1)"; cp "$deb" "$d/podup_5.10.0_amd64.deb"
+sign "$d/podup_5.10.0_amd64.deb"
+assert 0 "a Debian revision that starts with a digit is still admitted under the stable tag" \
+	-- "$VERIFY" "$d" "$WORK/key.b64" podup v5.10.0
+
 # A key with a stray character inside it. Without validate=True, b64decode
 # throws the character away and the key still decodes to 32 bytes, so a file that
 # is not the key it claims to be would be trusted.

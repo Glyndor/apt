@@ -130,7 +130,14 @@ for deb in "${debs[@]}"; do
 			exit 1
 		fi
 		upstream="${ver#*:}"
-		upstream="${upstream%-*}"
+		# Strip the Debian revision only when it looks like one: it starts with a
+		# digit (`-1`, `-3ubuntu1`). A suffix that starts with a letter (`-rc1`,
+		# `-beta2`) is part of a pre-release version, and cutting it would admit a
+		# signed 5.10.0-rc1 package as the stable v5.10.0.
+		revision="${upstream##*-}"
+		if [ "$revision" != "$upstream" ] && [[ "$revision" =~ ^[0-9][0-9A-Za-z.+~]*$ ]]; then
+			upstream="${upstream%-*}"
+		fi
 		want="${EXPECTED_TAG#v}"
 		# A tag with a hyphen (v5.10.0-rc1) is ambiguous: dpkg reads the text
 		# after the last hyphen as the revision. Accept the whole version as
