@@ -1,0 +1,13 @@
+Package: podup
+Version: 1.0.0
+Architecture: amd64
+Filename: pool/podup_1.0.0_amd64.deb
+Size: 20
+SHA256: aa97653b1f95747c564f314fdef3c9a1a9f352f400327a4f76eb2947377af33e
+
+Package: glyndor-archive-keyring
+Version: 1.0.0
+Architecture: amd64
+Filename: pool/keyring_1.0.0_all.deb
+Size: 24
+SHA256: e61d118d0a33bb10b5bb85093cfacaa42b46750f13d11769535a7899e503d790

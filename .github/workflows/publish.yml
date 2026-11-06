@@ -536,5 +536,8 @@ jobs:
           # 600s leaves five minutes of the job for everything else and for
           # the script to print which file is not being served as signed.
           # Cancelled-by-timeout prints nothing.
+          # Pin the served signed index to THIS build: an older, completely
+          # consistent snapshot signed by the same key must not pass read-back.
+          inrelease_sha256="$(sha256sum public/dists/stable/InRelease | cut -d' ' -f1)"
           ./scripts/verify/verify-published.sh "$ARCHIVE_URL" \
-            keyring/glyndor-apt-key.asc 6 10 600
+            keyring/glyndor-apt-key.asc 6 10 600 "$inrelease_sha256"

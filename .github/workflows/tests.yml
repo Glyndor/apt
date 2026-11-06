@@ -49,6 +49,7 @@ jobs:
         ./tests/ci/suites/check-suite-completeness.test.sh
         ./tests/verify/verify-debs.test.sh
         ./tests/verify/verify-published.test.sh
+        ./tests/verify/verify-published-build.test.sh
         ./tests/build/build-keyring.test.sh
         ./tests/keyring/glyndor-upgrade.test.sh
         ./tests/build/build-repo.test.sh
