@@ -54,7 +54,19 @@ on:
   # record by the time it looks.
   schedule:
     - cron: "13 8,20 * * *"
+  # A pull request runs these only when it changes what these jobs are made of:
+  # this file and the two reusables it calls. Anything else cannot change the
+  # verdict, so it would only repeat the same verdicts. None of the jobs here is a
+  # required check, which is what makes a path filter safe: a required check
+  # behind a filter would never be reported and the pull request would wait for
+  # ever. They measure main and crons elsewhere, never the change in the pull
+  # request, so the run was created when the pull request opened and finished
+  # long after its answer had stopped mattering.
   pull_request:
+    paths:
+      - .github/workflows/freshness.yml
+      - .github/workflows/reusable-dependabot-freshness.yml
+      - .github/workflows/reusable-schedule-freshness.yml
   push:
     branches: [main]
 

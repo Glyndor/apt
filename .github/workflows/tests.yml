@@ -94,6 +94,7 @@ jobs:
         ./tests/monitoring/check-reusable-drift.test.sh
         ./tests/ci/policy/jobs-are-bounded.test.sh
         ./tests/ci/policy/workflow-shape.test.sh
+        ./tests/ci/policy/freshness-pr-scope.test.sh
         ./tests/ci/policy/network-calls-are-bounded.test.sh
         ./tests/ci/reusable/reusable-dependabot-freshness.test.sh
         ./tests/ci/reusable/reusable-schedule-freshness.test.sh
