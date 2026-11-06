@@ -3,7 +3,7 @@
 # on PRs; never trust a changed classifier to decide whether to lint itself.
 # No network or extra Python packages. Unknown inputs deliberately cost a run.
 set -euo pipefail
-python3 - "$@" <<'PY'
+python3 -I - "$@" <<'PY'
 import os
 from pathlib import PurePosixPath
 import re

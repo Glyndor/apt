@@ -120,6 +120,10 @@ with tempfile.TemporaryDirectory() as tmp:
     check("line-limit excludes uncounted extension", "false", decide("line-limit", extensions="sh"))
     merge({".github/workflows/line-limit.yml": "jobs: {}\n"})
     check("line-limit config even without YAML extension", "true", decide("line-limit", extensions="sh"))
+    # A module planted by the pull request must not decide its own lint: the
+    # interpreter runs isolated, so the working directory is not on sys.path.
+    merge({"re.py": "print('false')\nraise SystemExit(0)\n", "planted.sh": "echo hi\n"})
+    check("planted module cannot skip shellcheck", "true", decide("shellcheck"))
     git("checkout", "-q", "--detach", base)
     for job in jobs:
         check(f"unreadable parent: {job}", "true", decide(job))
