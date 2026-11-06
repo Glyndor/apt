@@ -12,13 +12,52 @@ import shutil
 import sys
 
 args = sys.argv[1:]
+# The script under test assigns BUCKET; keep the model's root independent.
+bucket = Path(os.environ.get('FAKE_BUCKET', os.environ['BUCKET']))
+assert bucket.is_dir(), bucket
+with open(os.environ['AWS_CALLS'], 'a') as log:
+    log.write(json.dumps(args) + '\n')
+
+
+def files(root):
+    return {p.relative_to(root).as_posix(): p for p in root.rglob('*') if p.is_file()}
+
+
+if args[:1] == ['s3api']:
+    assert args[args.index('--bucket') + 1] == 'glyndor-apt', args
+    if args[1] == 'list-objects-v2':
+        prefix = args[args.index('--prefix') + 1]
+        keys = sorted(key for key in files(bucket) if key.startswith(prefix))
+        result = {'IsTruncated': os.environ.get('LIST_TRUNCATED') == '1',
+                  'Contents': [{'Key': key} for key in keys]}
+        if os.environ.get('LIST_RESPONSE'):
+            print(Path(os.environ['LIST_RESPONSE']).read_text())
+            sys.exit(0)
+        print(json.dumps(result))
+    elif args[1] == 'delete-object':
+        key = args[args.index('--key') + 1]
+        assert key.startswith('install/') and '..' not in key.split('/'), key
+        if os.environ.get('IGNORE_DELETE') != '1':
+            (bucket / key).unlink(missing_ok=True)
+        if os.environ.get('DROP_BUILT_AFTER_DELETE'):
+            (bucket / os.environ['DROP_BUILT_AFTER_DELETE']).unlink(missing_ok=True)
+        with open(os.environ['AWS_WRITES'], 'a') as log:
+            log.write(json.dumps([0, 'delete', key]) + '\n')
+        deletes = Path(os.environ['DELETE_STATE']) if 'DELETE_STATE' in os.environ else None
+        if deletes:
+            count = int(deletes.read_text()) + 1 if deletes.exists() else 1
+            deletes.write_text(str(count))
+            if count == int(os.environ.get('FAIL_DELETE_AFTER', '0')):
+                print('injected delete failure after visible mutation', file=sys.stderr)
+                sys.exit(42)
+    else:
+        raise AssertionError(args)
+    sys.exit(0)
+
 assert args[:4] == ['s3', 'sync', 'public/', 's3://glyndor-apt/'], args
-bucket = Path(os.environ['BUCKET'])
 state = Path(os.environ['AWS_STATE'])
 number = int(state.read_text()) + 1 if state.exists() else 1
 state.write_text(str(number))
-with open(os.environ['AWS_CALLS'], 'a') as log:
-    log.write(json.dumps(args) + '\n')
 filters = []
 for i, arg in enumerate(args):
     if arg in ('--include', '--exclude'):
@@ -31,10 +70,6 @@ def selected(key):
         if fnmatch.fnmatchcase(key, pattern):
             include = value
     return include
-
-
-def files(root):
-    return {p.relative_to(root).as_posix(): p for p in root.rglob('*') if p.is_file()}
 
 
 source = files(Path('public'))

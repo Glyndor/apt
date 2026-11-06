@@ -402,12 +402,31 @@ jobs:
           # R2 ignores the region but the AWS CLI requires one to be set.
           AWS_DEFAULT_REGION: auto
         run: |
+          set -euo pipefail
           ./scripts/publish/sync-archive.sh
+          # 4. Remove the installers of the products that left the roster.
+          # The sync deletes what it can compare, and the installer of a product
+          # that left the roster is not in the tree any more: it is only in the
+          # bucket. A sync with --delete over install/ would upload and delete in
+          # the same pass, the shape that raced on run 29718989917 for keys that
+          # are a prefix of a sibling (epistle and epistle-panel), so the objects
+          # are named out of the bucket's own listing and deleted one call each,
+          # after the metadata pass and the pool cleanup, and the bucket is read
+          # back. The removed paths go to a file outside public/ for the edge
+          # purge below, because the edge holds an installer for a day.
+          ./scripts/publish/prune-installers.sh \
+            public/install glyndor-apt "$GLYNDOR_APT_R2_ENDPOINT" pruned-installers.txt
 
       - name: Purge Cloudflare cache (mutable, fixed-name files)
         env:
           CF_TOKEN: ${{ secrets.GLYNDOR_CF_PURGE_TOKEN }}
           CF_ZONE: ${{ secrets.GLYNDOR_CF_ZONE_ID }}
+          # The paths this publish removed from the bucket: the installers of
+          # the products that left the roster. The purge derives its list from
+          # what was built, and a removed installer is by definition not among
+          # what was built, so it has to be handed over. Without this the edge
+          # keeps serving the installer of a product that no longer exists.
+          PRUNED_PATHS: pruned-installers.txt
         run: |
           # The list is derived from the Release and Packages this run built,
           # and split across requests because Cloudflare takes at most 30 URLs

@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 import sys
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 args = sys.argv[1:]
 assert args[args.index('-X') + 1] == 'POST', args
@@ -18,6 +18,6 @@ if number == int(os.environ.get('FAIL_PURGE', '0')):
     print(json.dumps({'success': False, 'errors': [{'message': 'injected purge failure'}]}))
 else:
     for url in urls:
-        path = Path(os.environ['EDGE']) / urlsplit(url).path.lstrip('/')
+        path = Path(os.environ['EDGE']) / unquote(urlsplit(url).path).lstrip('/')
         path.unlink(missing_ok=True)
     print(json.dumps({'success': True, 'errors': []}))
