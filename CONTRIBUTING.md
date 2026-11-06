@@ -44,22 +44,31 @@ squash-merge back. Releases are tagged directly off `main`.
 
 ## Tests
 
-Run the suite before pushing:
+Run the suite before pushing. It needs `reprepro`, `gnupg`, `python3-cryptography`,
+`python3-yaml` and `shellcheck` installed:
 
 ```sh
 fail=0
-for t in tests/*.test.sh; do "./$t" || { echo "FAILED: $t"; fail=1; }; done
-shellcheck scripts/*.sh tests/*.sh || fail=1
+while IFS= read -r t; do "$t" || { echo "FAILED: $t"; fail=1; }; done \
+  < <(find tests -name '*.test.sh' -type f | sort)
+git ls-files -z | xargs -0 grep -lIE '^#!.*(ba)?sh' | xargs shellcheck || fail=1
 [ "$fail" -eq 0 ] && echo "all green" || echo "SOMETHING FAILED"
 [ "$fail" -eq 0 ]
 ```
+
+The tests live in folders that mirror `scripts/` (`tests/verify/`, `tests/build/`
+and so on), so the loop finds them recursively, and the shellcheck line picks up
+every tracked file that starts with a shell shebang, including the scripts under
+`keyring/upgrade/` that have no extension.
 
 The `fail` flag is not decoration. The loop runs every test instead of stopping
 at the first red one, which is what you want locally, but it means the loop ends
 on `echo` and reports success no matter how many scripts failed. Without the
 flag the status you glance at disagrees with the output you scrolled past. CI
-never had that problem: its `test-command` joins these same scripts with `&&`,
-so it stops at the first failure and the job goes red.
+lists the suites one per line in `.github/workflows/tests.yml` and runs them
+through a runner that stops at the first failure, so the job goes red.
+`tests/ci/suites/ci-runs-every-test.test.sh` fails when a test exists that the
+list does not run.
 
 Two rules matter more than coverage:
 
