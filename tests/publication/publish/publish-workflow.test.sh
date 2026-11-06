@@ -14,9 +14,9 @@
 # The three responsibilities that needed a behaviour of their own live in
 # sibling files:
 #
-#   tests/publish/publish-workflow-sync.test.sh        the three-pass sync policy
-#   tests/publish/publish-workflow-assets.test.sh      the download and asset selection
-#   tests/publish/publish-workflow-bootstrap.test.sh   the keyring signature
+#   tests/publication/publish/publish-workflow-sync.test.sh        the three-pass sync policy
+#   tests/publication/publish/publish-workflow-assets.test.sh      the download and asset selection
+#   tests/publication/publish/publish-workflow-bootstrap.test.sh   the keyring signature
 #
 # It compares line numbers rather than parsing YAML, for two reasons. The shell
 # test job does not install PyYAML, so a parser here would fail on the runner
@@ -28,7 +28,7 @@
 # Requires: nothing beyond coreutils, grep and python3.
 set -u
 
-cd "$(dirname "$0")/../.." || exit 1
+cd "$(dirname "$0")/../../.." || exit 1
 WF=".github/workflows/publish.yml"
 pass=0; fail=0
 

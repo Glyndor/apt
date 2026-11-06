@@ -4,7 +4,7 @@
 # It checks executable lines in that step, so comments or another step cannot
 # stand in for the guard. No deployment credentials or third-party YAML needed.
 set -euo pipefail
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../../.."
 python3 - <<'PY'
 from pathlib import Path
 import re

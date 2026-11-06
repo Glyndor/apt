@@ -346,7 +346,7 @@ assert_error 1 "malformed release public key" \
 # --- Case 18: with no tag given the binding is skipped, which is why the ------
 #             workflow must never pass an empty one.
 #
-# tests/publish/publish-workflow.test.sh is where that half is asserted; this case only
+# tests/publication/publish/publish-workflow.test.sh is where that half is asserted; this case only
 # pins the script's own contract so the two cannot drift apart silently.
 assert 0 "no expected tag means the binding is not applied" \
 	-- "$VERIFY" "$WORK/case16" "$WORK/key.b64" podup

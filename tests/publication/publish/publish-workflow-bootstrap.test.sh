@@ -19,14 +19,14 @@
 # workflow file is left untouched.
 #
 # The order of the steps around the signature is in
-# tests/publish/publish-workflow.test.sh; the sync policy is in
-# tests/publish/publish-workflow-sync.test.sh and the download in
-# tests/publish/publish-workflow-assets.test.sh.
+# tests/publication/publish/publish-workflow.test.sh; the sync policy is in
+# tests/publication/publish/publish-workflow-sync.test.sh and the download in
+# tests/publication/publish/publish-workflow-assets.test.sh.
 #
 # Requires: gpg.
 set -u
 
-cd "$(dirname "$0")/../.." || exit 1
+cd "$(dirname "$0")/../../.." || exit 1
 WF=".github/workflows/publish.yml"
 pass=0; fail=0
 

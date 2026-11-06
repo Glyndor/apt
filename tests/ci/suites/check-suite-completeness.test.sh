@@ -66,7 +66,7 @@ self="${BASH_SOURCE[0]##*/}"
 # them are integration suites whose verdict does not depend on the change:
 # measured on 2026-11-06, tests/verify/verify-published.test.sh,
 # tests/publish/purge-cache-budget.test.sh and
-# tests/publish/health-check-workflow.test.sh are 46 % of the 151 s the whole
+# tests/publication/health-check/health-check-workflow.test.sh are 46 % of the 151 s the whole
 # suite takes on this repository.
 #
 # scripts/quality/ci-job-scope.sh, in its `suites` mode, says which suites

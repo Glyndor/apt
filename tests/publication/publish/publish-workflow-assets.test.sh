@@ -24,14 +24,14 @@
 # has something to count.
 #
 # The order of the steps around the download is in
-# tests/publish/publish-workflow.test.sh; the sync policy is in
-# tests/publish/publish-workflow-sync.test.sh and the keyring signature in
-# tests/publish/publish-workflow-bootstrap.test.sh.
+# tests/publication/publish/publish-workflow.test.sh; the sync policy is in
+# tests/publication/publish/publish-workflow-sync.test.sh and the keyring signature in
+# tests/publication/publish/publish-workflow-bootstrap.test.sh.
 #
 # Requires: nothing beyond coreutils, grep and python3.
 set -u
 
-cd "$(dirname "$0")/../.." || exit 1
+cd "$(dirname "$0")/../../.." || exit 1
 WF=".github/workflows/publish.yml"
 pass=0; fail=0
 
@@ -50,7 +50,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 # Extract the step body, dedented to the columning it would have inside a
-# workflow. Same shape as the helper in tests/publish/health-check-workflow.test.sh:
+# workflow. Same shape as the helper in tests/publication/health-check/health-check-workflow.test.sh:
 # read rather than restate, so the cases exercise the shell as it ships.
 python3 - "$WF" "Download the latest .deb of each product" > "$WORK/step.sh" <<'PY'
 import sys
