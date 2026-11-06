@@ -59,6 +59,8 @@ jobs:
         ./tests/build/build-keyring-contents.test.sh
         ./tests/keyring/glyndor-upgrade.test.sh
         ./tests/keyring/maintainer-postinst-trust.test.sh
+        ./tests/keyring/glyndor-upgrade-errors.test.sh
+        ./tests/keyring/maintainer-timer.test.sh
         ./tests/build/build-repo.test.sh
         ./tests/build/build-repo-expiry.test.sh
         ./tests/publish/purge-cache.test.sh
