@@ -80,13 +80,17 @@ is_built() { # $1 = the name under install/
 # against a partial listing would leave behind the very leftovers it was sent
 # to remove.
 list_installers() {
-	local json
+	local json complete
 	json="$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$PREFIX" \
 		--endpoint-url "$ENDPOINT" --output json)"
-	if [ "$(printf '%s' "$json" | jq -r '.IsTruncated // false')" != "false" ]; then
-		echo "::error::the listing of $BUCKET$PREFIX is truncated; refusing to prune a partial view of the bucket" >&2
-		exit 1
-	fi
+	complete="$(printf '%s' "$json" | jq -r '.IsTruncated // false' 2>/dev/null || echo unreadable)"
+	case "$complete" in
+		false) ;;
+		*)
+			echo "::error::the listing of $BUCKET/$PREFIX is not complete (truncated: $complete); refusing to prune a partial view of the bucket" >&2
+			exit 1
+			;;
+	esac
 	printf '%s' "$json" | jq -r '.Contents[]?.Key'
 }
 
