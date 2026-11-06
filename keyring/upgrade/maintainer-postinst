@@ -7,15 +7,32 @@ set -e
 # undoes it. Machines that had the keyring before the timer existed have no
 # marker, so they get it on their first upgrade.
 #
-# The marker is written only once the timer is really enabled. Where systemd is
-# not running (an image build, a container) nothing is enabled and no marker is
-# written, so the next configure on a machine that has systemd tries again
-# instead of recording a switch-on that never happened.
+# The marker is written in two states, and the one that says "the timer was
+# offered" is written BEFORE the enable, not after it. While the offer is in
+# flight the mark is `timer-offering`; once the timer is really on it is
+# `timer-offered`. Written after the enable, a postinst interrupted between
+# the two leaves no marker at all: the operator's opt-out would then look like
+# an offer that never happened, and the next upgrade would switch the timer
+# back on against their choice. An enable that fails is not an offer, so that
+# mark goes and the next configure tries again.
+#
+# Where systemd is not running (an image build, a container) nothing is enabled
+# and no marker is written, so the next configure on a machine that has systemd
+# tries again instead of recording a switch-on that never happened.
 #
 # A timer the package itself switched off (prerm on remove or deconfigure) is
 # switched back on when the operation is aborted or the package is configured
 # again; one the operator disabled is left alone.
 state=/var/lib/glyndor-archive-keyring
+
+# Where this package installs the trust anchor of the archive: the key that
+# signs the repository and the source list that points at it. Both directories
+# and both files are named here so the paths can be followed in one place.
+keyrings_dir=/usr/share/keyrings
+sources_dir=/etc/apt/sources.list.d
+keyring_file=$keyrings_dir/glyndor.gpg
+sources_file=$sources_dir/glyndor.sources
+
 restore() {
 	if [ -e "$state/suspended-by-package" ]; then
 		# The mark goes only once the timer is really back on, so a failed
@@ -27,19 +44,132 @@ restore() {
 		fi
 	fi
 }
+
+offer_timer() {
+	mkdir -p "$state"
+	# The mark goes before the enable, so an interrupted offer cannot leave
+	# the machine looking like it was never offered.
+	: > "$state/timer-offering"
+	if systemctl enable --now glyndor-upgrade.timer; then
+		# The offer happened: the mark says so, and nothing offers the
+		# timer again.
+		mv -f "$state/timer-offering" "$state/timer-offered"
+	else
+		# A failed enable is not an offer. The mark goes, so the next
+		# configure tries again.
+		rm -f "$state/timer-offering"
+	fi
+}
+
+# dpkg does not repair the mode of a directory that already exists: one left
+# writable by group or others is still writable after the install, and apt does
+# not warn about it. The keyring and the source list are the trust anchor of
+# this archive, and a directory that an unprivileged user can write is a
+# directory where that trust anchor can be replaced. The package declares both
+# directories as 0755, so that is what they are closed to.
+repair_dir_mode() { # $1 = the directory
+	[ -d "$1" ] || return 0
+	# 022 are the write bits of group and others.
+	if [ -z "$(find "$1" -maxdepth 0 -perm /022 -print 2>/dev/null)" ]; then
+		return 0
+	fi
+	if chmod 0755 "$1"; then
+		echo "glyndor-archive-keyring: $1 was writable by group or others and is now 0755" >&2
+		return 0
+	fi
+	echo "glyndor-archive-keyring: $1 is writable by group or others and could not be closed; the trust anchor of this archive is not safe" >&2
+	return 1
+}
+
+# The source list has to be a regular file that trusts the key this package
+# installs. dpkg leaves a symlink planted on its path alone, and apt follows
+# it, so the repository is fetched from wherever the symlink points. A file
+# changed in place is another matter: dpkg keeps the local version when it is
+# told to keep the old one, which is what unattended-upgrade does, so a
+# `Signed-By` pointing somewhere else survives the upgrade while the key
+# itself is replaced. The rotation then stops reaching the client: the new key
+# is installed and the source list still trusts another one.
+#
+# dpkg keeps the version the package ships next to the file it could not
+# install: `.dpkg-dist` when the local file was kept, `.dpkg-new` when the
+# path was not a regular file. That copy is what the file is restored from,
+# and it is the only copy of the package's version on disk.
+repair_sources() {
+	if [ ! -e "$sources_file" ] && [ ! -L "$sources_file" ]; then
+		return 0
+	fi
+	reason=""
+	if [ -L "$sources_file" ] || [ ! -f "$sources_file" ]; then
+		reason="it is not a regular file"
+	else
+		# The field apt reads to know which key signs this archive. The
+		# field name is matched case insensitively, as deb822 allows.
+		signed_by="$(grep -i '^signed-by:' "$sources_file" 2>/dev/null | head -1 \
+			| sed 's/^[^:]*:[[:space:]]*//; s/[[:space:]]*$//')"
+		if [ "$signed_by" != "$keyring_file" ]; then
+			reason="it trusts '$signed_by' instead of $keyring_file"
+		fi
+	fi
+	[ -n "$reason" ] || return 0
+	copy=""
+	for c in "$sources_file.dpkg-dist" "$sources_file.dpkg-new"; do
+		if [ -f "$c" ]; then
+			copy="$c"
+			break
+		fi
+	done
+	if [ -z "$copy" ]; then
+		echo "glyndor-archive-keyring: $sources_file is not what this package ships ($reason) and the package's copy is not on disk; remove the file and reinstall the package" >&2
+		return 1
+	fi
+	if [ -d "$sources_file" ]; then
+		echo "glyndor-archive-keyring: $sources_file is a directory ($reason) and cannot be replaced; remove it and reinstall the package" >&2
+		return 1
+	fi
+	# The symlink goes first. Writing through it would put the package's
+	# file where the attacker chose, and reading it would read the
+	# attacker's.
+	rm -f "$sources_file"
+	if ! cp "$copy" "$sources_file"; then
+		echo "glyndor-archive-keyring: $sources_file could not be restored from the package's copy" >&2
+		return 1
+	fi
+	chmod 0644 "$sources_file"
+	rm -f "$copy"
+	echo "glyndor-archive-keyring: $sources_file was restored from the package's copy ($reason)" >&2
+	return 0
+}
+
 case "$1" in
 	configure)
+		# The trust anchor first. A package that cannot put its own key
+		# and source list in place is not a package this archive can be
+		# trusted through, and a timer over a broken chain would only
+		# automate upgrades nobody can verify.
+		repair_dir_mode "$keyrings_dir" || exit 1
+		repair_dir_mode "$sources_dir" || exit 1
+		repair_sources || exit 1
 		if [ -d /run/systemd/system ]; then
 			# Always: an upgrade can install new unit files, and systemd has to
 			# read them before anything is enabled or started.
 			systemctl daemon-reload || true
 			if [ -e "$state/suspended-by-package" ]; then
 				restore
-			elif [ ! -e "$state/timer-offered" ]; then
-				if systemctl enable --now glyndor-upgrade.timer; then
-					mkdir -p "$state"
-					: > "$state/timer-offered"
+			elif [ -e "$state/timer-offering" ]; then
+				# An offer that was interrupted: the enable may have
+				# happened and the operator may have switched the timer
+				# off since, or it may never have happened at all. The
+				# timer is left alone either way, because an offer that
+				# cannot be resolved must not switch on a timer the
+				# operator turned off. If the timer is on, the offer did
+				# reach it and the mark is settled.
+				if systemctl is-enabled --quiet glyndor-upgrade.timer 2>/dev/null; then
+					mv -f "$state/timer-offering" "$state/timer-offered"
+				else
+					echo "glyndor-archive-keyring: the offer of the upgrade timer was interrupted and the timer is not on; the timer is left as it is, switch it on with 'systemctl enable --now glyndor-upgrade.timer' if you want it" >&2
 				fi
+			elif [ ! -e "$state/timer-offered" ]; then
+				offer_timer
 			fi
 		fi
 		;;
