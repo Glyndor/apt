@@ -21,6 +21,8 @@ set -u
 
 cd "$(dirname "$0")/../.." || exit 1
 WF=".github/workflows/publish.yml"
+# The workflow delegates the unchanged three passes to this script.
+SYNC="scripts/publish/sync-archive.sh"
 pass=0; fail=0
 
 check() { # <description> <expected> <actual>
@@ -34,8 +36,10 @@ check() { # <description> <expected> <actual>
 
 # --- the three-pass sync ----------------------------------------------------
 #
+check "the workflow invokes the sync script" "1" \
+	"$(grep -c '^          ./scripts/publish/sync-archive.sh$' "$WF")"
 # Anchored to the command's own indentation.
-sync_lines="$(grep -n '^          aws s3 sync' "$WF" | cut -d: -f1)"
+sync_lines="$(grep -n '^aws s3 sync' "$SYNC" | cut -d: -f1)"
 check "the publish step syncs in three passes" "3" \
 	"$(printf '%s\n' "$sync_lines" | grep -c .)"
 
@@ -48,7 +52,7 @@ p3="$(printf '%s\n' "$sync_lines" | sed -n 3p)"
 # comment lines dropped. The comment introducing pass 2 says "Deliberately NOT
 # --delete", which is enough to make an unfiltered range report that pass 1
 # deletes. Every assertion in this file reads commands, never prose.
-flags_of() { sed -n "${1},${2}p" "$WF" | grep -v '^[[:space:]]*#'; }
+flags_of() { sed -n "${1},${2}p" "$SYNC" | grep -v '^[[:space:]]*#'; }
 
 check "pass 1 uploads pool/ and deletes nothing" "1" \
 	"$(flags_of "$p1" "$((p2 - 1))" | grep -q -- '--include "pool/\*"' && \
