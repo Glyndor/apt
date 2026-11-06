@@ -46,19 +46,28 @@ restore() {
 }
 
 offer_timer() {
-	mkdir -p "$state"
+	# The offer is a convenience, never a reason to leave the package half
+	# configured: a state directory that cannot be written is a warning.
+	if ! mkdir -p "$state" 2>/dev/null; then
+		echo "glyndor-archive-keyring: $state could not be created; the upgrade timer was not offered" >&2
+		return 0
+	fi
 	# The mark goes before the enable, so an interrupted offer cannot leave
 	# the machine looking like it was never offered.
-	: > "$state/timer-offering"
+	if ! : > "$state/timer-offering" 2>/dev/null; then
+		echo "glyndor-archive-keyring: $state is not writable; the upgrade timer was not offered" >&2
+		return 0
+	fi
 	if systemctl enable --now glyndor-upgrade.timer; then
 		# The offer happened: the mark says so, and nothing offers the
 		# timer again.
-		mv -f "$state/timer-offering" "$state/timer-offered"
+		mv -f "$state/timer-offering" "$state/timer-offered" 2>/dev/null || true
 	else
 		# A failed enable is not an offer. The mark goes, so the next
 		# configure tries again.
 		rm -f "$state/timer-offering"
 	fi
+	return 0
 }
 
 # dpkg does not repair the mode of a directory that already exists: one left
@@ -67,18 +76,23 @@ offer_timer() {
 # this archive, and a directory that an unprivileged user can write is a
 # directory where that trust anchor can be replaced. The package declares both
 # directories as 0755, so that is what they are closed to.
-repair_dir_mode() { # $1 = the directory
-	[ -d "$1" ] || return 0
+#
+# It is never fatal. A package left half configured breaks apt and
+# unattended-upgrade on a machine that was otherwise healthy, which is worse
+# than the warning it replaces. A symlink is left alone: chmod would follow it
+# and change a directory the package knows nothing about.
+close_dir() { # $1 = the directory
+	[ -d "$1" ] && [ ! -L "$1" ] || return 0
 	# 022 are the write bits of group and others.
 	if [ -z "$(find "$1" -maxdepth 0 -perm /022 -print 2>/dev/null)" ]; then
 		return 0
 	fi
-	if chmod 0755 "$1"; then
+	if chmod 0755 "$1" 2>/dev/null; then
 		echo "glyndor-archive-keyring: $1 was writable by group or others and is now 0755" >&2
-		return 0
+	else
+		echo "glyndor-archive-keyring: $1 is writable by group or others and could not be closed; the trust anchor of this archive is not safe, fix its mode by hand" >&2
 	fi
-	echo "glyndor-archive-keyring: $1 is writable by group or others and could not be closed; the trust anchor of this archive is not safe" >&2
-	return 1
+	return 0
 }
 
 # The source list has to be a regular file that trusts the key this package
@@ -87,15 +101,17 @@ repair_dir_mode() { # $1 = the directory
 # changed in place is another matter: dpkg keeps the local version when it is
 # told to keep the old one, which is what unattended-upgrade does, so a
 # `Signed-By` pointing somewhere else survives the upgrade while the key
-# itself is replaced. The rotation then stops reaching the client: the new key
-# is installed and the source list still trusts another one.
+# itself is replaced, and a key rotation then never reaches the client.
 #
-# dpkg keeps the version the package ships next to the file it could not
-# install: `.dpkg-dist` when the local file was kept, `.dpkg-new` when the
-# path was not a regular file. That copy is what the file is restored from,
-# and it is the only copy of the package's version on disk.
-repair_sources() {
+# This only SAYS so. The file is the operator's: a mirror, `Trusted`, a pinned
+# `Architectures` are legitimate changes to it, and a symlink is what
+# configuration management leaves. Replacing it behind their back would undo
+# their work on every upgrade, and a postinst that fails over it would stop
+# apt on healthy machines. The warning names the package's own copy when dpkg
+# left one, because that is the file to restore from.
+check_sources() {
 	if [ ! -e "$sources_file" ] && [ ! -L "$sources_file" ]; then
+		echo "glyndor-archive-keyring: $sources_file is missing; this machine no longer receives the Glyndor archive, reinstall the package to restore it" >&2
 		return 0
 	fi
 	reason=""
@@ -107,48 +123,28 @@ repair_sources() {
 		signed_by="$(grep -i '^signed-by:' "$sources_file" 2>/dev/null | head -1 \
 			| sed 's/^[^:]*:[[:space:]]*//; s/[[:space:]]*$//')"
 		if [ "$signed_by" != "$keyring_file" ]; then
-			reason="it trusts '$signed_by' instead of $keyring_file"
+			reason="it trusts '$signed_by' instead of $keyring_file, so a rotation of the archive key will not reach this machine"
 		fi
 	fi
 	[ -n "$reason" ] || return 0
-	copy=""
+	hint="reinstall the package after removing the file"
 	for c in "$sources_file.dpkg-dist" "$sources_file.dpkg-new"; do
 		if [ -f "$c" ]; then
-			copy="$c"
+			hint="the package's version is at $c"
 			break
 		fi
 	done
-	if [ -z "$copy" ]; then
-		echo "glyndor-archive-keyring: $sources_file is not what this package ships ($reason) and the package's copy is not on disk; remove the file and reinstall the package" >&2
-		return 1
-	fi
-	if [ -d "$sources_file" ]; then
-		echo "glyndor-archive-keyring: $sources_file is a directory ($reason) and cannot be replaced; remove it and reinstall the package" >&2
-		return 1
-	fi
-	# The symlink goes first. Writing through it would put the package's
-	# file where the attacker chose, and reading it would read the
-	# attacker's.
-	rm -f "$sources_file"
-	if ! cp "$copy" "$sources_file"; then
-		echo "glyndor-archive-keyring: $sources_file could not be restored from the package's copy" >&2
-		return 1
-	fi
-	chmod 0644 "$sources_file"
-	rm -f "$copy"
-	echo "glyndor-archive-keyring: $sources_file was restored from the package's copy ($reason)" >&2
+	echo "glyndor-archive-keyring: $sources_file is not what this package ships ($reason); it was left as it is, $hint" >&2
 	return 0
 }
 
 case "$1" in
 	configure)
-		# The trust anchor first. A package that cannot put its own key
-		# and source list in place is not a package this archive can be
-		# trusted through, and a timer over a broken chain would only
-		# automate upgrades nobody can verify.
-		repair_dir_mode "$keyrings_dir" || exit 1
-		repair_dir_mode "$sources_dir" || exit 1
-		repair_sources || exit 1
+		# The trust anchor first, and only ever as warnings: see close_dir and
+		# check_sources for why none of it may fail the configure.
+		close_dir "$keyrings_dir"
+		close_dir "$sources_dir"
+		check_sources
 		if [ -d /run/systemd/system ]; then
 			# Always: an upgrade can install new unit files, and systemd has to
 			# read them before anything is enabled or started.

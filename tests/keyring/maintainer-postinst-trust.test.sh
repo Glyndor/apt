@@ -68,39 +68,56 @@ fresh; good_sources > "$WORK/t/sources/glyndor.sources"; chmod 775 "$WORK/t/sour
 post
 check "a group-writable sources directory is closed" "755" "$(mode "$WORK/t/sources")"
 
+# A directory that cannot be closed is a warning, never a half-configured
+# package: apt and unattended-upgrade would stop on a machine that was healthy.
 fresh; good_sources > "$WORK/t/sources/glyndor.sources"; chmod 777 "$WORK/t/keyrings"
-mkdir -p "$WORK/fail"; printf '#!/bin/sh\nexit 1\n' > "$WORK/sbin/chmod"; chmod +x "$WORK/sbin/chmod"
+printf '#!/bin/sh\nexit 1\n' > "$WORK/sbin/chmod"; chmod +x "$WORK/sbin/chmod"
 post
-check "a directory that cannot be closed fails the configure" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
-check "with a message that says the trust anchor is not safe" "1" "$(said 'is not safe')"
+check "a directory that cannot be closed does NOT fail the configure" "0" "$rc"
+check "and the warning says the trust anchor is not safe" "1" "$(said 'is not safe')"
 rm -f "$WORK/sbin/chmod"
 
-# --- the apt source file ------------------------------------------------------------
+# A symlink is not followed: chmod would change the directory it points to.
+fresh; good_sources > "$WORK/t/sources/glyndor.sources"; mkdir -m 777 "$WORK/elsewhere"; chmod 777 "$WORK/elsewhere"
+rm -rf "$WORK/t/keyrings"; ln -s "$WORK/elsewhere" "$WORK/t/keyrings"
+post
+check "a symlinked directory is not chmodded through the link" "777" "$(mode "$WORK/elsewhere")"
+check "and the configure succeeds" "0" "$rc"
+
+# --- the apt source file: said, never rewritten --------------------------------------
 fresh; good_sources > "$WORK/t/sources/glyndor.sources"
 post
-check "control: an untouched source file is left alone" "0" "$(said 'restored')"
+check "control: an untouched source file draws no warning" "0" "$(said 'is not what this package ships')"
+check "and no warning about a missing one" "0" "$(said 'is missing')"
 
-# The link points at a file with a CORRECT Signed-By line: it is the link, not
-# the content, that must be refused, or a planted target can look fine and be
-# swapped later.
+good_sum="$(good_sources | cksum)"
 fresh; good_sources > "$WORK/target"; ln -s "$WORK/target" "$WORK/t/sources/glyndor.sources"
 good_sources > "$WORK/t/sources/glyndor.sources.dpkg-new" 2>/dev/null || true
 post
-check "a symlink where apt reads its source is replaced" "0" "$([ -L "$WORK/t/sources/glyndor.sources" ] && echo 1 || echo 0)"
-check "by the package's own copy" "1" "$(cmp -s "$WORK/t/sources/glyndor.sources" <(good_sources) && echo 1 || echo 0)"
-check "and the file the link pointed at is not touched" "$(good_sources | cksum)" "$(cksum < "$WORK/target")"
+check "a symlink where apt reads its source is reported" "1" "$(said 'it is not a regular file')"
+check "and left in place, not replaced behind the operator's back" "1" "$([ -L "$WORK/t/sources/glyndor.sources" ] && echo 1 || echo 0)"
+check "and the configure succeeds" "0" "$rc"
+check "and the warning names the package's own copy" "1" "$(said 'glyndor.sources.dpkg-new')"
+check "and the file the link pointed at is not touched" "$good_sum" "$(cksum < "$WORK/target")"
 
 fresh; sed "s|^Signed-By: .*|Signed-By: /etc/apt/trusted.gpg.d/other.gpg|" <(good_sources) > "$WORK/t/sources/glyndor.sources"
-good_sources > "$WORK/t/sources/glyndor.sources.dpkg-dist"
+cp "$WORK/t/sources/glyndor.sources" "$WORK/custom"
 post
-check "a Signed-By that points at another key is restored" "$WORK/t/keyrings/glyndor.gpg" \
-	"$(sed -n 's/^Signed-By: *//p' "$WORK/t/sources/glyndor.sources")"
-check "and the leftover copy is removed" "0" "$([ -e "$WORK/t/sources/glyndor.sources.dpkg-dist" ] && echo 1 || echo 0)"
+check "a Signed-By that points at another key is reported" "1" "$(said "it trusts '/etc/apt/trusted.gpg.d/other.gpg'")"
+check "with the consequence for a key rotation" "1" "$(said 'rotation of the archive key')"
+check "and the operator's file is byte for byte as they left it" "$(cksum < "$WORK/custom")" "$(cksum < "$WORK/t/sources/glyndor.sources")"
+check "and the configure succeeds" "0" "$rc"
 
-fresh; sed "s|^Signed-By: .*|Signed-By: /etc/apt/trusted.gpg.d/other.gpg|" <(good_sources) > "$WORK/t/sources/glyndor.sources"
+fresh; good_sources > "$WORK/t/sources/glyndor.sources"; sed -i 's|^URIs: .*|URIs: https://mirror.example.net|' "$WORK/t/sources/glyndor.sources"
+cp "$WORK/t/sources/glyndor.sources" "$WORK/custom"
 post
-check "a wrong Signed-By with no copy of the package's file fails the configure" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
-check "and says how to recover" "1" "$(said 'reinstall the package')"
+check "a mirror the operator chose is not a warning" "0" "$(said 'is not what this package ships')"
+check "and is not touched" "$(cksum < "$WORK/custom")" "$(cksum < "$WORK/t/sources/glyndor.sources")"
+
+fresh
+post
+check "a missing source file is reported, since the machine stops receiving the archive" "1" "$(said 'is missing')"
+check "and the configure still succeeds" "0" "$rc"
 
 # --- the timer offer ---------------------------------------------------------------------
 fresh; good_sources > "$WORK/t/sources/glyndor.sources"
@@ -112,6 +129,12 @@ check "leaving no half-finished marker" "0" "$([ -f "$WORK/t/state/timer-offerin
 fresh; good_sources > "$WORK/t/sources/glyndor.sources"; : > "$WORK/enable-fails"
 post
 check "an enable that fails leaves neither marker" "0" "$(find "$WORK/t/state" -type f | wc -l)"
+
+# A state directory that cannot be written costs the offer, not the package.
+fresh; good_sources > "$WORK/t/sources/glyndor.sources"; rm -rf "$WORK/t/state"; : > "$WORK/t/state"
+post
+check "a state directory that cannot be created does not fail the configure" "0" "$rc"
+check "and the warning says the timer was not offered" "1" "$(said 'was not offered')"
 
 # The postinst was killed after it started the offer: the marker says so, and the
 # operator then switched the timer off. The next upgrade must not switch it on.
