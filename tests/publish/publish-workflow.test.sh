@@ -758,6 +758,33 @@ check "and the job declares a timeout to fit it in" "1" \
 check "and the budget leaves at least a third of the job outside itself" "1" \
 	"$([ -n "$budget" ] && [ -n "$timeout_min" ] && [ "$budget" -le $(( timeout_min * 60 * 2 / 3 )) ] && echo 1 || echo 0)"
 
+# The purge is bounded too, and for the same reason. Its curl multiplied the
+# per-attempt deadline by its own retries: one hung purge request was four
+# attempts of --max-time 300 plus the delays between them, so a single
+# request could cost more than the whole job. The job was then cancelled and
+# the operator read "cancelled after 15 minutes" instead of which group of
+# URLs was not purged.
+#
+# It is read out of the invocation, not out of the script's default, for the
+# reason the read-back's is: two numbers in two files drift.
+purge_budget="$(grep -E '^[[:space:]]*\./scripts/publish/purge-cache\.sh' "$WF" \
+	| grep -oE '[0-9]+$' | head -1)"
+check "the purge is given an explicit budget" "1" \
+	"$([ -n "$purge_budget" ] && echo 1 || echo 0)"
+
+# And the two budgets together have to fit in the job that carries them. The
+# purge runs first and the read-back after it, and the read-back's own budget
+# is most of the job, so the two cannot each be checked against the timeout
+# on their own: what has to fit is their sum.
+#
+# The reserve is two minutes for everything the job does around them -- the
+# download, the build, the sync -- and for the diagnosis each of them prints
+# when it runs out of time. Measured: the whole job takes 31 to 50 seconds
+# today.
+check "the two budgets together leave room inside the job's timeout" "1" \
+	"$([ -n "$purge_budget" ] && [ -n "$budget" ] && [ -n "$timeout_min" ] && \
+	   [ $(( purge_budget + budget + 120 )) -le $(( timeout_min * 60 )) ] && echo 1 || echo 0)"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
