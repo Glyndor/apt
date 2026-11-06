@@ -163,8 +163,10 @@ installer_paths="$(find "$BUILT_DIR/install" -maxdepth 1 -type f -printf 'instal
 # nothing left to list.
 pruned_paths=""
 if [ -n "${PRUNED_PATHS:-}" ]; then
-	[ -r "$PRUNED_PATHS" ] \
-		|| { echo "::error::the list of removed paths at $PRUNED_PATHS is missing; the edge purge cannot cover what this publish removed"; exit 1; }
+	if [ ! -f "$PRUNED_PATHS" ] || [ ! -r "$PRUNED_PATHS" ]; then
+		echo "::error::the list of removed paths at $PRUNED_PATHS is missing; the edge purge cannot cover what this publish removed"
+		exit 1
+	fi
 	pruned_paths="$(cat "$PRUNED_PATHS")"
 	# A path that climbs out of the archive would be purged as a URL
 	# elsewhere on the host, and one that is not under install/ is not
@@ -230,7 +232,8 @@ done
 	# The empty list is dropped before the base URL is prefixed: an empty
 	# path prefixed with it would be the archive root, which is not one of
 	# the URLs this step purges.
-	printf '%s\n' "$pruned_paths" | awk 'NF' | sed "s|^|$ARCHIVE_URL/|"
+	printf '%s\n' "$pruned_paths" | awk 'NF' \
+		| jq -Rr 'split("/") | map(@uri) | join("/")' | sed "s|^|$ARCHIVE_URL/|"
 } | awk 'NF' | LC_ALL=C sort -u > "$work/urls-content"
 
 {

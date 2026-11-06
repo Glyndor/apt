@@ -76,6 +76,8 @@ jobs:
         ./tests/publish/publish-workflow-assets.test.sh
         ./tests/publish/publish-workflow-bootstrap.test.sh
         ./tests/publish/sync-archive.test.sh
+        ./tests/publish/prune-installers.test.sh
+        ./tests/publish/purge-cache-pruned.test.sh
         ./tests/publish/health-check-workflow.test.sh
         ./tests/verify/distro-floor.test.sh
         ./tests/ci/policy/locale-pinned.test.sh

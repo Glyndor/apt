@@ -402,6 +402,7 @@ jobs:
           # R2 ignores the region but the AWS CLI requires one to be set.
           AWS_DEFAULT_REGION: auto
         run: |
+          set -euo pipefail
           ./scripts/publish/sync-archive.sh
           # 4. Remove the installers of the products that left the roster.
           # The sync deletes what it can compare, and the installer of a product

@@ -98,6 +98,10 @@ for number in (1, 2, 3):
              else 'public, max-age=31536000, immutable']
     expected_calls.append(args)
 
+list_call = ['s3api', 'list-objects-v2', '--bucket', 'glyndor-apt', '--prefix', 'install/',
+             '--endpoint-url', 'https://r2.invalid', '--output', 'json', '--no-paginate']
+complete_calls = expected_calls + [list_call, list_call]
+
 with tempfile.TemporaryDirectory() as temp:
     work = Path(temp)
     (work / 'scripts').symlink_to(root / 'scripts', target_is_directory=True)
@@ -111,8 +115,8 @@ with tempfile.TemporaryDirectory() as temp:
     env = dict(os.environ, PATH=str(work / 'bin') + ':' + os.environ['PATH'],
                AWS_ACCESS_KEY_ID='fixture', AWS_SECRET_ACCESS_KEY='fixture',
                GLYNDOR_APT_R2_ENDPOINT='https://r2.invalid', CF_TOKEN='fixture', CF_ZONE='test-zone',
-               ARCHIVE_URL='https://apt.invalid', CF_API_BASE='https://cloudflare.invalid',
-               BUCKET=str(work / 'bucket'), EDGE=str(work / 'edge'),
+               ARCHIVE_URL='https://apt.invalid', CF_API_BASE='https://cloudflare.invalid', PRUNED_PATHS='pruned-installers.txt',
+               BUCKET=str(work / 'bucket'), FAKE_BUCKET=str(work / 'bucket'), EDGE=str(work / 'edge'),
                AWS_STATE=str(work / 'state'), AWS_CALLS=str(work / 'aws-calls'),
                AWS_WRITES=str(work / 'writes'), PURGE_CALLS=str(work / 'purges'))
 
@@ -149,7 +153,7 @@ with tempfile.TemporaryDirectory() as temp:
         edge = tree(work / 'edge')
         check(all(edge.get(key, tree(work / 'bucket').get(key)) == value for key, value in new.items()),
               label + ': all published URLs are readable through the edge with correct bytes')
-        check(records('aws-calls') == expected_calls, label + ': exact AWS argv and pass order')
+        check(records('aws-calls') == complete_calls, label + ': exact AWS argv and pass order')
         check(len(records('purges')) == 2, label + ': content and index purges both execute')
 
     reset()

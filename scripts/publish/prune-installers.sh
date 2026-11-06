@@ -63,13 +63,18 @@ esac
 # empty build is a broken build: pruning against it would empty the archive.
 [ -d "$BUILT_DIR" ] \
 	|| { echo "::error::no built installer directory at $BUILT_DIR" >&2; exit 1; }
+while IFS= read -r -d '' name; do
+	case "$name" in
+		*[$'\001'-$'\037'$'\177']*) echo "::error::invalid built installer name" >&2; exit 1 ;;
+	esac
+done < <(find "$BUILT_DIR" -maxdepth 1 -type f -printf '%f\0')
 built="$(find "$BUILT_DIR" -maxdepth 1 -type f -printf '%f\n' 2>/dev/null | LC_ALL=C sort -u)"
 [ -n "$built" ] \
 	|| { echo "::error::no bootstrap installer was built at $BUILT_DIR; refusing to prune the served ones against an empty build" >&2; exit 1; }
 
 # Is this the name of an installer this run built?
 is_built() { # $1 = the name under install/
-	printf '%s\n' "$built" | grep -qxF -- "$1"
+	grep -qxF -- "$1" <<< "$built"
 }
 
 # The keys the bucket serves under the prefix, one per line.
@@ -80,17 +85,22 @@ is_built() { # $1 = the name under install/
 # against a partial listing would leave behind the very leftovers it was sent
 # to remove.
 list_installers() {
-	local json complete
+	local json
 	json="$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$PREFIX" \
-		--endpoint-url "$ENDPOINT" --output json)"
-	complete="$(printf '%s' "$json" | jq -r '.IsTruncated // false' 2>/dev/null || echo unreadable)"
-	case "$complete" in
-		false) ;;
-		*)
-			echo "::error::the listing of $BUCKET/$PREFIX is not complete (truncated: $complete); refusing to prune a partial view of the bucket" >&2
-			exit 1
-			;;
-	esac
+		--endpoint-url "$ENDPOINT" --output json --no-paginate)"
+	if ! jq -se 'length == 1 and (.[0] | type == "object" and .IsTruncated == false)' <<< "$json" >/dev/null; then
+		echo "::error::the listing of $BUCKET/$PREFIX is not complete; refusing to prune a partial view" >&2
+		exit 1
+	fi
+	# Validate before decoding to lines: a newline in a key must not become
+	# two deletion candidates, and malformed Contents must not mean empty.
+	if ! jq -e '(if has("Contents") then .Contents else [] end) | type == "array" and all(.[];
+		(.Key | type == "string") and
+		(.Key | length > 0) and
+		(.Key | explode | all(.[]; . >= 32 and . != 127)))' <<< "$json" >/dev/null; then
+		echo "::error::invalid installer listing" >&2
+		exit 1
+	fi
 	printf '%s' "$json" | jq -r '.Contents[]?.Key'
 }
 
@@ -102,7 +112,11 @@ removed=""
 while IFS= read -r key; do
 	[ -n "$key" ] || continue
 	case "$key" in
-		"$PREFIX"*) ;;
+		"$PREFIX"*)
+			case "$key" in
+				*..* | *'//'*) echo "::error::unsafe installer key: $key" >&2; exit 1 ;;
+			esac
+			;;
 		*)
 			echo "::error::the listing returned '$key', which is not under $PREFIX; refusing to touch it" >&2
 			exit 1
@@ -112,11 +126,50 @@ while IFS= read -r key; do
 "
 done <<< "$served"
 
+# Every built installer must already be served: publish metadata first.
+# An empty (but complete) listing authorizes no deletion and is a failed publish.
+require_built() {
+	local name
+	while IFS= read -r name; do
+		grep -qxF -- "$PREFIX$name" <<< "$1" || {
+			echo "::error::built installer is missing from the bucket: $name" >&2
+			exit 1
+		}
+	done <<< "$built"
+}
+require_built "$served"
+
+# Journal the planned deletes before any destructive call. A failed response
+# may follow a visible delete; retain earlier attempts when this tree is retried.
+if [ -n "$REMOVED_LIST" ]; then
+	if [ -e "$REMOVED_LIST" ] && [ ! -f "$REMOVED_LIST" ]; then
+		echo "::error::cannot write removed paths at $REMOVED_LIST" >&2; exit 1
+	fi
+	previous=""
+	if [ -e "$REMOVED_LIST" ]; then
+		previous="$(cat "$REMOVED_LIST")"
+		while IFS= read -r key; do
+			[ -n "$key" ] || continue
+			case "$key" in
+				install/*) ;;
+				*) echo "::error::invalid removed paths journal" >&2; exit 1 ;;
+			esac
+			case "$key" in
+				*..* | *'//'* | *[$'\001'-$'\037'$'\177']*)
+					echo "::error::unsafe removed paths journal" >&2; exit 1 ;;
+			esac
+		done <<< "$previous"
+	fi
+	journal_tmp="$(mktemp "${REMOVED_LIST}.XXXXXX")"
+	trap 'rm -f "$journal_tmp"' EXIT
+	printf '%s\n%s' "$previous" "$removed" | sed '/^$/d' | LC_ALL=C sort -u > "$journal_tmp"
+	mv -- "$journal_tmp" "$REMOVED_LIST"
+fi
+
 if [ -n "$removed" ]; then
 	while IFS= read -r key; do
 		[ -n "$key" ] || continue
-		# One call per object, and the key is one argument: `aws s3 rm` takes
-		# it as a URI, where a name with a space would arrive as two.
+		# Keep each exact key in one argument; never use recursive prefix removal.
 		aws s3api delete-object --bucket "$BUCKET" --key "$key" \
 			--endpoint-url "$ENDPOINT" >/dev/null
 		echo "pruned $key"
@@ -125,27 +178,20 @@ else
 	echo "no installer to prune: the bucket serves exactly the installers this run built"
 fi
 
-# The paths the edge purge has to cover. The edge holds an installer for a day
-# (they are served with max-age=86400), so removing the object from the
-# bucket is not enough: without a purge of that URL the edge keeps handing
-# out the script of a product that no longer exists.
-#
-# The list is written here rather than derived by the purge because the
-# objects are already gone by the time the edge is purged: there is nothing
-# left to list.
-if [ -n "$REMOVED_LIST" ]; then
-	printf '%s' "$removed" > "$REMOVED_LIST"
-fi
-
 # Read the bucket back. A prune that removed nothing and reported nothing is
 # the failure this script exists to fix, and the only way to know it took
 # effect is to look: what the bucket serves has to be exactly what was built.
 after="$(list_installers)"
+require_built "$after"
 leftover=""
 while IFS= read -r key; do
 	[ -n "$key" ] || continue
 	case "$key" in
-		"$PREFIX"*) ;;
+		"$PREFIX"*)
+			case "$key" in
+				*..* | *'//'*) echo "::error::unsafe installer key: $key" >&2; exit 1 ;;
+			esac
+			;;
 		*)
 			echo "::error::the bucket returned '$key', which is not under $PREFIX" >&2
 			exit 1
