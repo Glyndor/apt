@@ -49,6 +49,8 @@ jobs:
         ./tests/ci/suites/check-suite-completeness.test.sh
         ./tests/verify/verify-debs.test.sh
         ./tests/verify/verify-published.test.sh
+        ./tests/verify/verify-published-bootstrap.test.sh
+        ./tests/verify/verify-published-budget.test.sh
         ./tests/verify/verify-published-build.test.sh
         ./tests/verify/verify-installers.test.sh
         ./tests/build/build-keyring.test.sh
@@ -69,6 +71,9 @@ jobs:
         ./tests/installer/readme-bootstrap.test.sh
         ./tests/keyring/keyring-fingerprints.test.sh
         ./tests/publish/publish-workflow.test.sh
+        ./tests/publish/publish-workflow-sync.test.sh
+        ./tests/publish/publish-workflow-assets.test.sh
+        ./tests/publish/publish-workflow-bootstrap.test.sh
         ./tests/publish/health-check-workflow.test.sh
         ./tests/verify/distro-floor.test.sh
         ./tests/ci/policy/locale-pinned.test.sh
@@ -89,6 +94,8 @@ jobs:
         ./tests/ci/reusable/reusable-dependabot-freshness.test.sh
         ./tests/ci/reusable/reusable-schedule-freshness.test.sh
         ./tests/monitoring/check-suite-on-main.test.sh
+        ./tests/monitoring/check-suite-on-main-cron.test.sh
+        ./tests/monitoring/check-suite-on-main-push.test.sh
         ./tests/ci/reusable/reusable-workflow-lint.test.sh
       # shellcheck: tests/quality/lint-workflow-shell.test.sh plants a violation and
       # requires the linter to report it, so it needs the linter. The gate
