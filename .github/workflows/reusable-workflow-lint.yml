@@ -55,8 +55,37 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Keep the required check present. Read the classifier from the PR base,
+      # so a changed helper cannot skip its own validation. First adoption (no
+      # base helper), unknown output or a failed diff means a full run.
+      - name: Decide whether workflow-lint is needed
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          SCOPE_JOB: workflow-lint
+        run: |
+          set -euo pipefail
+          needed=true
+          script="$(mktemp "$RUNNER_TEMP/lint-scope.XXXXXX")"
+          trap 'rm -f "$script"' EXIT
+          if [ "$EVENT" = pull_request ] \
+            && git show HEAD^1:scripts/quality/ci-job-scope.sh > "$script" 2>/dev/null; then
+            if decision="$(bash "$script" "$SCOPE_JOB")" \
+              && [[ "$decision" == true || "$decision" == false ]]; then
+              needed="$decision"
+            fi
+          fi
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          if [ "$needed" = false ]; then
+            echo "No changed inputs for $SCOPE_JOB; expensive steps skipped." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Running $SCOPE_JOB (changed inputs or scope not established)."
+          fi
+
+      - if: steps.scope.outputs.needed != 'false'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: actionlint-cache
         with:
           path: ~/go/bin/actionlint
@@ -76,21 +105,23 @@ jobs:
       # supported: Go keeps the last two releases, so a frozen number silently
       # becomes an unsupported compiler while the job stays green. It sat at
       # 1.26 with 1.27 out, which is how this was noticed.
-      - if: steps.actionlint-cache.outputs.cache-hit != 'true'
+      - if: steps.scope.outputs.needed != 'false' && steps.actionlint-cache.outputs.cache-hit != 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
 
       - name: Install actionlint
-        if: steps.actionlint-cache.outputs.cache-hit != 'true'
+        if: steps.scope.outputs.needed != 'false' && steps.actionlint-cache.outputs.cache-hit != 'true'
         run: go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
 
       # A cache hit skips setup-go, which is what used to put the Go bin
       # directory on PATH, so say where the restored binary is.
       - name: Put actionlint on PATH
+        if: steps.scope.outputs.needed != 'false'
         run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
 
       - name: Install shellcheck
+        if: steps.scope.outputs.needed != 'false'
         env:
           SHELLCHECK_VERSION: ${{ inputs.shellcheck-version }}
           SHELLCHECK_SHA256: ${{ inputs.shellcheck-sha256 }}
@@ -111,6 +142,7 @@ jobs:
           echo "SHELLCHECK_BIN=$dir/shellcheck" >> "$GITHUB_ENV"
 
       - name: Run actionlint over the caller's workflows
+        if: steps.scope.outputs.needed != 'false'
         env:
           SHELLCHECK_BIN: ${{ env.SHELLCHECK_BIN }}
         run: actionlint -color "-shellcheck=${SHELLCHECK_BIN}"
@@ -165,6 +197,7 @@ jobs:
       # against. Deleting tests.yml outright would have walked straight past
       # it.
       - name: A required test job must not be switchable off
+        if: steps.scope.outputs.needed != 'false'
         run: |
           python3 - <<'PY'
           import glob
@@ -396,7 +429,7 @@ jobs:
           PY
 
       - name: A job holding a secret must not install third-party tooling
-        if: ${{ inputs.tooling-isolation }}
+        if: ${{ inputs.tooling-isolation && steps.scope.outputs.needed != 'false' }}
         run: |
           python3 - <<'PY'
           import glob

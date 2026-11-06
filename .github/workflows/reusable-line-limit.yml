@@ -48,8 +48,38 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
+
+      # Keep the required check present. Read the classifier from the PR base,
+      # so a changed helper cannot skip its own validation. First adoption (no
+      # base helper), unknown output or a failed diff means a full run.
+      - name: Decide whether line-limit is needed
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          SCOPE_JOB: line-limit
+          EXTS: ${{ inputs.extensions }}
+        run: |
+          set -euo pipefail
+          needed=true
+          script="$(mktemp "$RUNNER_TEMP/lint-scope.XXXXXX")"
+          trap 'rm -f "$script"' EXIT
+          if [ "$EVENT" = pull_request ] \
+            && git show HEAD^1:scripts/quality/ci-job-scope.sh > "$script" 2>/dev/null; then
+            if decision="$(bash "$script" "$SCOPE_JOB")" \
+              && [[ "$decision" == true || "$decision" == false ]]; then
+              needed="$decision"
+            fi
+          fi
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          if [ "$needed" = false ]; then
+            echo "No changed inputs for $SCOPE_JOB; expensive steps skipped." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Running $SCOPE_JOB (changed inputs or scope not established)."
+          fi
 
       - name: Check file lengths
+        if: steps.scope.outputs.needed != 'false'
         env:
           HARD: ${{ inputs.hard-limit }}
           SOFT: ${{ inputs.soft-limit }}
