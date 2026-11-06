@@ -69,6 +69,7 @@ jobs:
         ./tests/installer/install-template-behaviour.test.sh
         ./tests/installer/install-template-empty-keyring.test.sh
         ./tests/installer/install-template-limits.test.sh
+        ./tests/installer/install-template-tmpdir.test.sh
         ./tests/installer/install-template-delivery.test.sh
         ./tests/installer/unattended-upgrades.test.sh
         ./tests/build/architectures-agree.test.sh
