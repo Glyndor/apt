@@ -20,7 +20,7 @@ an outcome read off a real run, with the date.
 | The archive signing key | a CI secret in this repository only | signs the index; its public half ships in `glyndor-archive-keyring` |
 | The organization's release key (public half) | `keyring/glyndor-release-ed25519.b64` | the trust anchor that admits a product's `.deb` into the archive |
 | The bootstrap installer served at `install/<product>` | generated from one template, served from the bucket | a root shell one-liner every product's README points at |
-| The keyring package | rebuilt every run, same filename until the key changes | the one object in `pool/` where "same name, different bytes" is possible |
+| The keyring package | rebuilt every run, filename follows the version, and the version follows its inputs | the one object in `pool/` where "same name, different bytes" is possible |
 
 ## Adversaries considered
 
@@ -52,7 +52,7 @@ Not considered: an adversary holding the archive signing key, an adversary holdi
 | The edge serves an older complete snapshot signed by the archive key after a publish | after the purge, publish passes the SHA-256 of its local `public/dists/stable/InRelease` to read-back; the served index must match that build within the retry budget, as well as pass the signature and index/pool/bootstrap checks; independent health checks do not require a local build | test: `tests/verify/verify-published-build.test.sh`, two valid signed snapshots, acceptance with their own digests, rejection of the old snapshot against the new digest, convergence on retry, and the actual publish step with a local build |
 | An index that verified but declares too much turns the read-back into an unbounded download | the read-back caps entries, per-object size and total pool bytes | test: the caps are exercised by lowering them below what the fixture declares |
 | A stale object at the edge under an immutable name | the purge list is derived from the `Release` and `Packages` files the run built, pool included, and split to Cloudflare's per-request limit | test: `tests/publish/purge-cache.test.sh`; measurement: 14 URLs in one request today, 36 in two for the full roster |
-| The keyring package changes bytes under the same name and the size-only sync skips it | the package is built byte-reproducibly from the key's commit date, so equal bytes are equal by construction and different inputs move the version | test: two builds a moment apart must be identical; the version must track every packaged input |
+| The keyring package changes bytes under the same name and the size-only sync skips it | the package is built byte-reproducibly from the commit date of its inputs, so equal inputs give equal bytes, and every input that decides those bytes -- the files it installs and the generator that writes its control file, its conffiles and its modes -- moves the version | test: `tests/build/build-keyring.test.sh`, two builds a moment apart must be identical; test: `tests/build/build-keyring-generator.test.sh`, changing the generator moves the version and the bytes, and a generator that does not track itself keeps the version still |
 | A clock- or locale-dependent build ships a page missing a package | `LC_ALL=C` wherever a script sorts or compares | test: `tests/ci/policy/locale-pinned.test.sh`, behavioural half under a UTF-8 locale that does collapse the names |
 | The archive silently stops refreshing | `Valid-Until` of fourteen days on the signed index, so a stalled publish expires rather than freezes; a health check every six hours fails on a stale or unreachable index; a freshness watcher fails when the publish cron itself stops | gate: `health-check.yml`, `freshness.yml`; measurement: the schedule watchers fired for their reason before promotion |
 
@@ -94,6 +94,11 @@ that broke two rules at once, so the first guard refused them and the needle
 could not tell which; three were controls that existed as a line and not as a
 test; the rest were assertions inside the copied reusables that had no test at
 all. The pull requests that closed them carry the before-and-after runs.
+
+The keyring's version tracking was checked the same way when the generator was
+added to it, on 2026-11-05: with the generator out of the list of inputs the
+version follows, changing the generator left the version standing and moved the
+bytes, and that is the case `tests/build/build-keyring-generator.test.sh` holds.
 
 ## Residual risks
 
@@ -137,6 +142,17 @@ all. The pull requests that closed them carry the before-and-after runs.
   is an approved algorithm; `python3-cryptography` and `gpg` here are not
   validated modules. An assessment that requires one needs a validated
   verifier in the path or a documented exception.
+- **Reproducibility is bounded by the packaging environment.** The keyring
+  package is byte-for-byte reproducible for the same inputs *on the same
+  tooling*: `dpkg-deb`, `tar` and `gpg` write it, and a different version of
+  any of them can produce different bytes from identical inputs. The publish
+  runs on a moving runner image, so that can change without anyone editing
+  this repository, and the pool object is served under an immutable name for a
+  year. What stands in front of it is the read-back at the end of the publish,
+  which compares the bytes the archive serves with the hashes the signed index
+  declares and fails the run when they disagree. The version is the other half
+  of the guarantee: it moves when an input moves, so apt has something new to
+  install.
 - **No independent audit.** Every measurement on this page was made by the
   project.
 
