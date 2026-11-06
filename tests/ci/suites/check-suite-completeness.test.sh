@@ -39,6 +39,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
 
 pass=0
 fail=0
+skipped=0
 
 check() { # <description> <expected> <actual>
 	if [ "$2" = "$3" ]; then
@@ -58,6 +59,97 @@ if [ "$#" -eq 0 ]; then
 fi
 
 self="${BASH_SOURCE[0]##*/}"
+
+# --- which suites this change can affect -------------------------------------
+#
+# The job runs every suite on every pull request, and the three slowest of
+# them are integration suites whose verdict does not depend on the change:
+# measured on 2026-11-06, tests/verify/verify-published.test.sh,
+# tests/publish/purge-cache-budget.test.sh and
+# tests/publish/health-check-workflow.test.sh are 46 % of the 151 s the whole
+# suite takes on this repository.
+#
+# scripts/quality/ci-job-scope.sh, in its `suites` mode, says which suites
+# this change can affect, using the map in scripts/quality/suite-scope.txt.
+# The decision is taken with the resolver and the map as they are in the BASE
+# commit, never as this pull request ships them, so a pull request that
+# narrows the map to hide its own suite gets the full set instead. That is the
+# rule the shellcheck job of the same reusable already follows for the same
+# script, and the rule the CI standard states: a gate script is read from the
+# base commit, never from the checkout of the pull request it is judging.
+#
+# Everything here fails open. A push, a schedule, an unreadable diff, a
+# rename, a resolver that cannot be read from the base commit, a decision
+# that names a suite this job was not given: all of them run every suite. A
+# wrong skip lets a change merge untested; a wrong run costs seconds.
+#
+# The job and its required check `shell / test` report exactly as before.
+# Only the decision to EXECUTE a suite changes, and the workflow still names
+# every suite, so tests/ci/suites/ci-runs-every-test.test.sh still sees a
+# complete list.
+#
+# The suite names the workflow uses carry a leading `./`; the map does not.
+# Both are normalised to the same spelling here.
+
+declare -A candidates=()
+for f in "$@"; do
+	name="$f"
+	case "$name" in
+		./*) name="${name#./}" ;;
+	esac
+	candidates["$name"]=1
+done
+
+declare -A selected=()
+scoped=0
+
+if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ] \
+	&& [ "${CHECK_SUITE_COMPLETENESS_SKIP_FIXTURE_TEST:-0}" != 1 ] \
+	&& [ "$#" -gt 0 ]; then
+	resolver="$(mktemp "${TMPDIR:-/tmp}/suite-scope.XXXXXX" 2>/dev/null)" || resolver=""
+	decision=""
+	if [ -n "$resolver" ] \
+		&& git show HEAD^1:scripts/quality/ci-job-scope.sh > "$resolver" 2>/dev/null; then
+		decision="$(bash "$resolver" suites "$@" 2>/dev/null)" || decision=""
+	fi
+	[ -n "$resolver" ] && rm -f "$resolver"
+
+	# A decision is only a decision when every name in it is a suite this job
+	# was given. Anything else means the scope could not be established, and
+	# an established scope is the only thing that may skip a suite.
+	usable=1
+	[ -n "$decision" ] || usable=0
+	while IFS= read -r name; do
+		[ -n "$name" ] || continue
+		case "$name" in
+			./*) name="${name#./}" ;;
+		esac
+		[ -n "${candidates[$name]:-}" ] || usable=0
+	done <<< "$decision"
+
+	if [ "$usable" = 1 ]; then
+		while IFS= read -r name; do
+			[ -n "$name" ] || continue
+			case "$name" in
+				./*) name="${name#./}" ;;
+			esac
+			selected["$name"]=1
+		done <<< "$decision"
+		scoped=1
+	fi
+fi
+
+if [ "$scoped" = 1 ]; then
+	echo "scope: $(( ${#selected[@]} )) of $# suites can be affected by this change; the rest cannot."
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		{
+			echo "### Suite scope"
+			echo
+			echo "$(( ${#selected[@]} )) of $# suites can be affected by this change."
+			echo "The other $(( $# - ${#selected[@]} )) were not run."
+		} >> "$GITHUB_STEP_SUMMARY"
+	fi
+fi
 
 # --- this runner's own case -------------------------------------------------
 #
@@ -120,6 +212,18 @@ for f in "$@"; do
 	# Skip self if invoked recursively (it would not terminate).
 	[ "$basename" = "$self" ] && continue
 
+	name="$f"
+	case "$name" in
+		./*) name="${name#./}" ;;
+	esac
+	# A suite this change cannot affect is not run. It is not a failure and
+	# not a pass: it is a question this change cannot change the answer to.
+	if [ "$scoped" = 1 ] && [ -z "${selected[$name]:-}" ]; then
+		printf 'skip  %s (this change cannot alter its verdict)\n' "$basename"
+		skipped=$((skipped + 1))
+		continue
+	fi
+
 	output="$("$f" 2>&1)"
 	rc=$?
 
@@ -165,6 +269,9 @@ for f in "$@"; do
 done
 
 echo
+if [ "$skipped" -gt 0 ]; then
+	echo "$skipped suite(s) were not run: this change cannot alter their verdict."
+fi
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "$self" "$pass" "$fail"
 [ "$fail" -eq 0 ]
