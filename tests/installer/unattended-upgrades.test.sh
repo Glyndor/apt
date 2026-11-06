@@ -80,9 +80,9 @@ case "$block" in
 esac
 
 # $1 = sandbox, $2 = enabled|disabled|missing|nosystemd, $3 = apt-config dump,
-# $4 = engine: present|absent|uninstallable
+# $4 = engine: present|absent|uninstallable; $5 = apt-config exit code
 run_case() {
-	local s="$1" state="$2" dump="$3" engine="${4:-present}"
+	local s="$1" state="$2" dump="$3" engine="${4:-present}" dump_rc="${5:-0}"
 	mkdir -p "$s/bin" "$s/systemd"
 	[ "$state" = nosystemd ] && rmdir "$s/systemd"
 	{
@@ -101,7 +101,7 @@ run_case() {
 		uninstallable) sed -i 's|command -v unattended-upgrade >/dev/null 2>&1|false|; s|touch engine-installed|false|' "$s/block.sh" ;;
 	esac
 	printf '%s\n' "$dump" > "$s/dump.txt"
-	printf '#!/bin/sh\ncat "%s/dump.txt"\n' "$s" > "$s/bin/apt-config"
+	printf '#!/bin/sh\ncat "%s/dump.txt"\nexit %s\n' "$s" "$dump_rc" > "$s/bin/apt-config"
 	# shellcheck disable=SC2016 # $1 is meant to expand in the stub, not here
 	printf '#!/bin/sh\n[ "$1" = is-enabled ] && echo "%s" && [ "%s" = enabled ]\n' "$state" "$state" > "$s/bin/systemctl"
 	printf '#!/bin/sh\nexit 0\n' > "$s/bin/unattended-upgrade"
@@ -153,6 +153,17 @@ check "a blacklist naming another package does not matter" "1" "$(says "$out" 'd
 out="$(run_case "$WORK/blbad" enabled 'Unattended-Upgrade::Package-Blacklist:: "[";')"
 check "an unparsable blacklist entry is not read as clear" "0" "$(says "$out" 'daily, Glyndor')"
 check "and the screen says it could not be read" "1" "$(says "$out" 'blacklist could not be read')"
+
+# A failed read with otherwise healthy output must not be mistaken for clear.
+# Keep this separate from the empty successful read so each guard has a witness.
+out="$(run_case "$WORK/dump-fails" enabled "$NOBL" present 100)"; rc=$?
+check "an apt-config failure is reported without aborting the installer" "0" "$rc"
+check "a failed apt-config read is reported as unknown" "1" "$(says "$out" 'the blacklist could not be read')"
+check "a failed apt-config read withholds the green claim" "0" "$(says "$out" 'daily, Glyndor packages only')"
+out="$(run_case "$WORK/dump-empty" enabled '')"; rc=$?
+check "an empty apt-config read does not abort the installer" "0" "$rc"
+check "an empty apt-config read is reported as unknown" "1" "$(says "$out" 'the blacklist could not be read')"
+check "an empty apt-config read withholds the green claim" "0" "$(says "$out" 'daily, Glyndor packages only')"
 
 # --- the block must not go back to asking dpkg or the schedule -------------------------------
 check "the block does not ask dpkg whether the package is installed" "0" \
