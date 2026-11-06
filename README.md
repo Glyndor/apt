@@ -22,7 +22,7 @@ It never changes that setting. Anything but `Installing the keyring` after the
 fingerprint line means it refused: it exits before `dpkg -i`, so no script from
 the downloaded package ran.
 
-Swap `podup` for any package below.
+Swap `podup` for any package marked `served` below.
 
 | Package | What it is | In the archive |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ to diarise.
 The timer does not depend on the machine's own `unattended-upgrades` schedule and
 does not change it. To opt out, run `sudo systemctl disable --now glyndor-upgrade.timer`;
 that choice survives upgrades of the package. It needs systemd and the
-`unattended-upgrades` engine, which the install command below puts on the machine
+`unattended-upgrades` engine, which the install command above puts on the machine
 if it is missing.
 
 ## How it works
