@@ -265,9 +265,18 @@ chmod +x "$WORK/sbin/systemctl"
 # The scripts hard-code /run/systemd/system and /var/lib; both move into the
 # sandbox so this never touches the machine running the test.
 mkdir -p "$WORK/run/systemd/system"
+# The postinst also looks at the trust anchor (the key directory and the apt
+# source). Those move into the sandbox too, with a source file that is exactly
+# what the package ships, or the result would depend on whether the machine
+# running the test has the package installed.
+mkdir -p "$WORK/keyrings" "$WORK/sources"
+chmod 755 "$WORK/keyrings" "$WORK/sources"
+sed "s|/usr/share/keyrings|$WORK/keyrings|g" "$HERE/keyring/glyndor.sources" > "$WORK/sources/glyndor.sources"
 sandboxed() { # $1 = maintainer script name
 	sed -e "s|/run/systemd/system|$WORK/run/systemd/system|g" \
 		-e "s|/var/lib/glyndor-archive-keyring|$WORK/state|g" \
+		-e "s|/usr/share/keyrings|$WORK/keyrings|g" \
+		-e "s|/etc/apt/sources.list.d|$WORK/sources|g" \
 		"$HERE/keyring/upgrade/maintainer-$1" > "$WORK/$1"
 }
 for s in postinst prerm postrm; do sandboxed "$s"; done
