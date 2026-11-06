@@ -512,6 +512,17 @@ jobs:
           # paths.
           ./scripts/publish/purge-cache.sh "$ARCHIVE_URL" public
 
+      - name: Verify the published installers match the build
+        run: |
+          set -euo pipefail
+          # Compare against the exact files just uploaded, after the purge.
+          # Signed archive consistency does not cover these executable scripts.
+          installers=()
+          for spec in $PRODUCTS; do
+            installers+=("${spec%%:*}")
+          done
+          ./scripts/verify/verify-installers.sh "$ARCHIVE_URL" public/install "${installers[@]}"
+
       - name: Verify the published archive matches the signed index
         run: |
           # Everything above verifies the inputs and then trusts the output. A

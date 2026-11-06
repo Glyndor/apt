@@ -25,6 +25,13 @@
 # The template is shared, so nothing here can name a product's dependencies and
 # stay true. What holds for every product is the mechanism, which is the only
 # thing this says now.
+# Keep every executable statement inside this function. A shell reading a
+# truncated pipe must finish parsing the definition before it can invoke it.
+# The invocation is the final line: no installation starts in a proper prefix
+# that has not received that invocation. This is not authentication of the script.
+# A brace group also defers a partially received invocation, without creating a
+# subshell that would move the signal traps away from the installer's PID.
+install_main() {
 set -eu
 
 DEFAULT_URL="https://apt.glyndor.net/glyndor-archive-keyring.deb"
@@ -575,3 +582,5 @@ fi
 # --- end automatic upgrades --------------------------------------------------
 
 closing "@PRODUCT@ $version" "upgrades and archive-key renewals both arrive through apt"
+}
+{ install_main; }

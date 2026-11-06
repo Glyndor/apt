@@ -134,6 +134,17 @@ check "output that is not valid shell fails closed" "1" "$rc"
 check "and says which file" "1" "$(grep -c 'is not valid shell' "$WORK/stderr" || true)"
 
 # --- the package-name guard ---------------------------------------------------
+
+# The final invocation is a delivery boundary. Losing it leaves valid shell
+# that does nothing; adding commands after it makes a proper prefix executable.
+sed '$d' "$TEMPLATE" > "$WORK/no-invocation"
+rc=0; run "$WORK/no-invocation" podup || rc=$?
+check "a template without its final invocation fails closed" "1" "$rc"
+check "and names the delivery boundary" "1" "$(grep -c 'must end with { install_main; }' "$WORK/stderr" || true)"
+{ cat "$TEMPLATE"; echo 'echo too-late'; } > "$WORK/after-invocation"
+rc=0; run "$WORK/after-invocation" podup || rc=$?
+check "commands after the invocation fail closed" "1" "$rc"
+check "and name the delivery boundary" "1" "$(grep -c 'must end with { install_main; }' "$WORK/stderr" || true)"
 #
 # The name goes into a sed replacement and then into a path, so anything that
 # is not a Debian package name is refused rather than escaped.

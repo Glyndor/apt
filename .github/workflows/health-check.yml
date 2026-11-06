@@ -148,31 +148,17 @@ jobs:
             echo "::error::no PRODUCTS list found in .github/workflows/publish.yml; this check cannot tell which installers to ask for"
             exit 1
           fi
-          body="$(mktemp)"
-          trap 'rm -f "$body"' EXIT
+          expected="$(mktemp -d)"
+          trap 'rm -rf "$expected"' EXIT
+          installers=()
           for spec in $products; do
             # A PRODUCTS entry may carry an architecture spec ("klyradb:amd64").
             # The installer is the same script whatever a product ships, so the
             # path is the product name alone.
             product="${spec%%:*}"
-            url="$BASE_URL/install/$product"
-            if ! curl -fsS --retry 3 --retry-all-errors --retry-delay 5 --max-time 30 "$url" -o "$body"; then
-              echo "::error::the installer the landing page advertises is unreachable at $url"
-              exit 1
-            fi
-            # The body is checked, not only the status, because a CDN error page
-            # answers 200 as happily as the script does: an edge serving its own
-            # "not found" HTML would satisfy a status-only check while the page's
-            # `| sudo sh` piped that HTML into a root shell. Requiring the first
-            # line to be a shebang costs one read and rules that out.
-            first_line=""
-            IFS= read -r first_line < "$body" || true
-            case "$first_line" in
-              '#!'*) ;;
-              *)
-                echo "::error::$url answers but the body is not a shell script; the edge may be serving an error page"
-                exit 1
-                ;;
-            esac
-            echo "installer served for $product"
+            installers+=("$product")
           done
+          # The reference comes from this checkout, not from the host being
+          # checked. A template change will alert until the next publish.
+          ./scripts/build/build-installers.sh "$expected" "${installers[@]}"
+          ./scripts/verify/verify-installers.sh "$BASE_URL" "$expected" "${installers[@]}"

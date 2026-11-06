@@ -64,6 +64,8 @@ Not considered: an adversary holding the archive signing key, an adversary holdi
 | A hostile package's maintainer script runs before the key is checked | the check happens on the extracted tree, and `dpkg -i` is reached only after it passes | test: the "dpkg -i was never reached" assertions in the same suite |
 | An endless body at the download | `curl --max-filesize` bounds the keyring download; the `.deb` admission bounds the signature read | test: the oversized-download case |
 | The template loses its placeholder and serves a script that installs the wrong thing | the generator fails closed on a missing placeholder, a leftover placeholder, and output that does not pass `sh -n` | test: `tests/build/build-installers.test.sh` |
+| The edge serves a one-line, truncated or wrong-product installer | publish compares the full served body with `public/install/`; health-check regenerates its reference from the checkout and compares every byte | test: `tests/verify/verify-installers.test.sh`, including a failed transfer even when the bytes match; `tests/publish/health-check-workflow.test.sh` exercises the workflow |
+| A cut delivery executes an installation prefix | all executable statements are inside a function invoked on the final line; the generator requires that final invocation | test: `tests/installer/install-template-delivery.test.sh`, a real pipe with an interrupted producer and assertions on commands and the sandbox keyring, paired with a complete delivery |
 | The published fingerprint and the served keyring disagree | the fingerprint is published in this repository, not on the archive host, so a tampered archive cannot vouch for itself | measurement: `9ADF 04EA 8C31 39CD B673 03CF A670 5C2E A153 F3D6`, checked by hand in the README's own steps |
 
 ### Automatic upgrades on the client
@@ -102,6 +104,17 @@ bytes, and that is the case `tests/build/build-keyring-generator.test.sh` holds.
 
 ## Residual risks
 
+- **The first bootstrap hop trusts the script host.** `curl | sudo sh` obtains
+  the verifier from the same host that serves the keyring package and signature.
+  The fingerprint and signature authenticate the package only when the installer
+  itself is the expected script. A replaced script can omit both checks; they
+  do not authenticate the script executing as root. Read-back detects differences
+  from the runner's location, not every client's response. Independent inspection
+  of the installer and an independently obtained trust anchor are needed to
+  authenticate this first hop. Deferring execution until the final invocation
+  protects incomplete prefixes, not malicious replacements or a transfer error
+  reported after the complete invocation has already arrived; a pipeline also
+  needs its producer's status checked to report that error.
 - **One maintainer.** Every pull request is reviewed and merged by its author.
   A required status check is matched by name, so a maintainer could replace a
   gate with a job of the same name in the pull request that neutralises it.

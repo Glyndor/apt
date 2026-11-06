@@ -45,5 +45,7 @@ for product in "$@"; do
 	! grep -q '@PRODUCT@' "$out" \
 		|| { echo "::error::$out still contains @PRODUCT@" >&2; exit 1; }
 	sh -n "$out" || { echo "::error::$out is not valid shell" >&2; exit 1; }
+	[ "$(tail -n 1 "$out")" = '{ install_main; }' ] \
+		|| { echo "::error::$out must end with { install_main; } to defer execution until delivery" >&2; exit 1; }
 	echo "generated $out"
 done
