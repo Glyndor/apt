@@ -223,13 +223,18 @@ dir_shared() { # $1 = directory -> 0 when group or others may write in it
 	find "$1" -prune \( -perm -020 -o -perm -002 \) -print 2>/dev/null | grep -q .
 }
 
+# Does the directory carry the sticky bit? test -k is not POSIX, so find asks.
+dir_sticky() { # $1 = directory -> 0 when the sticky bit is set
+	find "$1" -prune -perm -1000 -print 2>/dev/null | grep -q .
+}
+
 # The first directory on the path that another user could work in, or nothing
 # when the whole path holds. The sticky bit is what makes a shared directory
 # safe: with it, only the owner of an entry may rename it.
 unsafe_dir_on_path() { # $1 = absolute path -> prints the directory, or nothing
 	_dir="$1"
 	while [ -n "$_dir" ]; do
-		if [ ! -k "$_dir" ] && dir_shared "$_dir"; then
+		if ! dir_sticky "$_dir" && dir_shared "$_dir"; then
 			printf '%s\n' "$_dir"
 			return 0
 		fi
