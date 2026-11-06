@@ -127,6 +127,13 @@ VERSION="${BASE_VERSION}+pkg${PKG_DATE}"
 mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 
+# The parents that `install -d` creates on the way (etc/, usr/, usr/lib/, ...)
+# take their mode from the umask, so a builder with umask 0002 shipped them
+# group-writable in the package and a builder with 0022 did not: the same
+# commit gave two different packages. A fixed umask makes the tree, and the
+# bytes, independent of whoever builds it.
+umask 022
+
 ROOT="$(mktemp -d)"
 trap 'rm -rf "$ROOT"' EXIT
 chmod 0755 "$ROOT"
