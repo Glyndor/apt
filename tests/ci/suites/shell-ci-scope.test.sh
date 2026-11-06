@@ -133,6 +133,8 @@ check "a single commit, so no HEAD^1, runs the suite" "false" "$(decide shallow 
 # The list this repository really passes. Each entry's literal prefix must not
 # appear in anything the suite reads or runs, other than this test and the
 # workflow files themselves.
+# ci-job-scope names paths only to write fixtures in a throwaway repository;
+# like this test, it never reads the real prose whose changes skip the suite.
 caller_list="$(python3 - "$HERE/.github/workflows/tests.yml" <<'PY'
 import sys, yaml
 wf = yaml.safe_load(open(sys.argv[1]))
@@ -144,7 +146,7 @@ PY
 for pattern in $caller_list; do
 	prefix="${pattern%%[*?[]*}"
 	hits="$(grep -rlF -- "$prefix" "$HERE/tests" "$HERE/scripts" 2>/dev/null \
-		| grep -v -e 'shell-ci-scope.test.sh' | tr '\n' ' ')"
+		| grep -v -e '/shell-ci-scope.test.sh$' -e '/quality/ci-job-scope.test.sh$' | tr '\n' ' ')"
 	check "the suite does not read ${pattern} (found in: ${hits:-nowhere})" "" "$hits"
 done
 

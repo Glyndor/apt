@@ -79,11 +79,13 @@ jobs:
         ./tests/verify/distro-floor.test.sh
         ./tests/ci/policy/locale-pinned.test.sh
         ./tests/quality/check-test-coverage.test.sh
+        ./tests/quality/ci-job-scope.test.sh
         ./tests/ci/suites/ci-runs-every-test.test.sh
         ./tests/quality/lint-workflow-shell.test.sh
         ./tests/ci/reusable/reusable-line-limit.test.sh
         ./tests/ci/reusable/reusable-shell-ci.test.sh
         ./tests/ci/suites/shell-ci-scope.test.sh
+        ./tests/ci/suites/lint-job-scope.test.sh
         ./tests/ci/policy/cancel-policy.test.sh
         ./tests/ci/reusable/reusable-empty-diff.test.sh
         ./tests/ci/reusable/reusable-dco.test.sh

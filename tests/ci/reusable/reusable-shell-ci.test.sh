@@ -201,7 +201,7 @@ out="$(TEST_COMMAND=$'false\ntrue' bash "$WORK/run-tests.sh" 2>&1)"; rc=$?
 check "an early failing statement fails the test step even when a later one passes" "1" \
 	"$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
 
-# A pull request that changes only the listed prose skips the shellcheck job's
+# A pull request that changes no lint inputs skips the shellcheck job's
 # work, but the job and its check still report. Every step of that job after
 # the decision carries the condition; one that does not would run (and bill)
 # regardless, and the decision step itself must exist.
@@ -212,7 +212,7 @@ names = [s.get("name", "") for s in steps]
 idx = next((i for i, s in enumerate(steps) if s.get("id") == "scope"), None)
 if idx is None:
     print("no scope step"); sys.exit(0)
-bare = [s.get("name") for s in steps[idx + 1:] if "steps.scope.outputs.docs_only" not in str(s.get("if", ""))]
+bare = [s.get("name") for s in steps[idx + 1:] if "steps.scope.outputs.needed" not in str(s.get("if", ""))]
 print("ok" if not bare else "unguarded: " + ", ".join(bare))
 PY
 )"
