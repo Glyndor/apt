@@ -49,7 +49,12 @@
 #
 # Usage:
 #   verify-published.sh <base-url> [<pubkey-asc>] [<attempts>] [<delay-seconds>]
-#                       [<budget-seconds>]
+#                       [<budget-seconds>] [<expected-inrelease-sha256>]
+#
+# Publish passes the local InRelease digest to bind this read-back to the build
+# just uploaded. Without it, health checks can still verify a consistent signed
+# archive independently of a local build. A valid older signature alone is not
+# evidence that the latest publish reached the edge.
 #
 # budget-seconds bounds the WHOLE run, and it exists because attempts and delay
 # cannot. A peer that accepts a connection and then never answers burns
@@ -73,6 +78,7 @@ DELAY="${4:-10}"
 # publish.yml and health-check.yml pass theirs from beside their own
 # timeout-minutes, so the two numbers are read together rather than drifting.
 BUDGET="${5:-600}"
+EXPECTED_INRELEASE_SHA256="${6-}"
 STARTED_AT="$(date -u +%s)"
 
 # Strip a trailing slash so the URLs built below never contain a double one;
@@ -107,6 +113,10 @@ case "$DELAY" in '' | *[!0-9]*) echo "::error::delay must be a non-negative inte
 [ "$ATTEMPTS" -ge 1 ] || { echo "::error::attempts must be at least 1" >&2; exit 1; }
 case "$BUDGET" in '' | *[!0-9]*) echo "::error::budget must be a positive integer, got '$BUDGET'" >&2; exit 1 ;; esac
 [ "$BUDGET" -ge 1 ] || { echo "::error::budget must be at least 1 second" >&2; exit 1; }
+if [ "$#" -ge 6 ] && ! [[ "$EXPECTED_INRELEASE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+	echo "::error::expected InRelease SHA256 must be 64 lowercase hex characters" >&2
+	exit 1
+fi
 
 # Seconds spent so far. Used to decide whether another attempt can finish
 # inside the budget rather than to abort one already running: a fetch that is
@@ -342,14 +352,31 @@ echo "verifying the archive served at $BASE_URL against its signed index"
 
 # --- The signed index itself -------------------------------------------------
 
-if ! fetch "$BASE_URL/$DIST_PATH/InRelease" "$WORK/InRelease"; then
-	echo "::error::could not fetch $BASE_URL/$DIST_PATH/InRelease" >&2
-	exit 1
-fi
-if ! verify_clearsigned "$WORK/InRelease" "$WORK/InRelease.body"; then
-	echo "::error::InRelease signature verification failed; the served index is unsigned or signed by an untrusted key" >&2
-	exit 1
-fi
+for attempt in $(seq 1 "$ATTEMPTS"); do
+	if [ "$(elapsed)" -ge "$BUDGET" ]; then
+		echo "::error::InRelease did not converge to the published build before the ${BUDGET}s budget ran out" >&2
+		exit 1
+	fi
+	if ! fetch "$BASE_URL/$DIST_PATH/InRelease" "$WORK/InRelease"; then
+		echo "::error::could not fetch $BASE_URL/$DIST_PATH/InRelease" >&2
+		exit 1
+	fi
+	if ! verify_clearsigned "$WORK/InRelease" "$WORK/InRelease.body"; then
+		echo "::error::InRelease signature verification failed; the served index is unsigned or signed by an untrusted key" >&2
+		exit 1
+	fi
+	served_inrelease_sha256="$(sha256_of "$WORK/InRelease")"
+	if [ -z "$EXPECTED_INRELEASE_SHA256" ] || [ "$served_inrelease_sha256" = "$EXPECTED_INRELEASE_SHA256" ]; then
+		break
+	fi
+	echo "InRelease does not match the published build (expected $EXPECTED_INRELEASE_SHA256, served $served_inrelease_sha256)"
+	if [ "$attempt" -ge "$ATTEMPTS" ] || [ "$(elapsed)" -ge "$BUDGET" ]; then
+		echo "::error::InRelease does not match the published build after $attempt attempt(s) within the ${BUDGET}s budget" >&2
+		exit 1
+	fi
+	echo "attempt $attempt/$ATTEMPTS: InRelease not yet consistent, re-reading in ${DELAY}s"
+	sleep "$DELAY"
+done
 
 # The detached pair apt falls back to when it does not use InRelease. A stale
 # Release would declare hashes the current archive no longer serves, so check
