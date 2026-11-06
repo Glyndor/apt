@@ -452,6 +452,11 @@ tests/quality/check-test-coverage.test.sh
 	scripts/**
 	tests/**
 
+tests/quality/check-action-pins.test.sh
+	.github/**
+	scripts/quality/**
+	tests/quality/**
+
 tests/quality/ci-job-scope.test.sh
 	scripts/quality/ci-job-scope.sh
 	tests/quality/**

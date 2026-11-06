@@ -89,6 +89,7 @@ jobs:
         ./tests/verify/distro-floor.test.sh
         ./tests/ci/policy/locale-pinned.test.sh
         ./tests/quality/check-test-coverage.test.sh
+        ./tests/quality/check-action-pins.test.sh
         ./tests/quality/ci-job-scope.test.sh
         ./tests/quality/ci-job-scope-suites.test.sh
         ./tests/quality/suite-scope-map.test.sh
