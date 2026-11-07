@@ -328,6 +328,11 @@ tests/publication/publish/publish-workflow-verify-debs.test.sh
 	tests/publication/publish/**
 	.github/workflows/publish.yml
 
+tests/publication/publish/publish-workflow-release-order.test.sh
+	scripts/verify/check-release-order.sh
+	tests/publication/publish/**
+	.github/workflows/publish.yml
+
 tests/publication/publish/publish-workflow-signing-key.test.sh
 	scripts/publish/**
 	tests/publication/publish/**
