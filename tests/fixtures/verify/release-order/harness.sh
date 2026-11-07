@@ -2,8 +2,8 @@
 # Sourced by check-release-order.test.sh. No signing agent is needed.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 VERIFY="$HERE/scripts/verify/check-release-order.sh"
-FIXTURES="$HERE/tests/verify/fixtures/published-build"
-EXTRA="$HERE/tests/verify/fixtures/release-order"
+FIXTURES="$HERE/tests/fixtures/verify/published-build"
+EXTRA="$HERE/tests/fixtures/verify/release-order"
 WORK="$(mktemp -d)"
 SITE="$WORK/site"
 DIST="$SITE/dists/stable"

@@ -6,7 +6,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERIFY="$HERE/scripts/verify/verify-published.sh"
-FIXTURES="$HERE/tests/verify/fixtures/published-build"
+FIXTURES="$HERE/tests/fixtures/verify/published-build"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0

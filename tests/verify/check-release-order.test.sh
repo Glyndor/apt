@@ -4,8 +4,8 @@
 # the original expectation must then fail, with the diff and failure printed.
 set -euo pipefail
 pass=0; fail=0
-# shellcheck source=tests/verify/fixtures/release-order/harness.sh
-source "$(dirname "${BASH_SOURCE[0]}")/fixtures/release-order/harness.sh"
+# shellcheck source=tests/fixtures/verify/release-order/harness.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../fixtures/verify/release-order/harness.sh"
 
 PRODUCT=podup
 TAG=v3.0.0

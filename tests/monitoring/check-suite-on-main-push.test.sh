@@ -14,14 +14,14 @@
 # the push path exists to break. The cron cases are in
 # tests/monitoring/check-suite-on-main-cron.test.sh and the path-independent
 # contract is in tests/monitoring/check-suite-on-main.test.sh; the fake `gh`
-# both of them use comes from tests/monitoring/check-suite-on-main-fixture.sh.
+# both of them use comes from tests/fixtures/monitoring/check-suite-on-main-fixture.sh.
 #
 # Requires: bash, jq, GNU coreutils.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# shellcheck source=tests/monitoring/check-suite-on-main-fixture.sh
-. "$HERE/tests/monitoring/check-suite-on-main-fixture.sh"
+# shellcheck source=tests/fixtures/monitoring/check-suite-on-main-fixture.sh
+. "$HERE/tests/fixtures/monitoring/check-suite-on-main-fixture.sh"
 
 pass=0
 fail=0

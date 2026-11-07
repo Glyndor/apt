@@ -12,14 +12,14 @@
 #   tests/monitoring/check-suite-on-main-push.test.sh  push
 #
 # The fake `gh` all three use comes from
-# tests/monitoring/check-suite-on-main-fixture.sh.
+# tests/fixtures/monitoring/check-suite-on-main-fixture.sh.
 #
 # Requires: bash, jq, GNU coreutils.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# shellcheck source=tests/monitoring/check-suite-on-main-fixture.sh
-. "$HERE/tests/monitoring/check-suite-on-main-fixture.sh"
+# shellcheck source=tests/fixtures/monitoring/check-suite-on-main-fixture.sh
+. "$HERE/tests/fixtures/monitoring/check-suite-on-main-fixture.sh"
 
 pass=0
 fail=0

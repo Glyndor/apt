@@ -31,7 +31,7 @@ with tempfile.TemporaryDirectory() as temp:
     (work / 'bin').mkdir()
     (work / 'scripts').symlink_to(root / 'scripts', target_is_directory=True)
     for command in ('aws', 'curl'):
-        (work / 'bin' / command).symlink_to(root / 'tests/publish/fixtures' / (command + '.py'))
+        (work / 'bin' / command).symlink_to(root / 'tests/fixtures/publish' / (command + '.py'))
     env = dict(os.environ, PATH=str(work / 'bin') + ':' + os.environ['PATH'],
                BUCKET=str(work / 'bucket'), FAKE_BUCKET=str(work / 'bucket'), EDGE=str(work / 'edge'),
                AWS_STATE=str(work / 'state'), AWS_CALLS=str(work / 'calls'),

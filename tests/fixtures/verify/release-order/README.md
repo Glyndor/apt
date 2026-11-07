@@ -1,6 +1,6 @@
 # Release order fixtures
 
-The suite reuses `../published-build/{old,new}` and its public key for the
+The suite reuses `../published-build/{old,new}` (tests/fixtures/verify) and its public key for the
 1.0.0/2.0.0 acceptance, rollback, corruption and digest cases.
 
 These additional synthetic snapshots carry only Packages metadata (no real
@@ -22,7 +22,7 @@ independent trust anchor for rejecting signatures from this other key.
   independent cleartext line-length limit.
 
 `harness.sh` adapts the local server/readiness pattern from
-`../../verify-published-fixture.sh`, binding port zero in the server to avoid a
+`../verify-published-fixture.sh`, binding port zero in the server to avoid a
 port allocation race. HTTP is the default; `RELEASE_ORDER_TEST_TRANSPORT=file`
 is an explicit restricted-environment diagnostic and prints SIN VERIFICAR for
 HTTP. It does not count HTTP or 404 coverage as verified.
