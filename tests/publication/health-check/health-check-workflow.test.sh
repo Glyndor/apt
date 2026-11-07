@@ -169,6 +169,24 @@ check "and says it is stale" "1" "$(said 'is stale')"
 rc=0; run_step "$A" 720 - || rc=$?
 check "and the same index passes under a limit that admits it" "0" "$rc"
 
+# --- signed, but dated in the future ----------------------------------------
+# A negative age passed the limit above, so a Date thirty days ahead printed
+# "-720h old" and was called fresh.
+A="$(archive "$WORK/future" archive "$(date -u -R -d '30 days')")"
+rc=0; run_step "$A" 48 - || rc=$?
+check "an index dated thirty days ahead fails" "1" "$rc"
+check "and says it is in the future" "1" "$(said 'in the future')"
+check "and does not call it fresh" "0" "$(said 'archive reachable and fresh')"
+A="$(archive "$WORK/skew" archive "$(date -u -R -d '2 minutes')")"
+rc=0; run_step "$A" 48 - || rc=$?
+check "an index two minutes ahead, inside the skew allowance, passes" "0" "$rc"
+# shellcheck disable=SC2016 # the pattern names a shell expansion; it must not expand
+sed 's/-gt "${MAX_FUTURE_SECONDS:-600}" \]/-gt 99999999999 ]/' "$FRESH" > "$WORK/fresh-nofuture.sh"
+check "the future control changed the step" "1" "$(cmp -s "$FRESH" "$WORK/fresh-nofuture.sh" && echo 0 || echo 1)"
+A="$(archive "$WORK/future2" archive "$(date -u -R -d '30 days')")"
+rc=0; ( cd "$A" && BASE_URL="file://$A" MAX_AGE_HOURS=48 bash "$WORK/fresh-nofuture.sh" ) >"$WORK/out" 2>&1 || rc=$?
+check "without the future check the same index passes" "0" "$rc"
+
 # --- signed, but the Date cannot be parsed ----------------------------------
 #
 # `date -u -d` fails on this. Before the guard, the assignment killed the step

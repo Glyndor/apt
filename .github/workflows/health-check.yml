@@ -30,6 +30,9 @@ permissions:
 env:
   BASE_URL: "https://apt.glyndor.net"
   MAX_AGE_HOURS: "48"
+  # A Date this far ahead of the runner is a clock error at the publisher or
+  # a forged index, not a fresh one. Ten minutes covers ordinary skew.
+  MAX_FUTURE_SECONDS: "600"
 
 jobs:
   check:
@@ -88,6 +91,11 @@ jobs:
           now_epoch="$(date -u +%s)"
           age_h=$(( (now_epoch - rel_epoch) / 3600 ))
           echo "InRelease Date: $date_line (${age_h}h old)"
+          ahead_s=$(( rel_epoch - now_epoch ))
+          if [ "$ahead_s" -gt "${MAX_FUTURE_SECONDS:-600}" ]; then
+            echo "::error::InRelease is dated ${ahead_s}s in the future (> ${MAX_FUTURE_SECONDS:-600}s); the publisher clock is wrong or the index is not what it says"
+            exit 1
+          fi
           if [ "$age_h" -gt "$MAX_AGE_HOURS" ]; then
             echo "::error::apt archive is stale: InRelease is ${age_h}h old (> ${MAX_AGE_HOURS}h); the publish may have stopped"
             exit 1
