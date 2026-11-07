@@ -399,6 +399,10 @@ tests/ci/reusable/reusable-workflow-lint.test.sh
 	.github/workflows/reusable-shell-ci.yml
 	.github/workflows/tests.yml
 
+tests/ci/reusable/reusable-workflow-lint-install.test.sh
+	.github/workflows/reusable-workflow-lint.yml
+	.github/workflows/tests.yml
+
 # The suites that check the wiring itself. ci-runs-every-test walks tests/
 # and every workflow, so a new test file or a new workflow is an input of its
 # verdict. shell-ci-scope greps tests/ and scripts/ for the paths the caller
