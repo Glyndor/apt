@@ -169,6 +169,41 @@ EOF2
 rc_of "$R" >/dev/null
 check "every unpinned reference is reported, not just the first" "2" "$(grep -c '^::error file=' "$WORK/out")"
 
+# Two references on one line, in a flow sequence: the second one is held to the
+# pin as well (issue #371). The control is a copy of the checker that stops at
+# the first reference of a line, as it did.
+R="$(root flow-two <<EOF2
+jobs:
+  a:
+    steps: [{uses: actions/checkout@$SHA}, {uses: actions/cache@v4}]
+EOF2
+)"
+check "a second reference on the same line is refused" "1" "$(rc_of "$R")"
+check "and it is reported once, for the unpinned one" "1" "$(grep -c '^::error file=' "$WORK/out")"
+R="$(root flow-pinned <<EOF2
+jobs:
+  a:
+    steps: [{uses: actions/checkout@$SHA}, {uses: actions/cache@$SHA}]
+EOF2
+)"
+check "two pinned references on one line pass" "0" "$(rc_of "$R")"
+python3 -I - "$CHECK" "$WORK/check-first-only.sh" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+old = "\t\t\t\trest = substr(rest, pos + len)\n\t\t\t}\n\t\t}\n\t\tEND {"
+assert old in s
+open(sys.argv[2], "w").write(s.replace(old, "\t\t\t\tbreak\n\t\t\t}\n\t\t}\n\t\tEND {", 1))
+PY
+chmod +x "$WORK/check-first-only.sh"
+R="$(root flow-two-cut <<EOF2
+jobs:
+  a:
+    steps: [{uses: actions/checkout@$SHA}, {uses: actions/cache@v4}]
+EOF2
+)"
+rc=0; "$WORK/check-first-only.sh" "$R" >/dev/null 2>&1 || rc=$?
+check "reading only the first reference of a line lets the second through (the refusal is the loop's)" "0" "$rc"
+
 R="$(mktemp -d -p "$WORK")"
 mkdir -p "$R/.github/workflows"
 check "a root with no workflow file is an error, not a pass" "1" "$(rc_of "$R")"
