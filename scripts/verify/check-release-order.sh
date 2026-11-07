@@ -23,6 +23,8 @@
 #   The version the release tag names, against the version the archive serves
 #   today. Equal or greater passes; lower fails, with the reason named. A
 #   product the archive does not serve yet passes: a first publication.
+#   Each candidate .deb must also be no older in Debian's full version order:
+#   dropping epoch or revision can hide a downgrade even when the tag advances.
 #
 #   The served version comes out of the signed index, not out of a plain
 #   download. The served InRelease is verified with the archive public key
@@ -42,17 +44,20 @@
 #   archive is rebuilt from scratch and synced with --delete.
 #
 # Usage:
-#   check-release-order.sh <product> <tag> <base-url> [<pubkey-asc>]
+#   check-release-order.sh <product> <tag> <base-url> [<pubkey-asc>] [<debs-dir>]
 #
-# Requires: curl, gpg, gpgv, python3, sha256sum.
+# Requires: curl, gpg, gpgv, python3, sha256sum, dpkg, dpkg-deb.
 
 set -euo pipefail
 
-PRODUCT="${1:?usage: check-release-order.sh <product> <tag> <base-url> [<pubkey-asc>]}"
-TAG="${2:?usage: check-release-order.sh <product> <tag> <base-url> [<pubkey-asc>]}"
-BASE_URL="${3:?usage: check-release-order.sh <product> <tag> <base-url> [<pubkey-asc>]}"
+PRODUCT="${1:?usage: check-release-order.sh <product> <tag> <base-url> [<pubkey-asc>] [<debs-dir>]}"
+TAG="${2:?usage: check-release-order.sh <product> <tag> <base-url> [<pubkey-asc>] [<debs-dir>]}"
+BASE_URL="${3:?usage: check-release-order.sh <product> <tag> <base-url> [<pubkey-asc>] [<debs-dir>]}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PUBKEY_ASC="${4:-$HERE/keyring/glyndor-apt-key.asc}"
+# publish.yml downloads here before invoking this guard; verification of the
+# release signatures and the package/tag binding remains its admission gate.
+DEBS_DIR="${5:-debs/$PRODUCT}"
 
 # The distribution this archive publishes and the path its index lives under:
 # the same path verify-published.sh reads and build-repo.sh signs.
@@ -98,7 +103,7 @@ sha256_of() { # $1=file
 	sha256sum "$1" | cut -d' ' -f1
 }
 
-# release_order <product> <candidate-version> <verified-Packages-file>...
+# release_order <product> <candidate-tag-version> <debs-dir> <verified-Packages-file>...
 #
 # Prints one verdict and nothing else: "not-served" when the archive does not
 # serve the product yet, "ok <served>" when the candidate is not older than
@@ -109,12 +114,17 @@ sha256_of() { # $1=file
 # below text ones, build metadata ignored. It is the rule the tap and the
 # bucket apply to the same releases, so the three channels refuse the same
 # ones; their unit is release_order in scripts/release/render-formulae.sh.
-release_order() { # $1=product $2=candidate version $3...=verified Packages files
+# The .deb versions additionally use dpkg ordering without normalization;
+# either comparison can refuse publication independently of the other.
+release_order() { # $1=product $2=tag version $3=debs dir $4...=verified Packages files
 	python3 -I - "$@" <<'PY'
+import pathlib
 import re
+import shutil
+import subprocess
 import sys
 
-product, candidate, paths = sys.argv[1], sys.argv[2], sys.argv[3:]
+product, candidate, debs_dir, *paths = sys.argv[1:]
 
 SEMVER = re.compile(
 	r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -139,9 +149,8 @@ def precedence(version):
 
 
 def upstream(version):
-	# The upstream part of a Debian version: no epoch, no packaging revision.
-	# The .deb was built from a release tag, so the epoch and the revision
-	# belong to the package: the served 5.16.0-1 is the release 5.16.0.
+	# Only SemVer uses this projection. Debian comparisons below keep the
+	# original string: epoch and revision affect what apt considers newer.
 	if EPOCH.match(version):
 		version = version.split(":", 1)[1]
 	head, dash, revision = version.rpartition("-")
@@ -176,10 +185,39 @@ def versions_of(text):
 	return found
 
 
+def run_tool(*args):
+	try:
+		return subprocess.run(args, capture_output=True, text=True, check=False)
+	except (OSError, UnicodeError) as error:
+		sys.exit(f"cannot run {args[0]} to read/compare package versions: {error}")
+
+
+def debian_version(version):
+	# dpkg comparisons can accept malformed input with a warning. Validation
+	# must succeed separately, including for an empty/missing Version field.
+	if not version or run_tool("dpkg", "--validate-version", version).returncode != 0:
+		sys.exit(f"the Debian version {version!r} of {product} cannot be compared")
+	return version
+
+
 try:
 	new = precedence(candidate)
 except ValueError as error:
 	sys.exit(f"the release version {candidate!r} cannot be compared: {error}")
+
+for tool in ("dpkg", "dpkg-deb"):
+	if not shutil.which(tool):
+		sys.exit(f"{tool} is required to read/compare the full Debian package versions")
+debs = sorted(pathlib.Path(debs_dir).glob("*.deb"))
+if not debs:
+	sys.exit(f"no candidate .deb files in {debs_dir}; their versions cannot be established")
+candidates = []
+for deb in debs:
+	package = run_tool("dpkg-deb", "-f", str(deb), "Package")
+	version = run_tool("dpkg-deb", "-f", str(deb), "Version")
+	if package.returncode != 0 or package.stdout.strip() != product or version.returncode != 0:
+		sys.exit(f"cannot read candidate Package/Version of {deb} for {product}")
+	candidates.append((str(deb), debian_version(version.stdout.strip())))
 
 served = []
 for path in paths:
@@ -192,10 +230,22 @@ if not served:
 
 orders = []
 for version in served:
+	debian_version(version)
 	try:
 		orders.append((precedence(upstream(version)), version))
 	except ValueError as error:
 		sys.exit(f"the served version {version!r} of {product} cannot be compared: {error}")
+
+# Check every candidate against every served version, across architectures.
+# A SemVer maximum can have a lower epoch/revision than another stanza, and
+# one good candidate must never hide a downgrade in its sibling .deb.
+for deb, version in candidates:
+	for baseline in served:
+		comparison = run_tool("dpkg", "--compare-versions", version, "lt", baseline)
+		if comparison.returncode == 0:
+			sys.exit(f"refusing to publish {product}: candidate {deb} ({version}) is older than served {baseline} in Debian version order")
+		if comparison.returncode != 1:
+			sys.exit(f"dpkg could not compare candidate {version!r} against served {baseline!r}")
 
 # The highest version the archive serves is the baseline: comparing against
 # the lower one would let a publish roll the other architecture back.
@@ -293,7 +343,7 @@ done <"$WORK/declared"
 # verify-debs.sh reads it out of the tag it pinned.
 candidate="${TAG#v}"
 
-if ! verdict="$(release_order "$PRODUCT" "$candidate" "${packages[@]}")"; then
+if ! verdict="$(release_order "$PRODUCT" "$candidate" "$DEBS_DIR" "${packages[@]}")"; then
 	echo "::error::could not compare $PRODUCT $candidate against the version the archive serves" >&2
 	exit 1
 fi

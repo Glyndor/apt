@@ -90,7 +90,20 @@ PY
 	curl -fsS --max-time 2 "$BASE/dists/stable/InRelease" -o /dev/null
 fi
 
-run() { bash "$ACTIVE" "$PRODUCT" "$TAG" "$BASE" "$KEY"; }
+# The candidate .deb the publish workflow has downloaded by now. Its Debian
+# version is CAND when a case sets it; otherwise it carries a high epoch, so
+# the Debian comparison never decides a case that is about the SemVer one.
+# CAND=NONE leaves the directory empty, as a download that found nothing would.
+candidates() {
+	local dir="$WORK/debs/$PRODUCT" version="${CAND-99:${TAG#v}}" root="$WORK/deb-root"
+	rm -rf "$WORK/debs" "$root"
+	mkdir -p "$dir" "$root/DEBIAN"
+	[ "$version" = NONE ] && return 0
+	printf 'Package: %s\nVersion: %s\nArchitecture: all\nMaintainer: t <t@example.invalid>\nDescription: fixture\n' \
+		"${CAND_PACKAGE:-$PRODUCT}" "$version" > "$root/DEBIAN/control"
+	dpkg-deb --root-owner-group --build "$root" "$dir/c.deb" >/dev/null
+}
+run() { candidates; bash "$ACTIVE" "$PRODUCT" "$TAG" "$BASE" "$KEY" "$WORK/debs/$PRODUCT"; }
 check() { # expected status, distinguishing output, label
 	local want="$1" needle="$2" label="$3" got=0 out
 	out="$(run 2>&1)" || got=$?
