@@ -52,7 +52,9 @@ sed -i 's/Architecture: arm64/Architecture: ar_64/' "$DIST/main/binary-arm64/Pac
 # the words passed with the budget condition deleted, measured while writing
 # this. The retry count is what the budget actually changes.
 budget_out="$("$VERIFY" "$BASE" "$TRUSTED_ASC" 9 1 1 2>&1 || true)"
-budget_retries="$(printf '%s' "$budget_out" | grep -c 'not yet consistent, re-reading')"
+# grep -c exits 1 on zero matches, and a slow runner spends the whole one-second
+# budget on the first attempt, so zero re-reads is a correct answer here.
+budget_retries="$(printf '%s' "$budget_out" | grep -c 'not yet consistent, re-reading' || true)"
 if [ "$budget_retries" -le 2 ]; then
 	echo "ok   - the budget stops the retries early ($budget_retries re-reads of a possible 8)"
 	pass=$((pass + 1))
@@ -121,6 +123,85 @@ if printf '%s' "$zero_out" | grep -q 'budget ran out'; then
 else
 	echo "FAIL - the spent budget was not named"
 	printf '%s\n' "$zero_out" | sed 's/^/       /'
+	fail=$((fail + 1))
+fi
+
+# --- The budget bounds the waits and the transfers, not only the loops -------
+#
+# Two holes sat behind the checks above, which only read the budget between
+# rounds. A delay longer than the budget was slept in full: given a 3600s delay
+# and a 3s budget, a mismatch that never converges waited an hour before the
+# budget was looked at again. And every transfer carried a fixed 30s/60s
+# deadline, so one download could spend more than the whole budget.
+#
+# The wait is measured by how long the run takes, under a hard timeout, and by
+# the delay it announces: asserting only a non-zero exit is satisfied by the
+# timeout killing it.
+build_archive
+sed -i 's/Architecture: arm64/Architecture: ar_64/' "$DIST/main/binary-arm64/Packages"
+started="$(date -u +%s)"
+long_out="$(timeout 40 "$VERIFY" "$BASE" "$TRUSTED_ASC" 3 3600 3 2>&1 || true)"
+long_took=$(( $(date -u +%s) - started ))
+long_waits="$(printf '%s' "$long_out" | sed -n 's/.*not yet consistent, re-reading in \([0-9]*\)s.*/\1/p' | sort -n | tail -1)"
+if [ "$long_took" -lt 30 ] && [ -n "$long_waits" ] && [ "$long_waits" -le 3 ]; then
+	echo "ok   - a delay longer than the budget is cut to what is left (${long_took}s, longest wait ${long_waits}s)"
+	pass=$((pass + 1))
+else
+	echo "FAIL - a delay longer than the budget was slept in full (${long_took}s, longest wait '${long_waits}')"
+	printf '%s\n' "$long_out" | sed 's/^/       /'
+	fail=$((fail + 1))
+fi
+if printf '%s' "$long_out" | grep -q 'budget ran out'; then
+	echo "ok   - and the run names the budget it ran out of"
+	pass=$((pass + 1))
+else
+	echo "FAIL - the long delay did not end naming the budget"
+	fail=$((fail + 1))
+fi
+
+# The control: a delay that fits is not shortened, or the cut above could be a
+# script that no longer waits at all.
+build_archive
+sed -i 's/Architecture: arm64/Architecture: ar_64/' "$DIST/main/binary-arm64/Packages"
+fits_out="$(timeout 60 "$VERIFY" "$BASE" "$TRUSTED_ASC" 2 2 600 2>&1 || true)"
+if printf '%s' "$fits_out" | grep -q 're-reading in 2s'; then
+	echo "ok   - and a delay that fits is waited in full"
+	pass=$((pass + 1))
+else
+	echo "FAIL - a delay that fits was shortened"
+	printf '%s\n' "$fits_out" | sed 's/^/       /'
+	fail=$((fail + 1))
+fi
+
+# The transfers: the deadline handed to curl is what is left of the budget.
+# The spy records the --max-time of every call and answers for it.
+build_archive
+mkdir -p "$WORK/limitspy"
+cat > "$WORK/limitspy/curl" <<SPY
+#!/bin/sh
+echo "\$*" >> "$WORK/limitspy/log"
+exec $(command -v curl) "\$@"
+SPY
+chmod +x "$WORK/limitspy/curl"
+: > "$WORK/limitspy/log"
+PATH="$WORK/limitspy:$PATH" "$VERIFY" "$BASE" "$TRUSTED_ASC" 1 0 5 >/dev/null 2>&1 || true
+tight_max="$(sed -n 's/.*--max-time \([0-9]*\).*/\1/p' "$WORK/limitspy/log" | sort -n | tail -1)"
+tight_retry="$(sed -n 's/.*--retry-max-time \([0-9]*\).*/\1/p' "$WORK/limitspy/log" | sort -n | tail -1)"
+: > "$WORK/limitspy/log"
+PATH="$WORK/limitspy:$PATH" "$VERIFY" "$BASE" "$TRUSTED_ASC" 1 0 600 >/dev/null 2>&1 || true
+roomy_max="$(sed -n 's/.*--max-time \([0-9]*\).*/\1/p' "$WORK/limitspy/log" | sort -n | tail -1)"
+if [ -n "$tight_max" ] && [ "$tight_max" -le 5 ] && [ "$tight_retry" -le 5 ]; then
+	echo "ok   - no transfer is given a deadline past the budget (--max-time $tight_max, --retry-max-time $tight_retry, budget 5)"
+	pass=$((pass + 1))
+else
+	echo "FAIL - a transfer outlasted the budget (--max-time '$tight_max', --retry-max-time '$tight_retry', budget 5)"
+	fail=$((fail + 1))
+fi
+if [ "$roomy_max" = "30" ]; then
+	echo "ok   - and with room to spare the transfer keeps its 30s deadline"
+	pass=$((pass + 1))
+else
+	echo "FAIL - the roomy transfer deadline changed (--max-time '$roomy_max', wanted 30)"
 	fail=$((fail + 1))
 fi
 
