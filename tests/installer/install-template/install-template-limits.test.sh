@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # The installer's limits and its behaviour under a pipe, split from
-# install-template-behaviour.test.sh so neither file passes the line limit:
+# tests/installer/install-template/install-template-behaviour.test.sh so neither
+# file passes the line limit:
 #   * a download over the byte caps, over a real http transfer;
 #   * a package that unpacks past the ceiling, or is compressed twice;
 #   * delivery through a pipe, as `curl ... | sudo sh` delivers it, with children
@@ -11,7 +12,7 @@
 # Requires: gpg, dpkg-deb, curl, ar, python3.
 # shellcheck disable=SC1091 # the path is built at run time
 # shellcheck disable=SC2154 # pass and fail are counted by the sourced fixture
-. "$(cd "$(dirname "$0")/../fixtures/installer" && pwd)/fixture.sh"
+. "$(cd "$(dirname "$0")/../../fixtures/installer" && pwd)/fixture.sh"
 
 # --- delivered through a pipe, as `curl ... | sudo sh` delivers it ----------------
 #

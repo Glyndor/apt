@@ -3,7 +3,7 @@
 # later signature check would also refuse it. Use real packages and signatures.
 # shellcheck disable=SC1091 # shared fixture path is resolved at runtime
 # shellcheck disable=SC2154 # the sourced fixture owns fingerprints and counters
-. "$(cd "$(dirname "$0")/../fixtures/installer" && pwd)/fixture.sh"
+. "$(cd "$(dirname "$0")/../../fixtures/installer" && pwd)/fixture.sh"
 
 # Prove that the sandbox can accept and install the same package shape.
 DEB="$(mkdeb populated good no)"

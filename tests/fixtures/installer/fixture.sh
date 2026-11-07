@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # Shared fixture for the installer suites: key material, fixture packages and the
-# sandbox the installer runs in. Sourced by tests/installer/*.test.sh, which sit
-# two levels below the repository root.
+# sandbox the installer runs in. Sourced by
+# tests/installer/install-template/*.test.sh.
+#
+# The repository root is resolved from this file's own location, the way the
+# other shared helpers under tests/fixtures/ resolve it, and not from the
+# caller's $0: the folder that holds the suites is not the folder that holds
+# this file, so the number of levels between a caller and the root is not the
+# number between this file and the root, and a resolution that followed the
+# caller broke every time one of them moved.
 # shellcheck disable=SC2034 # the fingerprints and counters are read by the suites
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 TEMPLATE="$HERE/scripts/installer/install-template.sh"
 WORK="$(mktemp -d)"
 trap 'gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK"' EXIT

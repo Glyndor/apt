@@ -230,28 +230,28 @@ tests/installer/install-template.test.sh
 	scripts/installer/**
 	tests/installer/**
 
-tests/installer/install-template-behaviour.test.sh
+tests/installer/install-template/install-template-behaviour.test.sh
 	scripts/installer/**
 	tests/fixtures/**
 	tests/installer/**
 
-tests/installer/install-template-empty-keyring.test.sh
+tests/installer/install-template/install-template-empty-keyring.test.sh
 	scripts/installer/**
 	tests/fixtures/**
 	tests/installer/**
 	keyring/**
 
-tests/installer/install-template-tmpdir.test.sh
+tests/installer/install-template/install-template-tmpdir.test.sh
 	scripts/installer/**
 	tests/fixtures/**
 	tests/installer/**
 
-tests/installer/install-template-limits.test.sh
+tests/installer/install-template/install-template-limits.test.sh
 	scripts/installer/**
 	tests/fixtures/**
 	tests/installer/**
 
-tests/installer/install-template-delivery.test.sh
+tests/installer/install-template/install-template-delivery.test.sh
 	scripts/installer/**
 	scripts/build/**
 	tests/installer/**
