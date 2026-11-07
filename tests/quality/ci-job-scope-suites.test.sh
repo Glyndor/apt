@@ -66,6 +66,24 @@ decide() {
 }
 ALL="$SUITES"
 
+# A suite whose entry does not list its own file still runs when only that file
+# changes (issue #370). The control is the resolver without the condition.
+SELF_MAP=$'tests/d/four.test.sh\n\tscripts/d/**\n'
+repo self
+git -C "$R" checkout -q main; mkdir -p "$R/tests/d"; printf 'x\n' > "$R/tests/d/four.test.sh"
+git -C "$R" add -A; git -C "$R" commit -qm "the suite"
+base_map "$SELF_MAP"
+echo more >> "$R/tests/d/four.test.sh"; merge
+SUITES="tests/d/four.test.sh"
+check "a suite whose entry omits its own file still runs when only it changes" \
+	"tests/d/four.test.sh" "$(decide)"
+sed 's/if candidate in paths or affects/if affects/' "$RESOLVER" > "$WORK/resolver-cut.sh"
+check "the sabotage changed the resolver" "1" "$(cmp -s "$RESOLVER" "$WORK/resolver-cut.sh" && echo 0 || echo 1)"
+cp "$WORK/resolver-cut.sh" "$R/scripts/quality/ci-job-scope.sh"
+check "without the condition that suite is skipped (the run is the condition's)" \
+	"" "$(decide)"
+SUITES="tests/a/one.test.sh tests/b/two.test.sh tests/c/three.test.sh"
+
 repo docs; echo more >> "$R/DOCS.md"; merge
 check "a change no entry covers skips every mapped suite, and the unmapped one still runs" \
 	"tests/c/three.test.sh" "$(decide)"
