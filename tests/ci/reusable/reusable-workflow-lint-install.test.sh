@@ -58,6 +58,19 @@ check "the assertion was extracted from the workflow" "1" \
 	"$(grep -c 'INSTALL_PATTERNS' "$WORK/real.sh" | awk '{print ($1>0)}')"
 check "the control differs from the shipped assertion" "1" \
 	"$(cmp -s "$WORK/real.sh" "$WORK/blind.sh" && echo 0 || echo 1)"
+# The second control: the secret reaches the job only the way it used to be
+# recognised, as secrets.<id> written in the job itself (issue #369).
+python3 -I - "$WORK/real.sh" "$WORK/oldsecret.sh" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+old_re = 'r"(?<!\\w)secrets\\.[A-Za-z_]\\w*"\n'
+s, n1 = re.subn(r'r"\(\?<!\\w\)secrets\(\?:[^\n]*"\n', lambda m: old_re, s)
+s, n2 = re.subn(r"SECRET_RE\.search\(job_text\) or env_carries_secret\(workflow_env\)", "SECRET_RE.search(job_text)", s)
+assert n1 == 1 and n2 == 1, (n1, n2)
+open(sys.argv[2], "w").write(s)
+PY
+check "the second control differs from the shipped assertion" "1" \
+	"$(cmp -s "$WORK/real.sh" "$WORK/oldsecret.sh" && echo 0 || echo 1)"
 
 # plant <secret: job|later|none> <run> [job-env] [step-env] [workflow-env]
 # One job `build` with one step running <run>. `job` puts the secret in the job
@@ -92,6 +105,10 @@ case_() {
 		check "  and without the new detection it is accepted" \
 			"pass" "$(verdict "$WORK/blind.sh")"
 	fi
+	if [ "$class" = sec ]; then
+		check "  and with the old way of finding the secret it is accepted" \
+			"pass" "$(verdict "$WORK/oldsecret.sh")"
+	fi
 }
 
 APT='sudo apt-get update -qq
@@ -125,6 +142,13 @@ case_ "brew style with an empty value" flag new job 'brew style Formula/*.rb' 'H
 case_ "brew style with the job value cleared by the step" flag new job 'brew style Formula/*.rb' 'HOMEBREW_NO_AUTO_UPDATE: "1"' 'HOMEBREW_NO_AUTO_UPDATE: ""'
 case_ "the same install in a job with no secret" pass old none "$APT"
 case_ "an install that only appears in a comment" pass old job '# sudo apt-get install -y tool'
+
+# --- where the secret comes from (issue #369) ---------------------------------
+case_ "brew install, secret indexed with single quotes in the job env" flag sec none 'brew install x' "TOKEN: \${{ secrets['DEPLOY_TOKEN'] }}"
+case_ "brew install, secret indexed with double quotes in the job env" flag sec none 'brew install x' 'TOKEN: ${{ secrets["DEPLOY_TOKEN"] }}'
+case_ "apt-get install, secret in the workflow env" flag sec none "$APT" '' '' 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}'
+case_ "apt-get install, secret indexed in the workflow env" flag sec none "$APT" '' '' "TOKEN: \${{ secrets['DEPLOY_TOKEN'] }}"
+case_ "apt-get install, workflow env holding no secret" pass none none "$APT" '' '' 'LANG: C'
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
