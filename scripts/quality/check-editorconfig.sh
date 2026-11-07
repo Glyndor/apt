@@ -18,12 +18,14 @@
 #   charset = utf-8           a stray byte outside UTF-8 makes grep, sed and awk
 #                             behave differently depending on the locale
 #
-# WHAT IS DELIBERATELY NOT CHECKED, with the number that decided it:
+# WHAT IS DELIBERATELY NOT CHECKED, with the reason that decided it:
 #
-#   max_line_length = 120     19 files in apt, 11 in homebrew-tap and 10 in
-#                             scoop-bucket exceed it today, nearly all of them
-#                             prose comments explaining a decision. Enforcing it
-#                             would open with ~40 reds across the three, and a
+#   max_line_length = 120     many files in each of the three repositories exceed
+#                             it, nearly all of them prose comments explaining a
+#                             decision. The count is not written here: it read
+#                             "19, 11 and 10 files" and was off by a factor of
+#                             four the next time anybody measured it. Enforcing
+#                             it would open with a long list of reds, and a
 #                             gate that starts red is one somebody switches off.
 #                             It also fights the house style, which prefers a
 #                             long sentence to a wrapped one. Left out on
