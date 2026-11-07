@@ -82,8 +82,14 @@ gpg --batch --quiet --import "$PUBKEY_ASC" \
 # fetch <url> <destination> <max-bytes>
 # One bounded read. --max-time bounds an attempt and --retry-max-time bounds
 # the sequence, so a peer that never answers cannot hold the publish.
+# Cache-Control: no-cache asks the edge to revalidate, so a stale copy of the
+# index is not read as the baseline. It lowers the chance, it is not the
+# defence: an older signed index can only make this check pass more releases
+# than it should, never fewer, and the publish still rebuilds the archive from
+# the pinned release, so this check is one layer against a mistaken or hostile
+# re-marking of an old release, not a freshness proof of the served archive.
 fetch() {
-	curl -fsS --retry 2 --retry-all-errors --retry-delay 2 \
+	curl -fsS -H 'Cache-Control: no-cache' --retry 2 --retry-all-errors --retry-delay 2 \
 		--max-time 20 --retry-max-time 40 \
 		--max-filesize "$3" "$1" -o "$2"
 }
