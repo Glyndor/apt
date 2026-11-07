@@ -7,7 +7,7 @@
 # The archive, the keys and the local HTTP server come from
 # tests/fixtures/verify/verify-published-fixture.sh. The index and the pool are in
 # tests/verify/verify-published.test.sh, and the bootstrap pair is in
-# tests/verify/verify-published-bootstrap.test.sh.
+# tests/verify/verify-published/verify-published-bootstrap.test.sh.
 #
 # Each case asserts the script's exit status (0 = archive consistent,
 # non-zero = rejected) so a regression that lets a broken archive through
@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # shellcheck source=tests/fixtures/verify/verify-published-fixture.sh
 . "$HERE/tests/fixtures/verify/verify-published-fixture.sh"
 

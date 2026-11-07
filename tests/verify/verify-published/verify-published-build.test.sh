@@ -4,7 +4,7 @@
 # file:// keeps real curl and GPG verification without a listening socket.
 set -euo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 VERIFY="$HERE/scripts/verify/verify-published.sh"
 FIXTURES="$HERE/tests/fixtures/verify/published-build"
 WORK="$(mktemp -d)"

@@ -8,8 +8,8 @@
 # questions and a case that belongs to one of them reads as if it belonged to
 # the other:
 #
-#   tests/monitoring/check-suite-on-main-cron.test.sh  cron and pull_request
-#   tests/monitoring/check-suite-on-main-push.test.sh  push
+#   tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh  cron and pull_request
+#   tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh  push
 #
 # The fake `gh` all three use comes from
 # tests/fixtures/monitoring/check-suite-on-main-fixture.sh.

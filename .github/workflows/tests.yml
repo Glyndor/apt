@@ -49,10 +49,10 @@ jobs:
         ./tests/ci/suites/check-suite-completeness.test.sh
         ./tests/verify/verify-debs.test.sh
         ./tests/verify/verify-published.test.sh
-        ./tests/verify/verify-published-bootstrap.test.sh
-        ./tests/verify/verify-published-budget.test.sh
-        ./tests/verify/verify-published-packages.test.sh
-        ./tests/verify/verify-published-build.test.sh
+        ./tests/verify/verify-published/verify-published-bootstrap.test.sh
+        ./tests/verify/verify-published/verify-published-budget.test.sh
+        ./tests/verify/verify-published/verify-published-packages.test.sh
+        ./tests/verify/verify-published/verify-published-build.test.sh
         ./tests/verify/check-release-order.test.sh
         ./tests/verify/verify-installers.test.sh
         ./tests/build/build-keyring.test.sh
@@ -65,7 +65,7 @@ jobs:
         ./tests/build/build-repo.test.sh
         ./tests/build/build-repo-expiry.test.sh
         ./tests/publish/purge-cache.test.sh
-        ./tests/publish/purge-cache-budget.test.sh
+        ./tests/publish/purge-cache/purge-cache-budget.test.sh
         ./tests/build/build-index-page.test.sh
         ./tests/build/build-installers.test.sh
         ./tests/installer/install-template.test.sh
@@ -85,7 +85,7 @@ jobs:
         ./tests/publication/publish/publish-workflow-signing-key.test.sh
         ./tests/publish/sync-archive.test.sh
         ./tests/publish/prune-installers.test.sh
-        ./tests/publish/purge-cache-pruned.test.sh
+        ./tests/publish/purge-cache/purge-cache-pruned.test.sh
         ./tests/publication/health-check/health-check-workflow.test.sh
         ./tests/verify/distro-floor.test.sh
         ./tests/ci/policy/locale-pinned.test.sh
@@ -113,8 +113,8 @@ jobs:
         ./tests/ci/reusable/reusable-dependabot-freshness.test.sh
         ./tests/ci/reusable/reusable-schedule-freshness.test.sh
         ./tests/monitoring/check-suite-on-main.test.sh
-        ./tests/monitoring/check-suite-on-main-cron.test.sh
-        ./tests/monitoring/check-suite-on-main-push.test.sh
+        ./tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh
+        ./tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh
         ./tests/ci/reusable/reusable-workflow-lint.test.sh
         ./tests/ci/reusable/reusable-workflow-lint-install.test.sh
       # shellcheck: tests/quality/lint-workflow-shell.test.sh plants a violation and

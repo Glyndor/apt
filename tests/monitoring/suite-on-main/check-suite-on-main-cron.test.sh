@@ -13,7 +13,7 @@
 # On schedule and pull_request the script reads a 30-item page of completed runs
 # and takes the greatest created_at, skipping cancelled runs and counting how
 # many it skipped. The push path is a different set of cases and lives in
-# tests/monitoring/check-suite-on-main-push.test.sh; the path-independent
+# tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh; the path-independent
 # contract (arguments, branch, exit codes) lives in
 # tests/monitoring/check-suite-on-main.test.sh. The fake `gh` both of them use
 # comes from tests/fixtures/monitoring/check-suite-on-main-fixture.sh.
@@ -21,7 +21,7 @@
 # Requires: bash, jq, GNU coreutils.
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # shellcheck source=tests/fixtures/monitoring/check-suite-on-main-fixture.sh
 . "$HERE/tests/fixtures/monitoring/check-suite-on-main-fixture.sh"
 
