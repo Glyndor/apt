@@ -258,6 +258,19 @@ file_sha256() { # $1 = file
 	printf '%s' "${_digest%% *}"
 }
 
+# A path that is opened has to be a regular file, not a link and not a FIFO.
+# gpg, dpkg-deb, sha256sum and cat wait on a FIFO for a writer that never comes,
+# so the installer would hang as root instead of refusing, and the keyring is
+# opened before the package it came from has been verified (issue #373). Plain
+# test, because find is not on every machine and a check that cannot run must
+# not let everything through.
+require_regular_file() { # $1 = path, $2 = what to call it in the message
+	[ -f "$1" ] && [ ! -L "$1" ] && return 0
+	[ -L "$1" ] && fail "$2 ($1) is a symbolic link, not a regular file; nothing was installed"
+	[ -p "$1" ] && fail "$2 ($1) is a FIFO, not a regular file; nothing was installed"
+	fail "$2 ($1) is not a regular file; nothing was installed"
+}
+
 # The directory the work directory is created in: TMPDIR when the environment
 # names one, /tmp otherwise. Resolved to an absolute path with the symlinks
 # followed, because the mode that matters is the one of the directory the work
@@ -415,6 +428,7 @@ mkdir -p "$workdir/extracted"
 # kilobytes can unpack to gigabytes, and this runs as root before any fingerprint
 # is compared, so the data archive is read through a ceiling of the same size and
 # only then unpacked.
+require_regular_file "$verified_deb" "the downloaded package"
 dpkg-deb --fsys-tarfile "$verified_deb" 2>/dev/null \
 	| head -c $((8 * 1024 * 1024 + 1)) > "$workdir/keyring.tar" || true
 [ -s "$workdir/keyring.tar" ] || fail "could not extract the keyring package"
@@ -441,6 +455,7 @@ tar -x -f - -C "$workdir/extracted" --no-same-owner < "$workdir/keyring.tar" \
 # Only primary fingerprints are compared. `--with-colons` emits an `fpr:` line
 # per subkey as well, and a subkey's fingerprint is not something anyone
 # publishes; taking the first `fpr:` after each `pub:` is what isolates them.
+require_regular_file "$workdir/extracted$KEYRING_PATH" "the archive keyring"
 keyring_fprs="$(gpg --show-keys --with-colons "$workdir/extracted$KEYRING_PATH" 2>/dev/null \
 	| awk -F: '/^pub:/{want=1;next} /^fpr:/{if(want){print $10;want=0}}')"
 
@@ -516,8 +531,10 @@ chmod 700 "$workdir/gnupg"
 # the copy made below can be compared with the bytes that were signed.
 # sha256sum is not on every machine; without it the signature check over the
 # copy is what carries the comparison.
+require_regular_file "$verified_deb" "the downloaded package"
 verified_digest="$(file_sha256 "$verified_deb")"
 
+require_regular_file "$workdir/glyndor-archive-keyring.deb.asc" "the detached signature"
 GNUPGHOME="$workdir/gnupg" gpg --no-default-keyring \
 	--keyring "$workdir/extracted$KEYRING_PATH" \
 	--verify "$workdir/glyndor-archive-keyring.deb.asc" \
@@ -555,6 +572,8 @@ fi
 
 # And the signature over the copy itself: equal bytes are not the claim, a
 # valid signature over those bytes is.
+require_regular_file "$workdir/glyndor-archive-keyring.deb.asc" "the detached signature"
+require_regular_file "$install_deb" "the package to install"
 GNUPGHOME="$workdir/gnupg" gpg --no-default-keyring \
 	--keyring "$workdir/extracted$KEYRING_PATH" \
 	--verify "$workdir/glyndor-archive-keyring.deb.asc" \

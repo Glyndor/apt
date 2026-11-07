@@ -246,6 +246,12 @@ tests/installer/install-template/install-template-empty-keyring.test.sh
 	tests/installer/**
 	keyring/**
 
+tests/installer/install-template/install-template-special-files.test.sh
+	scripts/installer/**
+	tests/fixtures/**
+	tests/installer/**
+	keyring/**
+
 tests/installer/install-template/install-template-tmpdir.test.sh
 	scripts/installer/**
 	tests/fixtures/**
