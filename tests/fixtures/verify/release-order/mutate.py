@@ -33,6 +33,13 @@ changes = {
     "once": ('if len(fields.get("Version", [])) != 1:',
              'if len(fields.get("Version", [])) < 1:'),
     "arch": ('if declared - listed:', 'if False:'),
+    # The full Debian version comparison, the check that candidates exist, that
+    # they are the product, and that their versions are valid.
+    "debian": [('if comparison.returncode == 0:', 'if False:'),
+               ('if comparison.returncode != 1:', 'if False:')],
+    "debian_pass": ('if comparison.returncode == 0:', 'if True:'),
+    "nodebs": ('if not debs:', 'if False:'),
+    "package": ('package.stdout.strip() != product or ', ''),
 }
 if mutation == "gpgv":
     start = text.index('if ! gpgv --keyring')

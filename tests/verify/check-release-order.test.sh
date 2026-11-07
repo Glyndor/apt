@@ -57,6 +57,21 @@ snapshot arch-gap
 TAG=v2.5.0
 case_with_control 'a declared architecture with no Packages file is refused' 1 'lists no Packages file' arch
 
+# --- the full Debian version, not only the release the tag names -------------
+# The tag advances while the package goes back: the epoch or the revision is
+# dropped, and apt would treat the candidate as a downgrade.
+snapshot epoch
+TAG=v5.17.0
+CAND=5.17.0 case_with_control 'a candidate without the served epoch is refused' 1 'in Debian version order' debian
+CAND=2:5.17.0-1 case_with_control 'a candidate that keeps the epoch and advances passes' 0 'is not older' debian_pass
+snapshot revision
+TAG=v5.16.0
+CAND=5.16.0 case_with_control 'a candidate with a lower revision is refused' 1 'in Debian version order' debian
+CAND=5.16.0-2 case_with_control 'a candidate with a higher revision passes' 0 'is not older' debian_pass
+TAG=v5.17.0
+CAND=NONE case_with_control 'no candidate .deb is refused' 1 'no candidate .deb files' nodebs
+CAND_PACKAGE=other case_with_control 'a candidate that is another package is refused' 1 'cannot read candidate Package/Version' package
+
 snapshot new
 TAG=v3.0.0
 case_with_control 'trusted signature positive control' 0 'is not older' greater
@@ -89,6 +104,7 @@ snapshot near-cap
 case_with_control 'valid signed InRelease just under cap passes' 0 'is not older' lower-cap
 snapshot new
 TAG=not-semver
+CAND=99:1.0.0
 case_with_control 'non-SemVer tag fails comparison' 1 'not a valid SemVer' semver
 
 echo "$pass passed, $fail failed"
