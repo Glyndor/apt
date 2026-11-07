@@ -24,7 +24,7 @@ def check(ok, message):
 with tempfile.TemporaryDirectory() as temp:
     work = Path(temp)
     (work / 'bin').mkdir()
-    (work / 'bin/aws').symlink_to(root / 'tests/publish/fixtures/aws.py')
+    (work / 'bin/aws').symlink_to(root / 'tests/fixtures/publish/aws.py')
     env = dict(os.environ, PATH=str(work / 'bin') + ':' + os.environ['PATH'],
                BUCKET=str(work / 'bucket'), FAKE_BUCKET=str(work / 'bucket'), AWS_CALLS=str(work / 'calls'),
                AWS_WRITES=str(work / 'writes'), DELETE_STATE=str(work / 'deletes'))

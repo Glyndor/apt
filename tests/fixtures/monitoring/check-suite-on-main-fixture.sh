@@ -22,7 +22,7 @@
 #
 # Requires: bash, jq, GNU coreutils.
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 GATE="$HERE/scripts/monitoring/check-suite-on-main.sh"
 
 WORK="$(mktemp -d)"

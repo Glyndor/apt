@@ -18,7 +18,7 @@
 #
 # Requires: gpg, curl, python3, sha256sum.
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 VERIFY="$HERE/scripts/verify/verify-published.sh"
 WORK="$(mktemp -d)"
 SITE="$WORK/site"

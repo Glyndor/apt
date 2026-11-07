@@ -11,15 +11,15 @@
 # path, and the check that says so must say it for `.` and `..` too.
 #
 # The archive, the keys and the local HTTP server come from
-# tests/verify/verify-published-fixture.sh.
+# tests/fixtures/verify/verify-published-fixture.sh.
 #
 # Requires: gpg, curl, python3, sha256sum.
 
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# shellcheck source=tests/verify/verify-published-fixture.sh
-. "$HERE/tests/verify/verify-published-fixture.sh"
+# shellcheck source=tests/fixtures/verify/verify-published-fixture.sh
+. "$HERE/tests/fixtures/verify/verify-published-fixture.sh"
 
 pass=0
 fail=0

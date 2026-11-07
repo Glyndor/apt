@@ -107,18 +107,22 @@ tests/verify/check-release-order.test.sh
 # building and signing an archive, not in what they read.
 
 tests/verify/verify-published.test.sh
+	tests/fixtures/verify/**
 	scripts/verify/**
 	tests/verify/**
 
 tests/verify/verify-published-bootstrap.test.sh
+	tests/fixtures/verify/**
 	scripts/verify/**
 	tests/verify/**
 
 tests/verify/verify-published-budget.test.sh
+	tests/fixtures/verify/**
 	scripts/verify/**
 	tests/verify/**
 
 tests/verify/verify-published-packages.test.sh
+	tests/fixtures/verify/**
 	scripts/verify/**
 	tests/verify/**
 
@@ -127,6 +131,7 @@ tests/verify/verify-published-packages.test.sh
 # publishes them.
 
 tests/verify/verify-published-build.test.sh
+	tests/fixtures/verify/**
 	scripts/verify/**
 	tests/verify/**
 	keyring/**
@@ -281,16 +286,19 @@ tests/publish/purge-cache-budget.test.sh
 	tests/publish/**
 
 tests/publish/sync-archive.test.sh
+	tests/fixtures/publish/**
 	scripts/publish/**
 	tests/publish/**
 	.github/workflows/publish.yml
 
 tests/publish/prune-installers.test.sh
+	tests/fixtures/publish/**
 	scripts/publish/**
 	tests/publish/**
 	.github/workflows/publish.yml
 
 tests/publish/purge-cache-pruned.test.sh
+	tests/fixtures/publish/**
 	scripts/publish/**
 	tests/publish/**
 	.github/workflows/publish.yml
@@ -439,15 +447,18 @@ tests/monitoring/check-reusable-drift.test.sh
 	.github/workflows/**
 
 tests/monitoring/check-suite-on-main.test.sh
+	tests/fixtures/monitoring/**
 	scripts/monitoring/**
 	tests/monitoring/**
 	.github/workflows/freshness.yml
 
 tests/monitoring/check-suite-on-main-cron.test.sh
+	tests/fixtures/monitoring/**
 	scripts/monitoring/**
 	tests/monitoring/**
 
 tests/monitoring/check-suite-on-main-push.test.sh
+	tests/fixtures/monitoring/**
 	scripts/monitoring/**
 	tests/monitoring/**
 

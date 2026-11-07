@@ -5,7 +5,7 @@
 # unbounded download.
 #
 # The archive, the keys and the local HTTP server come from
-# tests/verify/verify-published-fixture.sh. The index and the pool are in
+# tests/fixtures/verify/verify-published-fixture.sh. The index and the pool are in
 # tests/verify/verify-published.test.sh, and the bootstrap pair is in
 # tests/verify/verify-published-bootstrap.test.sh.
 #
@@ -18,8 +18,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# shellcheck source=tests/verify/verify-published-fixture.sh
-. "$HERE/tests/verify/verify-published-fixture.sh"
+# shellcheck source=tests/fixtures/verify/verify-published-fixture.sh
+. "$HERE/tests/fixtures/verify/verify-published-fixture.sh"
 
 pass=0
 fail=0

@@ -107,7 +107,7 @@ with tempfile.TemporaryDirectory() as temp:
     (work / 'scripts').symlink_to(root / 'scripts', target_is_directory=True)
     (work / 'bin').mkdir()
     for command in ('aws', 'curl'):
-        (work / 'bin' / command).symlink_to(root / 'tests/publish/fixtures' / (command + '.py'))
+        (work / 'bin' / command).symlink_to(root / 'tests/fixtures/publish' / (command + '.py'))
     for name, body in [('publish', publish), ('purge', purge)]:
         (work / (name + '.sh')).write_text(body)
     # Separate bash -e processes match Actions steps. A failed step stops the job.
