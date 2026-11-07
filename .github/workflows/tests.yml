@@ -69,11 +69,11 @@ jobs:
         ./tests/build/build-index-page.test.sh
         ./tests/build/build-installers.test.sh
         ./tests/installer/install-template.test.sh
-        ./tests/installer/install-template-behaviour.test.sh
-        ./tests/installer/install-template-empty-keyring.test.sh
-        ./tests/installer/install-template-limits.test.sh
-        ./tests/installer/install-template-tmpdir.test.sh
-        ./tests/installer/install-template-delivery.test.sh
+        ./tests/installer/install-template/install-template-behaviour.test.sh
+        ./tests/installer/install-template/install-template-empty-keyring.test.sh
+        ./tests/installer/install-template/install-template-limits.test.sh
+        ./tests/installer/install-template/install-template-tmpdir.test.sh
+        ./tests/installer/install-template/install-template-delivery.test.sh
         ./tests/installer/unattended-upgrades.test.sh
         ./tests/build/architectures-agree.test.sh
         ./tests/installer/readme-bootstrap.test.sh

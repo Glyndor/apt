@@ -8,7 +8,7 @@
 # Requires: dpkg-deb, python3 is not needed.
 set -uo pipefail
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'chmod -R u+rwx "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 pass=0; fail=0

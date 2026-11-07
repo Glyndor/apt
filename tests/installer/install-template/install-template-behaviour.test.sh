@@ -22,7 +22,7 @@
 # Requires: gpg, dpkg-deb, curl with the file:// protocol.
 # shellcheck disable=SC1091 # the path is built at run time
 # shellcheck disable=SC2154 # pass and fail are counted by the sourced fixture
-. "$(cd "$(dirname "$0")/../fixtures/installer" && pwd)/fixture.sh"
+. "$(cd "$(dirname "$0")/../../fixtures/installer" && pwd)/fixture.sh"
 
 # --- the expected key is accepted -------------------------------------------
 #
