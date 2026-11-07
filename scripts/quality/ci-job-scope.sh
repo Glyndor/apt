@@ -167,7 +167,9 @@ def suites(candidates):
             # The map does not know this suite, so it always runs.
             keep.append(candidate)
             continue
-        if affects(patterns, paths) or affects(GLOBAL_INPUTS, paths):
+        # A suite that changes is a suite whose verdict can change, whether or
+        # not its entry lists its own file (issue #370).
+        if candidate in paths or affects(patterns, paths) or affects(GLOBAL_INPUTS, paths):
             keep.append(candidate)
     return keep
 
