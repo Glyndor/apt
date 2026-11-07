@@ -52,7 +52,9 @@ sed -i 's/Architecture: arm64/Architecture: ar_64/' "$DIST/main/binary-arm64/Pac
 # the words passed with the budget condition deleted, measured while writing
 # this. The retry count is what the budget actually changes.
 budget_out="$("$VERIFY" "$BASE" "$TRUSTED_ASC" 9 1 1 2>&1 || true)"
-budget_retries="$(printf '%s' "$budget_out" | grep -c 'not yet consistent, re-reading')"
+# grep -c exits 1 on zero matches, and a slow runner spends the whole one-second
+# budget on the first attempt, so zero re-reads is a correct answer here.
+budget_retries="$(printf '%s' "$budget_out" | grep -c 'not yet consistent, re-reading' || true)"
 if [ "$budget_retries" -le 2 ]; then
 	echo "ok   - the budget stops the retries early ($budget_retries re-reads of a possible 8)"
 	pass=$((pass + 1))
