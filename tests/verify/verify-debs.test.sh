@@ -150,7 +150,7 @@ assert_error 1 "no signature" "missing signature is rejected as missing, not as 
 # --- Case 3: a tampered .deb is rejected. ---
 d="$WORK/case3"; mkdir -p "$d"; cp "$WORK/good.deb" "$d/good.deb"; cp "$d/../case1/good.deb.sig" "$d/good.deb.sig"
 printf 'tamper' >> "$d/good.deb"
-assert 1 "tampered package is rejected" -- "$VERIFY" "$d" "$WORK/key.b64"
+assert_error 1 "invalid signature for" "tampered package is rejected as tampered" -- "$VERIFY" "$d" "$WORK/key.b64"
 
 # --- Case 4: multi-key file admits a .deb the second key signed. ---
 d="$WORK/case4"; mkdir -p "$d"; cp "$WORK/good.deb" "$d/good.deb"; cp "$WORK/case1/good.deb.sig" "$d/good.deb.sig"
@@ -158,20 +158,20 @@ assert 0 "multi-key file admits a valid package" -- "$VERIFY" "$d" "$WORK/keys-m
 
 # --- Case 5: a key file that does not match is rejected. ---
 d="$WORK/case5"; mkdir -p "$d"; cp "$WORK/good.deb" "$d/good.deb"; cp "$WORK/case1/good.deb.sig" "$d/good.deb.sig"
-assert 1 "non-matching key rejects a valid signature" -- "$VERIFY" "$d" "$WORK/key-wrong.b64"
+assert_error 1 "invalid signature for" "non-matching key rejects a valid signature" -- "$VERIFY" "$d" "$WORK/key-wrong.b64"
 
 # --- Case 6: a validly-signed .deb whose control Package is the reserved
 #            keyring name is rejected (cannot shadow the local keyring). ---
 d="$WORK/case6"; mkdir -p "$d"
 deb="$(make_deb evil glyndor-archive-keyring)"; cp "$deb" "$d/"; sign "$d/evil.deb"
-assert 1 "reserved keyring package name is rejected" -- "$VERIFY" "$d" "$WORK/key.b64"
+assert_error 1 "declares the reserved package name" "reserved keyring package name is rejected for its name" -- "$VERIFY" "$d" "$WORK/key.b64"
 
 # --- Case 7: a .deb whose control data dpkg-deb cannot read is rejected even
 #            with a valid signature (the reserved-name gate must never be
 #            skipped for an unclassifiable package). ---
 d="$WORK/case7"; mkdir -p "$d"
 printf 'not a real debian package' > "$d/garbage.deb"; sign "$d/garbage.deb"
-assert 1 "unreadable package control is rejected" -- "$VERIFY" "$d" "$WORK/key.b64"
+assert_error 1 "cannot read the Package control field" "unreadable package control is rejected as unreadable" -- "$VERIFY" "$d" "$WORK/key.b64"
 
 # --- Case 8: a validly-signed .deb whose control Package does not match the
 #            expected_package argument is rejected, because the shared release key
