@@ -569,7 +569,7 @@ case "$1" in
 esac
 GPGSTUB
 chmod +x "$WORK/gpg-stub"
-cp "$BIN/id" "$BIN/dpkg" "$INSTALLER_PATH/"
+cp "$BIN/id" "$BIN/dpkg" "$BIN/stat" "$INSTALLER_PATH/"
 # The upgrade step looks for the engine; with it present the case below sees
 # only the package operations it is about.
 printf '#!/bin/sh\nexit 0\n' > "$INSTALLER_PATH/unattended-upgrade"

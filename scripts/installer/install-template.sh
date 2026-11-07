@@ -186,7 +186,8 @@ glyndor_timer_state() { # prints: enabled | disabled | no-systemd | missing
 
 # --- end output --------------------------------------------------------------
 
-[ "$(id -u)" -eq 0 ] || fail "run this as root: curl -fsSL https://apt.glyndor.net/install/@PRODUCT@ | sudo sh"
+run_uid="$(id -u)"
+[ "$run_uid" -eq 0 ] || fail "run this as root: curl -fsSL https://apt.glyndor.net/install/@PRODUCT@ | sudo sh"
 
 command -v apt-get >/dev/null 2>&1 \
 	|| fail "no apt-get found. @PRODUCT@ ships as a .deb; on a non-Debian system, build from source (https://github.com/Glyndor/@PRODUCT@)"
@@ -206,9 +207,10 @@ command -v dpkg-deb >/dev/null 2>&1 || fail "no dpkg-deb found"
 #
 # So the temporary path is examined before anything is downloaded. A directory
 # writable by group or by others is only safe with the sticky bit: with the
-# sticky bit set only the owner of an entry may rename or remove it, and
-# without it any user with write access may rename the work directory this
-# script created.
+# sticky bit set only the entry's owner, the directory's owner or root may
+# rename or remove it. Without it any user with write access may rename the
+# work directory this script created. The directory's owner must therefore be
+# root or the executing user, even for a private directory or one with sticky.
 #
 # The whole chain is examined, not only its last directory: a TMPDIR under a
 # /tmp that lost its sticky bit is as unsafe as /tmp itself, because that /tmp
@@ -228,23 +230,27 @@ dir_sticky() { # $1 = directory -> 0 when the sticky bit is set
 	find "$1" -prune -perm -1000 -print 2>/dev/null | grep -q .
 }
 
-# The first directory on the path that another user could work in, or nothing
-# when the whole path holds. The sticky bit is what makes a shared directory
-# safe: with it, only the owner of an entry may rename it.
+# Keep GNU stat behind a small helper so PATH stubs can exercise lookup failures.
+# An unreadable owner is not proof of safety; never continue on a stat failure.
+require_safe_dir_owner() { # $1 = directory; refuses an owner able to swap entries
+	_owner_uid="$(stat -c %u "$1" 2>/dev/null)" || fail "could not determine the owner uid of the temporary directory $1; nothing was installed"
+	case "$_owner_uid" in 0|"$run_uid") return 0 ;; esac
+	fail "the temporary directory $1 is owned by uid $_owner_uid, not root or the executing uid $run_uid, so its owner could replace the verified package; nothing was installed"
+}
+
+# The first unsafe mode on the path, or nothing when the whole path holds.
+# Ownership is checked even without find; a sticky bit cannot constrain its owner.
 unsafe_dir_on_path() { # $1 = absolute path -> prints the directory, or nothing
 	_dir="$1"
 	while [ -n "$_dir" ]; do
-		if ! dir_sticky "$_dir" && dir_shared "$_dir"; then
+		require_safe_dir_owner "$_dir"
+		if command -v find >/dev/null 2>&1 && ! dir_sticky "$_dir" && dir_shared "$_dir"; then
 			printf '%s\n' "$_dir"
 			return 0
 		fi
-		if [ "$_dir" = "/" ]; then
-			return 0
-		fi
+		[ "$_dir" = "/" ] && return 0
 		_dir="${_dir%/*}"
-		if [ -z "$_dir" ]; then
-			_dir="/"
-		fi
+		[ -n "$_dir" ] || _dir=/
 	done
 	return 0
 }
@@ -280,15 +286,15 @@ temp_root="${TMPDIR:-/tmp}"
 temp_root_abs="$(cd "$temp_root" 2>/dev/null && pwd -P)" || temp_root_abs=
 
 if [ -n "$temp_root_abs" ]; then
-	if command -v find >/dev/null 2>&1; then
-		unsafe_dir="$(unsafe_dir_on_path "$temp_root_abs")"
-		if [ -n "$unsafe_dir" ]; then
-			fail "the temporary directory $unsafe_dir is writable by its group or by other \
+	# Propagate failures from the command substitution: fail() exits its subshell.
+	unsafe_dir="$(unsafe_dir_on_path "$temp_root_abs")" || exit 1
+	if [ -n "$unsafe_dir" ]; then
+		fail "the temporary directory $unsafe_dir is writable by its group or by other \
 users and has no sticky bit, so another user could replace the package this installer \
 verifies before it is installed; point TMPDIR at a directory only you can write to and \
 run again"
-		fi
-	else
+	fi
+	if ! command -v find >/dev/null 2>&1; then
 		# No way to read the mode bits. The copy and the second signature
 		# check below stand in for it, and the operator is told that the path
 		# was not examined.

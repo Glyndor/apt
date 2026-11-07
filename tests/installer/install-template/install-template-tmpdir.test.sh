@@ -52,14 +52,29 @@ SH
 	chmod +x "$WORK/bin/$cmd"
 done
 
+cat > "$WORK/bin/stat" <<'STATSTUB'
+#!/bin/sh
+# The installer pretends to be root, so every directory it examines is reported
+# as owned by root. STUB_OWNER_PATH and STUB_OWNER_UID name one directory owned
+# by someone else; STUB_STAT_FAIL makes the owner lookup fail. Anything but the
+# owner lookup goes to the real stat.
+if [ "$1" = "-c" ] && [ "$2" = "%u" ]; then
+	[ -z "${STUB_STAT_FAIL:-}" ] || exit 1
+	if [ -n "${STUB_OWNER_PATH:-}" ] && [ "$3" = "$STUB_OWNER_PATH" ]; then echo "$STUB_OWNER_UID"; else echo 0; fi
+	exit 0
+fi
+exec @REALSTAT@ "$@"
+STATSTUB
+sed -i "s|@REALSTAT@|$(command -v stat)|" "$WORK/bin/stat"; chmod +x "$WORK/bin/stat"
+
 # run <tmpdir>: the installer through a pipe with TMPDIR set (or unset when empty).
 run() {
 	rm -f "$WORK/state/commands" "$WORK/state/keyring" "$WORK/state/dpkg-arg" "$WORK/state/swapped"
 	if [ -n "$1" ]; then
-		env -i PATH="$WORK/bin:$PATH" HOME="$WORK" WORK="$WORK" TMPDIR="$1" KEYRING_URL="file://$WORK/keyring.deb" \
+		env -i PATH="$WORK/bin:$PATH" HOME="$WORK" WORK="$WORK" TMPDIR="$1" STUB_OWNER_PATH="${STUB_OWNER_PATH:-}" STUB_OWNER_UID="${STUB_OWNER_UID:-}" STUB_STAT_FAIL="${STUB_STAT_FAIL:-}" KEYRING_URL="file://$WORK/keyring.deb" \
 			/bin/sh < "$WORK/install/testpkg" > "$WORK/out" 2>&1
 	else
-		env -i PATH="$WORK/bin:$PATH" HOME="$WORK" WORK="$WORK" KEYRING_URL="file://$WORK/keyring.deb" \
+		env -i PATH="$WORK/bin:$PATH" HOME="$WORK" WORK="$WORK" STUB_OWNER_PATH="${STUB_OWNER_PATH:-}" STUB_OWNER_UID="${STUB_OWNER_UID:-}" STUB_STAT_FAIL="${STUB_STAT_FAIL:-}" KEYRING_URL="file://$WORK/keyring.deb" \
 			/bin/sh < "$WORK/install/testpkg" > "$WORK/out" 2>&1
 	fi
 	rc=$?
@@ -119,6 +134,39 @@ rm -f "$WORK/state/swap"
 
 run "$WORK/t/private"
 check "control: without the swap it installs again" "0" "$rc"
+
+# --- who owns the directories on the path -------------------------------------
+# Mode bits say who MAY write; the owner can always rename. As root with a
+# TMPDIR under a directory another user owns, that user can swap the work
+# directory after the last verification, so the owner of every directory on the
+# path has to be root. The stat stub reports root for every directory except the
+# one a case names.
+mkdir -m 700 "$WORK/t/owned"
+STUB_OWNER_PATH="$WORK/t/owned" STUB_OWNER_UID=4242 run "$WORK/t/owned"
+check "a TMPDIR owned by another user is refused" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+check "and dpkg is never reached" "0" "$(reached_dpkg)"
+check "and the message names the directory and the uid" "1" "$(said "owned by uid 4242")"
+check "and says the owner could replace the package" "1" "$(said 'could replace the verified package')"
+mkdir -p "$WORK/t/parent/child"; chmod 700 "$WORK/t/parent" "$WORK/t/parent/child"
+STUB_OWNER_PATH="$WORK/t/parent" STUB_OWNER_UID=4242 run "$WORK/t/parent/child"
+check "a TMPDIR under a directory owned by another user is refused" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+check "and the message names the ancestor" "1" "$(said "$WORK/t/parent is owned by uid 4242")"
+STUB_STAT_FAIL=1 run "$WORK/t/private"
+check "an owner that cannot be read is refused, not assumed safe" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+check "and the message says the owner could not be determined" "1" "$(said 'could not determine the owner')"
+run "$WORK/t/private"
+check "control: every directory owned by root installs" "0" "$rc"
+# Control: the installer without the owner check. The hostile TMPDIR then installs.
+python3 -I - "$WORK/install/testpkg" "$WORK/install/testpkg-noowner" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+old = '\t\trequire_safe_dir_owner "$_dir"\n'
+assert old in s
+open(sys.argv[2], "w").write(s.replace(old, "", 1))
+PY
+env -i PATH="$WORK/bin:$PATH" HOME="$WORK" WORK="$WORK" TMPDIR="$WORK/t/owned" STUB_OWNER_PATH="$WORK/t/owned" STUB_OWNER_UID=4242 KEYRING_URL="file://$WORK/keyring.deb" \
+	/bin/sh < "$WORK/install/testpkg-noowner" > "$WORK/out" 2>&1
+check "control: without the owner check the hostile TMPDIR installs" "0" "$?"
 
 echo
 echo "$pass passed, $fail failed"
