@@ -47,7 +47,20 @@ jobs:
             echo "::error::could not determine the pull request base ref; this reusable must be called from a pull_request-triggered workflow"
             exit 1
           fi
-          if git diff --quiet "origin/${BASE}...HEAD"; then
-            echo "::error::this pull request has an empty diff against ${BASE}"
-            exit 1
-          fi
+          # git diff --quiet exits 0 for no difference, 1 for a difference and
+          # more for "could not compare" (a base that does not resolve exits
+          # 128). Only 0 is an empty diff; reading every non-zero as a
+          # difference let an unreadable base pass as approval.
+          rc=0
+          git diff --quiet "origin/${BASE}...HEAD" || rc=$?
+          case "$rc" in
+            0)
+              echo "::error::this pull request has an empty diff against ${BASE}"
+              exit 1
+              ;;
+            1) ;;
+            *)
+              echo "::error::could not compare this pull request with origin/${BASE} (git diff exited ${rc})"
+              exit 1
+              ;;
+          esac

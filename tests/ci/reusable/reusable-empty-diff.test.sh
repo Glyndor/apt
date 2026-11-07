@@ -120,6 +120,27 @@ git -C "$repo" commit -q --allow-empty -m "no changes"
 out="$(run_step main)"; rc=$?
 check "a branch whose only commit is empty still fails" "1" "$rc"
 
+# --- a base that cannot be compared is not an approval -------------------
+# git diff exits 128 when the base does not resolve. The step used to read every
+# non-zero exit as "there are differences" and pass.
+git -C "$repo" checkout -q change 2>/dev/null || git -C "$repo" checkout -q -b change origin/main
+out="$(run_step no-such-base)"; rc=$?
+check "a base that does not resolve fails instead of passing" "1" "$rc"
+check "and says the comparison could not be made" "1" \
+	"$(printf '%s' "$out" | grep -c 'could not compare this pull request with origin/no-such-base')"
+check "and does not call it an empty diff" "0" \
+	"$(printf '%s' "$out" | grep -c 'has an empty diff')"
+# Control: the step as it was, every non-zero exit read as a difference.
+cat > "$WORK/old-step.sh" <<'OLD'
+set -euo pipefail
+if git diff --quiet "origin/${BASE}...HEAD"; then
+  echo "::error::this pull request has an empty diff against ${BASE}"
+  exit 1
+fi
+OLD
+out="$( cd "$repo" && BASE=no-such-base bash "$WORK/old-step.sh" 2>&1 )"; rc=$?
+check "control: the old step passes the unresolvable base" "0" "$rc"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
