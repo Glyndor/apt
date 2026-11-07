@@ -82,6 +82,7 @@ jobs:
         ./tests/publication/publish/publish-workflow.test.sh
         ./tests/publication/publish/publish-workflow-sync.test.sh
         ./tests/publication/publish/publish-workflow-assets.test.sh
+        ./tests/publication/publish/publish-workflow-verify-debs.test.sh
         ./tests/publication/publish/publish-workflow-bootstrap.test.sh
         ./tests/publication/publish/publish-workflow-signing-key.test.sh
         ./tests/publish/sync-archive.test.sh
