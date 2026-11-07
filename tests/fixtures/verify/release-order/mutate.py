@@ -22,6 +22,17 @@ changes = {
                   'MAX_INRELEASE_BYTES=$((1024 * 1024 - 4096))'),
     "semver": ('new = precedence(candidate)', 'new = precedence("9.0.0")'),
     "description": ('if not line or line[0] in " \\t":', 'if not line:'),
+    # The parser that opened a stanza at its Package line and skipped one with
+    # no Version: Version ahead of Package no longer reaches the product.
+    "order": [
+        ('for stanza in re.split(r"\\n[ \\t]*\\n", text.replace("\\r\\n", "\\n")):',
+         'for stanza in re.split(r"\\n(?=Package:)", text):'),
+        ('sys.exit(f"a stanza of {product} does not declare its Version exactly once")',
+         'continue'),
+    ],
+    "once": ('if len(fields.get("Version", [])) != 1:',
+             'if len(fields.get("Version", [])) < 1:'),
+    "arch": ('if declared - listed:', 'if False:'),
 }
 if mutation == "gpgv":
     start = text.index('if ! gpgv --keyring')
@@ -38,8 +49,9 @@ elif mutation == "fetch":
     assert block.count('exit 1') == 1
     text = text[:start] + block.replace('exit 1', 'exit 0') + text[end:]
 else:
-    before, after = changes[mutation]
-    assert text.count(before) == 1, f"inert/ambiguous mutation: {mutation}"
-    text = text.replace(before, after)
+    pairs = changes[mutation]
+    for before, after in pairs if isinstance(pairs, list) else [pairs]:
+        assert text.count(before) == 1, f"inert/ambiguous mutation: {mutation}"
+        text = text.replace(before, after)
 assert text != pathlib.Path(source).read_text(), 'SABOTAGE INERT'
 pathlib.Path(target).write_text(text)

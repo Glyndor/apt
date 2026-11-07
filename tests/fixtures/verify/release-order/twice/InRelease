@@ -1,0 +1,19 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Origin: Glyndor
+Suite: stable
+Architectures: amd64
+SHA256:
+ cfe196c27de04b5b851821b2bbfbe252104fe9565693c2714eb252d5a85ff681 91 main/binary-amd64/Packages
+-----BEGIN PGP SIGNATURE-----
+
+iQEzBAEBCAAdFiEEnVlNkq0aBwHJCY4/J/eAPjCueaIFAmruthcACgkQJ/eAPjCu
+eaLFewf/evgKRDOiWPOvH6bBZAAaK6GSia9ebhyg5UG0aXQbu6St2JSPt4kCUapu
+mUOAtz1kV2fni3yTzguKS16QEjbEIjgNsWal1xEhoScRLB4juiqORs2LRWZCnSta
+y1eO1Pz+0zaIRJ1vR1zDF7m+oSWHbJJhPPoW4R+mvjT+7Aadf1wFF5035AHV8/h3
+Ij5q5Ejp/Y7qJt+l1t3CP8hEG/n6bwMBfU8/ucpVw9PocL1LVO5YYCgYefGXKaWq
+v7IWqU9tbmZ9Eof0g/J7mLLNdbjB0T88qmyXUrmzfSDxrZiKeCm0mgd8p2R//Ph+
+0ZP9H7fMH0A17W3vMF+qjYFn3lW+zQ==
+=DqUv
+-----END PGP SIGNATURE-----

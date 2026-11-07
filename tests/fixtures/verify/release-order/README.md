@@ -14,6 +14,12 @@ independent trust anchor for rejecting signatures from this other key.
 - `epoch`: 2:5.16.0-1.
 - `multi`: amd64 1.0.0 and arm64 2.0.0.
 - `description`: indented Package/Version lines inside a description.
+- `order`: `Version` ahead of `Package` in the stanza (dpkg accepts it).
+- `twice`: a stanza of the product with two `Version` fields.
+- `arch-gap`: the index declares `amd64 arm64` and lists only the amd64
+  Packages file. These three are signed by a second ephemeral RSA-2048 key
+  (the public half sits in each directory as `archive-key.asc`; the private
+  half was not saved), with `gpg --clearsign`, on 2026-11-07.
 - `oversized`: a valid signed body padded beyond 1 MiB. InRelease.gz is gzip
   compressed solely to keep the repository small; it is expanded before curl
   reads it. Raising the cap must make the real script accept its signature.
