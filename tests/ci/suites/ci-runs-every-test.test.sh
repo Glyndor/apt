@@ -90,11 +90,7 @@ printf 'jobs:\n  t:\n    steps:\n      - run: ./tests/wired.test.sh\n' \
 printf '# see ./tests/orphan.test.sh for the rationale\n' \
 	>> "$probe/.github/workflows/ci.yml"
 seen="$( cd "$probe" || exit 1
-	inv="$(grep -rh -v '^[[:space:]]*#' .github/workflows/ \
-		| grep -oE '\./tests/[A-Za-z0-9_./-]+\.test\.sh' \
-		| sed 's|^\./||' | LC_ALL=C sort -u)"
-	pre="$(find tests -name '*.test.sh' -printf '%p\n' | LC_ALL=C sort -u)"
-	LC_ALL=C comm -23 <(printf '%s\n' "$pre") <(printf '%s\n' "$inv") | tr '\n' ' ' )"
+	LC_ALL=C comm -23 <(present) <(invoked | LC_ALL=C sort -u) | tr '\n' ' ' )"
 rm -rf "$probe"
 check "and it reports an unregistered test when there is one" \
 	"tests/orphan.test.sh" "${seen% }"
