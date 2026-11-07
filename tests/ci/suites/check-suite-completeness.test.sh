@@ -65,7 +65,7 @@ self="${BASH_SOURCE[0]##*/}"
 # The job runs every suite on every pull request, and the three slowest of
 # them are integration suites whose verdict does not depend on the change:
 # measured on 2026-11-06, tests/verify/verify-published.test.sh,
-# tests/publish/purge-cache-budget.test.sh and
+# tests/publish/purge-cache/purge-cache-budget.test.sh and
 # tests/publication/health-check/health-check-workflow.test.sh are 46 % of the 151 s the whole
 # suite takes on this repository.
 #

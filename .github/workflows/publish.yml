@@ -471,7 +471,7 @@ jobs:
           # context on three architectures, and it would have failed the run
           # AFTER the sync, leaving a fresh archive behind a stale edge cache.
           # tests/publish/purge-cache.test.sh covers the batching and the fail-closed
-          # paths, and tests/publish/purge-cache-budget.test.sh covers the budget.
+          # paths, and tests/publish/purge-cache/purge-cache-budget.test.sh covers the budget.
           #
           # The budget is the third argument. It lives here rather than in the
           # script's default so that it can be read next to this job's

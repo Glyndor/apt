@@ -11,9 +11,9 @@
 # those paths point at: the .deb objects the index vouches for.
 #
 # The bootstrap pair -- the two files the install line fetches from the root
-# of the archive -- is in tests/verify/verify-published-bootstrap.test.sh, and
+# of the archive -- is in tests/verify/verify-published/verify-published-bootstrap.test.sh, and
 # the budgets and caps are in
-# tests/verify/verify-published-budget.test.sh. The archive, the keys and the
+# tests/verify/verify-published/verify-published-budget.test.sh. The archive, the keys and the
 # local HTTP server come from tests/fixtures/verify/verify-published-fixture.sh.
 #
 # Each case asserts the script's exit status (0 = archive consistent,

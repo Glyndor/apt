@@ -9,8 +9,8 @@
 #
 # Three suites source it:
 #
-#   tests/monitoring/check-suite-on-main-cron.test.sh  the cron and pull_request path
-#   tests/monitoring/check-suite-on-main-push.test.sh  the push path
+#   tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh  the cron and pull_request path
+#   tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh  the push path
 #   tests/monitoring/check-suite-on-main.test.sh       the path-independent contract
 #
 # The script's one dependency on the outside world is `gh`. A fake `gh` on PATH

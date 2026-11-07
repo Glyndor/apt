@@ -5,7 +5,7 @@
 # The test job of .github/workflows/reusable-shell-ci.yml runs every suite on
 # every pull request. Most of them are cheap; three are not, and their cost
 # does not depend on the change: tests/verify/verify-published.test.sh,
-# tests/publish/purge-cache-budget.test.sh and
+# tests/publish/purge-cache/purge-cache-budget.test.sh and
 # tests/publication/health-check/health-check-workflow.test.sh are integration suites that
 # build a signed archive, serve it over a local HTTP server and wait on
 # retries and budgets. Measured on this repository on 2026-11-06, the whole
@@ -111,17 +111,17 @@ tests/verify/verify-published.test.sh
 	scripts/verify/**
 	tests/verify/**
 
-tests/verify/verify-published-bootstrap.test.sh
+tests/verify/verify-published/verify-published-bootstrap.test.sh
 	tests/fixtures/verify/**
 	scripts/verify/**
 	tests/verify/**
 
-tests/verify/verify-published-budget.test.sh
+tests/verify/verify-published/verify-published-budget.test.sh
 	tests/fixtures/verify/**
 	scripts/verify/**
 	tests/verify/**
 
-tests/verify/verify-published-packages.test.sh
+tests/verify/verify-published/verify-published-packages.test.sh
 	tests/fixtures/verify/**
 	scripts/verify/**
 	tests/verify/**
@@ -130,7 +130,7 @@ tests/verify/verify-published-packages.test.sh
 # depends on the keyring it verifies them against and on the workflow that
 # publishes them.
 
-tests/verify/verify-published-build.test.sh
+tests/verify/verify-published/verify-published-build.test.sh
 	tests/fixtures/verify/**
 	scripts/verify/**
 	tests/verify/**
@@ -281,7 +281,7 @@ tests/publish/purge-cache.test.sh
 	scripts/publish/**
 	tests/publish/**
 
-tests/publish/purge-cache-budget.test.sh
+tests/publish/purge-cache/purge-cache-budget.test.sh
 	scripts/publish/**
 	tests/publish/**
 
@@ -297,7 +297,7 @@ tests/publish/prune-installers.test.sh
 	tests/publish/**
 	.github/workflows/publish.yml
 
-tests/publish/purge-cache-pruned.test.sh
+tests/publish/purge-cache/purge-cache-pruned.test.sh
 	tests/fixtures/publish/**
 	scripts/publish/**
 	tests/publish/**
@@ -452,12 +452,12 @@ tests/monitoring/check-suite-on-main.test.sh
 	tests/monitoring/**
 	.github/workflows/freshness.yml
 
-tests/monitoring/check-suite-on-main-cron.test.sh
+tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh
 	tests/fixtures/monitoring/**
 	scripts/monitoring/**
 	tests/monitoring/**
 
-tests/monitoring/check-suite-on-main-push.test.sh
+tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh
 	tests/fixtures/monitoring/**
 	scripts/monitoring/**
 	tests/monitoring/**

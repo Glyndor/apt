@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Execute the shipped publish/purge bodies against local origin and edge trees.
 set -euo pipefail
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../../.."
 python3 - <<'PY'
 import json
 import os

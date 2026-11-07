@@ -10,8 +10,8 @@
 # Three suites source it:
 #
 #   tests/verify/verify-published.test.sh            the index and the pool
-#   tests/verify/verify-published-bootstrap.test.sh  the bootstrap pair
-#   tests/verify/verify-published-budget.test.sh      the budgets and the caps
+#   tests/verify/verify-published/verify-published-bootstrap.test.sh  the bootstrap pair
+#   tests/verify/verify-published/verify-published-budget.test.sh      the budgets and the caps
 #
 # Serving over http:// is deliberate: the script's trust anchor is the archive
 # key, not the transport, and the tests exercise the same path production does.

@@ -12,14 +12,14 @@
 # commit that was just pushed. A reporter that fell back from one to the other
 # would name somebody else's run as the verdict for the push, which is the race
 # the push path exists to break. The cron cases are in
-# tests/monitoring/check-suite-on-main-cron.test.sh and the path-independent
+# tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh and the path-independent
 # contract is in tests/monitoring/check-suite-on-main.test.sh; the fake `gh`
 # both of them use comes from tests/fixtures/monitoring/check-suite-on-main-fixture.sh.
 #
 # Requires: bash, jq, GNU coreutils.
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # shellcheck source=tests/fixtures/monitoring/check-suite-on-main-fixture.sh
 . "$HERE/tests/fixtures/monitoring/check-suite-on-main-fixture.sh"
 
