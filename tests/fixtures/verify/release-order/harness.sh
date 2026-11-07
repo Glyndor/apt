@@ -37,6 +37,7 @@ snapshot() { # old/new use the existing signed snapshots; others the extra key.
 		cp "$FIXTURES/$name/Packages" "$DIST/main/binary-amd64/Packages"
 	else
 		KEY="$EXTRA/archive-key.asc"
+		[ -f "$EXTRA/$name/archive-key.asc" ] && KEY="$EXTRA/$name/archive-key.asc"
 		if [ -f "$EXTRA/$name/InRelease.gz" ]; then
 			python3 -I - "$EXTRA/$name/InRelease.gz" "$DIST/InRelease" <<'PY'
 import gzip
@@ -125,7 +126,7 @@ case_with_control() { # label status output mutation
 		pass="$saved_pass"; fail=$((saved_fail + 1))
 		echo "FAIL - CONTROL survived: $label"
 	else
-		if [ "$want" -eq 1 ] && [ "$mutation" != size ] && [ "$LAST_STATUS" -ne 0 ]; then
+		if [ "$want" -eq 1 ] && [ "$mutation" != size ] && [ "$mutation" != description ] && [ "$LAST_STATUS" -ne 0 ]; then
 			pass="$saved_pass"; fail=$((saved_fail + 1))
 			echo "FAIL - CONTROL rejected for another reason: $label"
 		else

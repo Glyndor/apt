@@ -151,22 +151,28 @@ def upstream(version):
 
 
 def versions_of(text):
-	# The Version of every stanza that declares this product. A stanza opens
-	# at its `Package:` line, not at a blank line: a description may hold one.
+	# The Version of every stanza that declares this product. A stanza is what
+	# lies between blank lines, and its fields come in any order: dpkg accepts
+	# Version before Package, so nothing here may depend on which comes first.
+	# A blank line cannot sit inside a description (that is written " ."), so
+	# the blank line is the boundary. A stanza of this product that does not
+	# say its Version exactly once is an error, not a stanza to skip.
 	found = []
-	fields = {}
-	for line in text.splitlines():
-		if line.startswith("Package:"):
-			if fields.get("Package") == product and "Version" in fields:
-				found.append(fields["Version"])
-			fields = {}
-		if not line or line[0] in " \t":
+	for stanza in re.split(r"\n[ \t]*\n", text.replace("\r\n", "\n")):
+		fields = {}
+		for line in stanza.splitlines():
+			if not line or line[0] in " \t":
+				continue
+			name, sep, value = line.partition(":")
+			if sep:
+				fields.setdefault(name.strip(), []).append(value.strip())
+		if product not in fields.get("Package", []):
 			continue
-		name, sep, value = line.partition(":")
-		if sep:
-			fields[name.strip()] = value.strip()
-	if fields.get("Package") == product and "Version" in fields:
-		found.append(fields["Version"])
+		if len(fields["Package"]) != 1:
+			sys.exit(f"a stanza of {product} names its Package more than once")
+		if len(fields.get("Version", [])) != 1:
+			sys.exit(f"a stanza of {product} does not declare its Version exactly once")
+		found.append(fields["Version"][0])
 	return found
 
 
@@ -239,6 +245,14 @@ for line in section.group(1).splitlines():
 		indexes.append((digest, int(size), name))
 if not indexes:
 	sys.exit("the served index declares no per-architecture Packages file")
+# Every architecture the index declares has to come with its own Packages
+# file: an index that declares arm64 and lists only amd64 would be compared
+# against the version of one architecture and say nothing of the other.
+arch = re.search(r"(?m)^Architectures:[ \t]*(.*)$", body)
+declared = set(arch.group(1).split()) - {"all", "source"} if arch else set()
+listed = {name.split("/")[1][len("binary-"):] for _, _, name in indexes}
+if declared - listed:
+	sys.exit("the served index declares architecture(s) " + " ".join(sorted(declared - listed)) + " but lists no Packages file for them")
 for digest, size, name in indexes:
 	print(digest, size, name)
 PY
