@@ -1,0 +1,10 @@
+Package: podup
+Version: 2.0.0
+Architecture: amd64
+Description: harmless
+ Package: decoy
+ Version: 0.0.1
+ .
+ Package: podup
+ Version: 0.0.1
+

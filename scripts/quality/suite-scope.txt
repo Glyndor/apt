@@ -97,6 +97,12 @@
 # ---------------------------------------------------------------------------
 
 # --- the read-back of the published archive ----------------------------------
+tests/verify/check-release-order.test.sh
+	scripts/verify/**
+	keyring/**
+	tests/verify/**
+	tests/fixtures/**
+
 # These four read the same script and the same fixture. Their cost is in
 # building and signing an archive, not in what they read.
 

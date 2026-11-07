@@ -53,6 +53,7 @@ jobs:
         ./tests/verify/verify-published-budget.test.sh
         ./tests/verify/verify-published-packages.test.sh
         ./tests/verify/verify-published-build.test.sh
+        ./tests/verify/check-release-order.test.sh
         ./tests/verify/verify-installers.test.sh
         ./tests/build/build-keyring.test.sh
         ./tests/build/build-keyring-generator.test.sh

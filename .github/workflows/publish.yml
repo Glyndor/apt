@@ -288,6 +288,36 @@ jobs:
           fi
           echo "collected $count product package(s)"
 
+      - name: Refuse a release older than the one served
+        run: |
+          set -euo pipefail
+          # "Latest" is a pointer GitHub keeps, not a version: an older release
+          # that is re-marked as the latest one is still the latest release,
+          # and its .deb is still validly signed by the release key, so every
+          # other check in this workflow passes it and the archive moves
+          # backwards for every client that runs `apt upgrade` (issue #360).
+          #
+          # The other two channels refuse the same release: the homebrew tap
+          # compares the candidate with the version its formula serves and the
+          # scoop bucket with the version its manifest serves, both with SemVer
+          # precedence. This is the apt channel's copy of that decision, and it
+          # reads the served version out of the archive's own signed index, so
+          # it compares against what the clients are actually served.
+          #
+          # It fails closed: an index it cannot read is an error, not a pass.
+          # One statement per call and one call per product, and the curl that
+          # reads the index lives in the script rather than here.
+          for spec in $PRODUCTS; do
+            p="${spec%%:*}"
+            # The tag the download step pinned, read back rather than resolved
+            # again: resolving "latest" here could hand this step a different
+            # release than the one the .deb files came from.
+            pinned="$(cat "tags/$p" 2>/dev/null || true)"
+            [ -n "$pinned" ] \
+              || { echo "::error::no release tag was pinned for $p; refusing to check a release that cannot be named"; exit 1; }
+            bash ./scripts/verify/check-release-order.sh "$p" "$pinned" "$ARCHIVE_URL"
+          done
+
       - name: Verify product .deb release signatures
         run: |
           set -euo pipefail
