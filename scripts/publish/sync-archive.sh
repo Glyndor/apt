@@ -42,7 +42,7 @@ done
 # index, and the archive served a package its own index rejected.
 # build-keyring.sh is reproducible now (stamped from the commit of its
 # inputs, locked by tests/build/build-keyring.test.sh and
-# tests/build/build-keyring-generator.test.sh), which is what makes
+# tests/build/keyring/build-keyring-generator.test.sh), which is what makes
 # --size-only sound for that object too. If anything else that is
 # regenerated per run is ever added under pool/, it needs the same
 # property or it does not belong in these passes.

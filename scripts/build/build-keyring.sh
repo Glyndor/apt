@@ -71,7 +71,7 @@ GENERATOR_REL="${GENERATOR_REL#"$HERE"/}"
 # bumps the version that reaches them.
 #
 # One item per line, the closing parenthesis on a line of its own:
-# tests/build/build-keyring-generator.test.sh reads this list to check that
+# tests/build/keyring/build-keyring-generator.test.sh reads this list to check that
 # nothing the build reads is missing from it.
 VERSION_INPUTS=(
 	"$GENERATOR_REL"

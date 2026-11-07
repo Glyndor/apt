@@ -54,7 +54,7 @@ Not considered: an adversary holding the archive signing key, an adversary holdi
 | An index that verified but declares too much turns the read-back into an unbounded download | the read-back caps entries, per-object size and total pool bytes | test: the caps are exercised by lowering them below what the fixture declares |
 | A stale object at the edge under an immutable name | the purge list is derived from the `Release` and `Packages` files the run built, pool included, and split to Cloudflare's per-request limit | test: `tests/publish/purge-cache.test.sh`; measurement: 14 URLs in one request today, 36 in two for the full roster |
 | The installer of a product that left the roster keeps being served | the publish prunes the bucket's `install/` down to the installers the run built, deleting the objects the bucket's own listing named, and reads the bucket back to prove the served set is the built set; the paths it removed are purged from the edge, which holds an installer for a day | test: `tests/publish/prune-installers.test.sh` |
-| The keyring package changes bytes under the same name and the size-only sync skips it | the package is built byte-reproducibly from the commit date of its inputs, so equal inputs give equal bytes, and every input that decides those bytes -- the files it installs and the generator that writes its control file, its conffiles and its modes -- moves the version | test: `tests/build/build-keyring.test.sh`, two builds a moment apart must be identical; test: `tests/build/build-keyring-generator.test.sh`, changing the generator moves the version and the bytes, and a generator that does not track itself keeps the version still |
+| The keyring package changes bytes under the same name and the size-only sync skips it | the package is built byte-reproducibly from the commit date of its inputs, so equal inputs give equal bytes, and every input that decides those bytes -- the files it installs and the generator that writes its control file, its conffiles and its modes -- moves the version | test: `tests/build/build-keyring.test.sh`, two builds a moment apart must be identical; test: `tests/build/keyring/build-keyring-generator.test.sh`, changing the generator moves the version and the bytes, and a generator that does not track itself keeps the version still |
 | A clock- or locale-dependent build ships a page missing a package | `LC_ALL=C` wherever a script sorts or compares | test: `tests/ci/policy/locale-pinned.test.sh`, behavioural half under a UTF-8 locale that does collapse the names |
 | The archive silently stops refreshing | `Valid-Until` of fourteen days on the signed index, so a stalled publish expires rather than freezes; a health check every six hours fails on a stale or unreachable index; a freshness watcher fails when the publish cron itself stops | gate: `health-check.yml`, `freshness.yml`; measurement: the schedule watchers fired for their reason before promotion |
 
@@ -103,7 +103,7 @@ all. The pull requests that closed them carry the before-and-after runs.
 The keyring's version tracking was checked the same way when the generator was
 added to it, on 2026-11-05: with the generator out of the list of inputs the
 version follows, changing the generator left the version standing and moved the
-bytes, and that is the case `tests/build/build-keyring-generator.test.sh` holds.
+bytes, and that is the case `tests/build/keyring/build-keyring-generator.test.sh` holds.
 
 ## Residual risks
 

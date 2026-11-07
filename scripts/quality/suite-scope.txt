@@ -176,12 +176,12 @@ tests/build/build-keyring.test.sh
 	tests/build/**
 	keyring/**
 
-tests/build/build-keyring-contents.test.sh
+tests/build/keyring/build-keyring-contents.test.sh
 	scripts/build/**
 	tests/build/**
 	keyring/**
 
-tests/build/build-keyring-generator.test.sh
+tests/build/keyring/build-keyring-generator.test.sh
 	scripts/build/**
 	tests/build/**
 	keyring/**
