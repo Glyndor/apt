@@ -65,6 +65,14 @@
 # 2026-09-08 against a socket that accepts and never responds: four attempts and
 # 18.0s at --max-time 3, which is 1800s at the 300 this used to carry, against a
 # 900s job.
+#
+# The budget bounds every wait and every transfer, not only the loops around
+# them. It used to be read between rounds, which left two holes: a delay longer
+# than the budget was slept in full, so a run given a 3600s delay and a 10s
+# budget waited an hour before it looked at the budget again; and the transfer
+# limits were fixed at 30s and 60s, so one download could spend more than the
+# whole budget before the budget was even consulted. Both are now sized against
+# what is left of it, and the budget is read before every download.
 
 set -euo pipefail
 
@@ -123,6 +131,22 @@ fi
 # under way is bounded by its own deadline, and killing it would lose the
 # diagnosis this script exists to print.
 elapsed() { echo $(( $(date -u +%s) - STARTED_AT )); }
+
+# What is left of the budget. Read before every download rather than once at
+# the start: a run that spends its budget on the first transfer must not start
+# the next one with the deadline it would have had at the beginning.
+remaining() { echo $(( BUDGET - $(elapsed) )); }
+
+# retry_wait
+# The seconds to wait before the next attempt: the configured delay, shortened
+# to what is left of the budget. A delay longer than the remaining budget used
+# to be slept in full, which is how a 3600s delay kept a 10s-budget run waiting
+# an hour before it looked at the budget again.
+#
+# Prints nothing and returns non-zero when the budget is already spent, and
+# that is how the caller tells "no time left" from "no delay asked for": a
+# delay of zero is a delay, and it is printed as the number zero.
+retry_wait() { local _left; _left="$(remaining)"; [ "$_left" -gt 0 ] || return 1; echo $(( DELAY < _left ? DELAY : _left )); }
 [ -f "$PUBKEY_ASC" ] || { echo "::error::archive public key $PUBKEY_ASC not found" >&2; exit 1; }
 
 WORK="$(mktemp -d)"
@@ -148,8 +172,27 @@ fetch() {
 	# generous against measurement rather than against imagination: the largest
 	# object this archive serves is 6.19 MB and fetched in 0.90s on 2026-09-08,
 	# so 30 leaves better than thirty times the margin.
-	curl -fsS --retry 3 --retry-all-errors --retry-delay 2 \
-		--max-time 30 --retry-max-time 60 \
+	#
+	# Every deadline below is the time that is LEFT, not a fixed number. The
+	# fixed pair could spend more than the whole budget on a single transfer:
+	# measured against a socket that accepts and never answers, one fetch took
+	# 61s at --max-time 30 and --retry-max-time 60, which is more than a 1s
+	# budget allows before the first download has even started. The delay
+	# between two attempts cannot outlast the budget either.
+	#
+	# The floor of one second keeps a transfer attempted rather than refused on
+	# a rounding boundary; the budget is read before every download, so it is
+	# only ever reached with a little time left.
+	#
+	# --max-time is expanded unquoted because it is an integer this script
+	# computed: the repository's own "every curl carries --max-time" gate
+	# reads a deadline as that flag followed by a number or a variable, and a
+	# quoted expansion is not a shape it recognises.
+	local _left _max _retry_max _delay; _left="$(remaining)"
+	_max=$(( _left < 1 ? 1 : (_left < 30 ? _left : 30) )); _retry_max=$(( _left < 1 ? 1 : (_left < 60 ? _left : 60) ))
+	_delay=$(( _left < 0 ? 0 : (_left < 2 ? _left : 2) ))
+	curl -fsS --retry 3 --retry-all-errors --retry-delay "$_delay" \
+		--max-time $_max --retry-max-time "$_retry_max" \
 		--max-filesize "${3:-$MAX_INDEX_BYTES}" "$1" -o "$2"
 }
 
@@ -160,14 +203,11 @@ fetch() {
 # so a fixture that is valid OpenPGP but carries no signature would slip past.
 # gpgv requires a signature from a key in --keyring and refuses the rest.
 verify_clearsigned() {
-	gpgv --keyring "$GNUPGHOME/pubring.kbx" --quiet \
-		--output "$2" "$1"
+	gpgv --keyring "$GNUPGHOME/pubring.kbx" --quiet --output "$2" "$1"
 }
 
 # sha256_of <file>
-sha256_of() {
-	sha256sum "$1" | cut -d' ' -f1
-}
+sha256_of() { sha256sum "$1" | cut -d' ' -f1; }
 
 # declared_files <verified-index-body>
 # Emits "<sha256> <size> <path>" for every entry in the index's SHA256 section.
@@ -262,14 +302,12 @@ reject_unsafe_paths() {
 		case "$path" in
 			. | .. | ./* | */./* | */. | */../* | ../* | */.. | /* | *//*)
 				echo "::error::the $label declares a path that is not a plain relative path: $path" >&2
-				exit 1
-				;;
+				exit 1 ;;
 		esac
 		case "$path" in
 			*[!A-Za-z0-9._/+~-]*)
 				echo "::error::the $label declares a path with unexpected characters: $path" >&2
-				exit 1
-				;;
+				exit 1 ;;
 		esac
 	done < "$2"
 }
@@ -282,8 +320,7 @@ reject_unsafe_paths() {
 # on any disagreement.
 check_entry() {
 	local want_hash="$1" want_size="$2" path="$3" prefix="$4" max_bytes="$5" save_dir="$6"
-	local url="$BASE_URL${prefix:+/$prefix}/$path"
-	local dest="$WORK/served"
+	local url="$BASE_URL${prefix:+/$prefix}/$path" dest="$WORK/served"
 	local got_hash got_size
 
 	rm -f "$dest"
@@ -346,9 +383,16 @@ verify_set() {
 		# against a peer that accepts and never answers, one attempt already
 		# costs --max-time times curl's own retries, and the job would be
 		# cancelled before this message was ever printed.
+		#
+		# The wait is sized against what is left of the budget, and the budget
+		# is read again right before it, so a delay longer than the remaining
+		# budget cannot outlast the budget it was meant to fit in. No time
+		# left at all is the third way to stop: the run says so instead of
+		# sleeping through a delay it cannot afford.
+		_wait="$(retry_wait)" || _wait=""
 		_spent="$(elapsed)"
-		if [ "$attempt" -ge "$ATTEMPTS" ] || [ "$_spent" -ge "$BUDGET" ]; then
-			if [ "$_spent" -ge "$BUDGET" ]; then
+		if [ "$attempt" -ge "$ATTEMPTS" ] || [ "$_spent" -ge "$BUDGET" ] || [ -z "$_wait" ]; then
+			if [ "$_spent" -ge "$BUDGET" ] || [ -z "$_wait" ]; then
 				echo "::error::${#failed[@]} of $total $label are not being served as signed, and the ${BUDGET}s budget ran out after ${_spent}s on attempt $attempt" >&2
 			else
 				echo "::error::${#failed[@]} of $total $label are not being served as signed, after $attempt attempt(s)" >&2
@@ -358,9 +402,8 @@ verify_set() {
 			done
 			exit 1
 		fi
-
-		echo "attempt $attempt/$ATTEMPTS: ${#failed[@]} $label not yet consistent, re-reading in ${DELAY}s"
-		sleep "$DELAY"
+		echo "attempt $attempt/$ATTEMPTS: ${#failed[@]} $label not yet consistent, re-reading in ${_wait}s"
+		sleep "$_wait"
 		pending=("${failed[@]}")
 		attempt=$((attempt + 1))
 	done
@@ -394,14 +437,23 @@ for attempt in $(seq 1 "$ATTEMPTS"); do
 		echo "::error::InRelease does not match the published build after $attempt attempt(s) within the ${BUDGET}s budget" >&2
 		exit 1
 	fi
-	echo "attempt $attempt/$ATTEMPTS: InRelease not yet consistent, re-reading in ${DELAY}s"
-	sleep "$DELAY"
+	# The wait is sized against what is left of the budget, like every other
+	# wait in this script. Zero when the budget is already gone: the next
+	# round reads the budget again and names it.
+	_wait="$(retry_wait)" || _wait=0
+	echo "attempt $attempt/$ATTEMPTS: InRelease not yet consistent, re-reading in ${_wait}s"
+	sleep "$_wait"
 done
 
 # The detached pair apt falls back to when it does not use InRelease. A stale
 # Release would declare hashes the current archive no longer serves, so check
 # that it verifies and that it agrees with InRelease rather than assuming the
 # sync uploaded both halves of the same build.
+#
+# The budget is read before this download like before every other one: it is
+# two transfers, and a run that has already spent its budget must not start
+# them.
+[ "$(elapsed)" -lt "$BUDGET" ] || { echo "::error::the detached Release / Release.gpg pair was not fetched before the ${BUDGET}s budget ran out" >&2; exit 1; }
 if ! fetch "$BASE_URL/$DIST_PATH/Release" "$WORK/Release" \
 	|| ! fetch "$BASE_URL/$DIST_PATH/Release.gpg" "$WORK/Release.gpg"; then
 	echo "::error::could not fetch the detached Release / Release.gpg pair" >&2
@@ -552,7 +604,11 @@ for attempt in $(seq 1 "$ATTEMPTS"); do
 		bootstrap_sig_ok=1
 		break
 	fi
-	[ "$attempt" -lt "$ATTEMPTS" ] && sleep "$DELAY"
+	# The wait is sized against what is left of the budget, like every other
+	# wait in this script. Zero when the budget is already gone: the next
+	# round reads the budget again and names it.
+	_wait="$(retry_wait)" || _wait=0
+	[ "$attempt" -lt "$ATTEMPTS" ] && sleep "$_wait"
 done
 
 if [ "$bootstrap_sig_ok" -ne 1 ]; then
