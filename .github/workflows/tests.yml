@@ -116,6 +116,7 @@ jobs:
         ./tests/monitoring/check-suite-on-main-cron.test.sh
         ./tests/monitoring/check-suite-on-main-push.test.sh
         ./tests/ci/reusable/reusable-workflow-lint.test.sh
+        ./tests/ci/reusable/reusable-workflow-lint-install.test.sh
       # shellcheck: tests/quality/lint-workflow-shell.test.sh plants a violation and
       # requires the linter to report it, so it needs the linter. The gate
       # itself runs in the shellcheck job against the pinned binary; this one
