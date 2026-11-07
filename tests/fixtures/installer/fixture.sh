@@ -166,6 +166,22 @@ BIN="$WORK/bin"
 mkdir -p "$BIN"
 # uid 0 without being root: the root check runs first and is not what is tested.
 printf '#!/bin/sh\necho 0\n' > "$BIN/id"; chmod +x "$BIN/id"
+# The owner of the temporary directory is checked against root, and this test
+# is not root: the stub reports root for every directory (see the stub itself).
+cat > "$BIN/stat" <<'STATSTUB'
+#!/bin/sh
+# The installer pretends to be root, so every directory it examines is reported
+# as owned by root. STUB_OWNER_PATH and STUB_OWNER_UID name one directory owned
+# by someone else; STUB_STAT_FAIL makes the owner lookup fail. Anything but the
+# owner lookup goes to the real stat.
+if [ "$1" = "-c" ] && [ "$2" = "%u" ]; then
+	[ -z "${STUB_STAT_FAIL:-}" ] || exit 1
+	if [ -n "${STUB_OWNER_PATH:-}" ] && [ "$3" = "$STUB_OWNER_PATH" ]; then echo "$STUB_OWNER_UID"; else echo 0; fi
+	exit 0
+fi
+exec @REALSTAT@ "$@"
+STATSTUB
+sed -i "s|@REALSTAT@|$(command -v stat)|" "$BIN/stat"; chmod +x "$BIN/stat"
 # apt-get must exist and succeed; nothing here installs a package.
 printf '#!/bin/sh\nexit 0\n' > "$BIN/apt-get"; chmod +x "$BIN/apt-get"
 # dpkg records that it was reached instead of installing. Its absence is the
