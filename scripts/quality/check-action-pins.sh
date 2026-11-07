@@ -140,7 +140,10 @@ references_of() { # <path>
 					sub(/[ \t]+$/, "", value)
 				}
 				printf "%d\t%s\n", NR, value
-				break
+				# More than one reference can sit on a line, in a flow
+				# sequence: keep reading after this one, so the second is
+				# held to the pin as well (issue #371).
+				rest = substr(rest, pos + len)
 			}
 		}
 		END {
