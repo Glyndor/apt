@@ -204,6 +204,53 @@ EOF2
 rc=0; "$WORK/check-first-only.sh" "$R" >/dev/null 2>&1 || rc=$?
 check "reading only the first reference of a line lets the second through (the refusal is the loop's)" "0" "$rc"
 
+# A quoted key: the opening quote used to defeat the test on what precedes the
+# key, so the extractor found no reference and another normal workflow was
+# enough to pass the empty-inventory guard.
+R="$(root quoted-key-dq <<EOF2
+jobs:
+  a:
+    steps:
+      - "uses": actions/checkout@v4
+EOF2
+)"
+check "a double-quoted uses key with a tag is refused" "1" "$(rc_of "$R")"
+R="$(root quoted-key-sq <<EOF2
+jobs:
+  a:
+    steps:
+      - 'uses': actions/checkout@v4
+EOF2
+)"
+check "a single-quoted uses key with a tag is refused" "1" "$(rc_of "$R")"
+R="$(root quoted-key-ok <<EOF2
+jobs:
+  a:
+    steps:
+      - "uses": actions/checkout@$SHA
+EOF2
+)"
+check "a double-quoted uses key with a SHA pin passes" "0" "$(rc_of "$R")"
+python3 -I - "$CHECK" "$WORK/check-unquoted-key.sh" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+old = "while (match(rest, /[\"'\"'\"']?uses"
+assert old in s
+open(sys.argv[2], "w").write(s.replace(old, "while (match(rest, /uses", 1))
+PY
+chmod +x "$WORK/check-unquoted-key.sh"
+check "the quoted-key control changed the script" "1" "$(cmp -s "$CHECK" "$WORK/check-unquoted-key.sh" && echo 0 || echo 1)"
+R="$(root quoted-key-cut <<EOF2
+jobs:
+  a:
+    steps:
+      - "uses": actions/checkout@v4
+      - uses: actions/cache@$SHA
+EOF2
+)"
+rc=0; "$WORK/check-unquoted-key.sh" "$R" >/dev/null 2>&1 || rc=$?
+check "reading only bare keys lets the quoted unpinned one through (the refusal is the pattern's)" "0" "$rc"
+
 R="$(mktemp -d -p "$WORK")"
 mkdir -p "$R/.github/workflows"
 check "a root with no workflow file is an error, not a pass" "1" "$(rc_of "$R")"

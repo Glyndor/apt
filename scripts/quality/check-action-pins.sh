@@ -99,7 +99,7 @@ references_of() { # <path>
 			if (trimmed ~ /^#/) next
 
 			rest = raw
-			while (match(rest, /uses["'"'"']?[[:space:]]*:/)) {
+			while (match(rest, /["'"'"']?uses["'"'"']?[[:space:]]*:/)) {
 				pos = RSTART
 				len = RLENGTH
 				before = rtrim(substr(rest, 1, pos - 1))
