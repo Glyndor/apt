@@ -71,6 +71,7 @@ jobs:
         ./tests/installer/install-template.test.sh
         ./tests/installer/install-template/install-template-behaviour.test.sh
         ./tests/installer/install-template/install-template-empty-keyring.test.sh
+        ./tests/installer/install-template/install-template-special-files.test.sh
         ./tests/installer/install-template/install-template-limits.test.sh
         ./tests/installer/install-template/install-template-tmpdir.test.sh
         ./tests/installer/install-template/install-template-delivery.test.sh
