@@ -56,8 +56,8 @@ jobs:
         ./tests/verify/check-release-order.test.sh
         ./tests/verify/verify-installers.test.sh
         ./tests/build/build-keyring.test.sh
-        ./tests/build/build-keyring-generator.test.sh
-        ./tests/build/build-keyring-contents.test.sh
+        ./tests/build/keyring/build-keyring-generator.test.sh
+        ./tests/build/keyring/build-keyring-contents.test.sh
         ./tests/keyring/glyndor-upgrade.test.sh
         ./tests/keyring/maintainer-postinst-trust.test.sh
         ./tests/keyring/glyndor-upgrade-errors.test.sh
