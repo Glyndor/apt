@@ -277,6 +277,56 @@ check "and the success line says three" "1" \
 	"$(printf '%s' "$out" | grep -q '^3 embedded' && echo 1 || echo 0)"
 rm -f "$work/.github/workflows/shapes.yml"
 
+# --- bodies the extractor used to skip ----------------------------------------
+# A header it did not recognise (a list item, a comment after the indicator) or
+# a folded block whose lines were never linted could hold an unquoted rm -rf and
+# the script still printed its success line, because another block was clean.
+# Each shape below is the only violation in its workflow, next to a clean block.
+# shellcheck disable=SC2016 # the planted text names a variable; it must not expand
+VIOLATION='rm -rf $UNQUOTED/*'
+plant_shape() { # $1=name  $2..=the step lines of the violating block
+	local name="$1"; shift
+	rm -f "$work/.github/workflows/"*.yml
+	{
+		printf 'name: %s\non: [push]\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n' "$name"
+		printf '      - name: clean\n        run: |\n          echo clean\n'
+		printf '%s\n' "$@"
+	} >"$work/.github/workflows/$name.yml"
+}
+red() { # $1=name $2=script path -> "rc rule"
+	local o r=0
+	o="$(cd "$work" && "$2" style 2>&1)" || r=$?
+	printf '%s %s' "$r" "$(printf '%s' "$o" | grep -c 'SC2115')"
+}
+plant_shape listitem "      - run: |" "          $VIOLATION"
+check "a list-item run block is linted" "1 1" "$(red listitem ./scripts/quality/lint-workflow-shell.sh)"
+plant_shape comment "      - name: commented" "        run: | # explain" "          $VIOLATION"
+check "a run block whose header carries a comment is linted" "1 1" "$(red comment ./scripts/quality/lint-workflow-shell.sh)"
+plant_shape folded "      - name: folded" "        run: >" "          $VIOLATION"
+check "a folded run block is linted as the runner folds it" "1 1" "$(red folded ./scripts/quality/lint-workflow-shell.sh)"
+plant_shape foldedjoin "      - name: folded" "        run: >" "          echo one" "          two three"
+check "a clean folded block passes" "0 0" "$(red foldedjoin ./scripts/quality/lint-workflow-shell.sh)"
+# Control: the extractor as it was. Each planted shape is then declared clean.
+python3 -I - "$SCRIPT" "$work/scripts/quality/old-lint.sh" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+new_header = "/^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*[|>]([-+]?[0-9]*)?[[:space:]]*(#.*)?$/ {"
+assert new_header in s
+s = s.replace(new_header, "/^[[:space:]]*run:[[:space:]]*[|>]([-+]?[0-9]*)?[[:space:]]*$/ {", 1)
+folded = "folded = ($0 ~ /run:[[:space:]]*>/)"
+assert folded in s
+s = s.replace(folded, "folded = 0\n\t\t\tif ($0 ~ /run:[[:space:]]*>/) { out = \"\"; next }", 1)
+open(sys.argv[2], "w").write(s)
+PY
+chmod +x "$work/scripts/quality/old-lint.sh"
+plant_shape listitem "      - run: |" "          $VIOLATION"
+check "control: the old header pattern declares the list-item violation clean" "0 0" "$(red listitem ./scripts/quality/old-lint.sh)"
+plant_shape comment "      - name: commented" "        run: | # explain" "          $VIOLATION"
+check "control: the old header pattern declares the commented violation clean" "0 0" "$(red comment ./scripts/quality/old-lint.sh)"
+plant_shape folded "      - name: folded" "        run: >" "          $VIOLATION"
+check "control: not linting folded blocks declares the folded violation clean" "0 0" "$(red folded ./scripts/quality/old-lint.sh)"
+rm -f "$work/.github/workflows/"*.yml
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

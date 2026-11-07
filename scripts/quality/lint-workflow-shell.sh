@@ -64,33 +64,31 @@ for wf in "$workflows"/*.yml "$workflows"/*.yaml; do
 	# no further than the `run:` key itself, which is how YAML block scalars
 	# end.
 	awk -v dir="$work" -v tag="$name" '
-		function close_block() { if (out != "") { close(out); out = "" } }
-		/^[[:space:]]*run:[[:space:]]*[|>]([-+]?[0-9]*)?[[:space:]]*$/ {
+		function close_block() { if (out != "") { if (folded) print fold > out; close(out); out = ""; folded = 0 } }
+		# `- run: |` (a list item opening with its run key) and a comment after
+		# the header (`run: | # note`) are the same block scalar; the key column
+		# is where `run:` itself starts, which is what the body must exceed.
+		/^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*[|>]([-+]?[0-9]*)?[[:space:]]*(#.*)?$/ {
 			close_block()
-			key = match($0, /[^ ]/) - 1
+			key = match($0, /run:/) - 1
 			out = sprintf("%s/%s@%d.sh", dir, tag, NR)
-			# A folded scalar (`>` family) joins its body lines with
-			# spaces, so the shell the workflow would run is not the
-			# shell it looks like; shellchecking it would surface
-			# findings for code that never runs. Count the block so
-			# the success line stays honest, and mark the file so a
-			# reader can tell it was deliberately not linted.
-			if ($0 ~ /^[[:space:]]*run:[[:space:]]*>/) {
-				print "#!/usr/bin/env bash" > out
-				print "# folded scalar: lines join, shell would differ, not linted" >> out
-				close(out)
-				out = ""
-				next
-			}
+			# A folded scalar (`>` family) joins its body lines with spaces,
+			# so the shell the runner executes is the joined text, not the
+			# lines as written. The body is collected and written folded, so
+			# what is linted is what runs: a blank line stays a newline and
+			# any other line joins to the previous one with a space.
+			folded = ($0 ~ /run:[[:space:]]*>/)
+			fold = ""
 			print "#!/usr/bin/env bash" > out
 			body = -1
 			next
 		}
 		out != "" {
-			if ($0 ~ /^[[:space:]]*$/) { print "" > out; next }
+			if ($0 ~ /^[[:space:]]*$/) { if (folded) fold = fold "\n"; else print "" > out; next }
 			here = match($0, /[^ ]/) - 1
 			if (here <= key) { close_block(); next }
 			if (body < 0) body = here
+			if (folded) { text = substr($0, body + 1); fold = (fold == "" || fold ~ /\n$/) ? fold text : fold " " text; next }
 			print substr($0, body + 1) > out
 			next
 		}
@@ -98,10 +96,10 @@ for wf in "$workflows"/*.yml "$workflows"/*.yaml; do
 		# this check announced ("N single-line run: step(s) not linted")
 		# rather than closed. Each becomes its own one-line block, so a
 		# finding still lands on the right workflow line.
-		/^[[:space:]]*run:[[:space:]]*[^|>[:space:]]/ {
+		/^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*[^|>[:space:]]/ {
 			close_block()
 			cmd = $0
-			sub(/^[[:space:]]*run:[[:space:]]*/, "", cmd)
+			sub(/^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*/, "", cmd)
 			# A YAML scalar may be quoted; the shell inside is the same.
 			if (cmd ~ /^".*"$/ || cmd ~ /^'"'"'.*'"'"'$/) {
 				cmd = substr(cmd, 2, length(cmd) - 2)
@@ -135,6 +133,9 @@ for block in "$work"/*.sh; do
 	mv "$block.clean" "$block"
 
 	if ! out="$(shellcheck -S "$severity" -f gcc "$block" 2>&1)"; then
+		# A non-zero status is a failure even when shellcheck printed nothing
+		# (it died, or was killed): the loop below only fails on lines it reads.
+		failed=1
 		while IFS= read -r line; do
 			[ -n "$line" ] || continue
 			n="$(printf '%s' "$line" | cut -d: -f2)"
