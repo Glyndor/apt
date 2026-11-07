@@ -190,19 +190,32 @@ declared_packages() {
 	# A `Package:` line opens a stanza, so it also closes the previous one. Without
 	# that, two stanzas that lost the blank line between them were read as one and
 	# only the last one's fields survived: the first package was never verified.
+	#
+	# A stanza that declares a package must carry Filename, Size and SHA256 once
+	# each. One that lacks any of them used to be dropped without a word, and a
+	# valid stanza of another package was enough to satisfy the rule that the
+	# index lists something at all, so a signed index could hide a product from
+	# this check. A missing or repeated field is an error that names the package.
 	awk '
-		/^Package:/ {
-			if (filename != "") { print hash, size, filename }
-			filename = ""; size = ""; hash = ""
+		function flush() {
+			if (pkg == "" && (filename != "" || size != "" || hash != "")) {
+				print "::error::a Packages stanza has fields but no Package line" > "/dev/stderr"; bad = 1
+			} else if (pkg != "") {
+				if (filename == "" || size == "" || hash == "") {
+					print "::error::the Packages stanza for " pkg " lacks Filename, Size or SHA256" > "/dev/stderr"; bad = 1
+				} else print hash, size, filename
+			}
+			pkg = ""; filename = ""; size = ""; hash = ""
 		}
-		/^Filename:/ { filename = $2 }
-		/^Size:/ { size = $2 }
-		/^SHA256:/ { hash = $2 }
-		/^[[:space:]]*$/ {
-			if (filename != "") { print hash, size, filename }
-			filename = ""; size = ""; hash = ""
+		function once(have, field) {
+			if (have != "") { print "::error::the Packages stanza for " pkg " repeats " field > "/dev/stderr"; bad = 1 }
 		}
-		END { if (filename != "") { print hash, size, filename } }
+		/^Package:/ { flush(); pkg = $2 }
+		/^Filename:/ { once(filename, "Filename"); filename = $2 }
+		/^Size:/ { once(size, "Size"); size = $2 }
+		/^SHA256:/ { once(hash, "SHA256"); hash = $2 }
+		/^[[:space:]]*$/ { flush() }
+		END { flush(); exit bad }
 	' "$1"
 }
 
@@ -441,7 +454,7 @@ verify_set "index file(s)" "$WORK/index-entries" "$DIST_PATH" "$MAX_INDEX_BYTES"
 : > "$WORK/pool-entries"
 shopt -s nullglob
 for index in "$WORK"/indices/*_Packages; do
-	declared_packages "$index" >> "$WORK/pool-entries"
+	declared_packages "$index" >> "$WORK/pool-entries" || exit 1
 done
 shopt -u nullglob
 LC_ALL=C sort -u -o "$WORK/pool-entries" "$WORK/pool-entries"
