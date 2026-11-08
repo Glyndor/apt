@@ -356,6 +356,20 @@ verify_set() {
 	mapfile -t pending < "$entries_file"
 	total="${#pending[@]}"
 
+	# A verified file is saved under its path with every / turned into _, and _
+	# is a legal character in a signed path, so two paths can share one saved
+	# name: the second would replace the first and the gate would go on to read
+	# a file it had not looked at. A signer that does that has to fail the run,
+	# not make it check less.
+	if [ -n "$save_dir" ]; then
+		local shadowed
+		shadowed="$(awk '{ print $3 }' "$entries_file" | tr '/' '_' | LC_ALL=C sort | uniq -d | head -n 1)"
+		if [ -n "$shadowed" ]; then
+			echo "::error::two signed $label paths map to the same saved name ($shadowed); one would shadow the other" >&2
+			exit 1
+		fi
+	fi
+
 	while :; do
 		failed=()
 		for entry in "${pending[@]}"; do
