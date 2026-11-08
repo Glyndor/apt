@@ -224,6 +224,12 @@ jobs:
                     echo "::error::Glyndor/$p's $tag release carries an asset whose name contains a glob metacharacter: $chosen"
                     exit 1
                     ;;
+                  */* | *\\*)
+                    # The name is also the path gh writes under --dir, so a
+                    # separator would put the file outside debs/$p.
+                    echo "::error::Glyndor/$p's $tag release carries an asset whose name contains a path separator: $chosen"
+                    exit 1
+                    ;;
                 esac
               done
               deb_for_arch[$arch]="${deb_names[0]}"
