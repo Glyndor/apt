@@ -103,7 +103,7 @@ tests/verify/check-release-order.test.sh
 	tests/verify/**
 	tests/fixtures/**
 
-# These four read the same script and the same fixture. Their cost is in
+# These five read the same script and the same fixture. Their cost is in
 # building and signing an archive, not in what they read.
 
 tests/verify/verify-published.test.sh
@@ -122,6 +122,11 @@ tests/verify/verify-published/verify-published-budget.test.sh
 	tests/verify/**
 
 tests/verify/verify-published/verify-published-packages.test.sh
+	tests/fixtures/verify/**
+	scripts/verify/**
+	tests/verify/**
+
+tests/verify/verify-published/verify-published-collision.test.sh
 	tests/fixtures/verify/**
 	scripts/verify/**
 	tests/verify/**
