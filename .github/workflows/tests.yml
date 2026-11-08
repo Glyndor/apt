@@ -65,6 +65,7 @@ jobs:
         ./tests/keyring/maintainer-timer.test.sh
         ./tests/keyring/maintainer-offer-guards.test.sh
         ./tests/keyring/maintainer-prerm.test.sh
+        ./tests/keyring/release-key.test.sh
         ./tests/keyring/maintainer-postrm.test.sh
         ./tests/build/build-repo.test.sh
         ./tests/build/build-repo-expiry.test.sh
