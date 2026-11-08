@@ -252,6 +252,22 @@ tests/installer/install-template/install-template-special-files.test.sh
 	tests/installer/**
 	keyring/**
 
+tests/installer/install-template/install-template-guards.test.sh
+	scripts/installer/**
+	tests/fixtures/**
+	tests/installer/**
+	keyring/**
+
+tests/installer/install-template/install-template-swap.test.sh
+	scripts/installer/**
+	tests/fixtures/**
+	tests/installer/**
+	keyring/**
+
+tests/keyring/maintainer-offer-guards.test.sh
+	keyring/**
+	tests/keyring/**
+
 tests/installer/install-template/install-template-tmpdir.test.sh
 	scripts/installer/**
 	tests/fixtures/**
