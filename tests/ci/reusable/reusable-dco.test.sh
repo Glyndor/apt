@@ -2,8 +2,8 @@
 # Behaviour tests for .github/workflows/reusable-dco.yml.
 #
 # The DCO gate is the only thing standing behind the sign-off attestation, and
-# on the tap and the bucket it is not even a required check, so it relies on
-# being correct rather than on being enforced. These tests give it real commits
+# it is a required check on all three channels and still has to be correct on its
+# own: a gate that passes everything is as good as no gate. These tests give it real commits
 # and require it to report the ones without a trailer.
 #
 # It reads BASE_SHA and HEAD_SHA from the environment. GitHub fills those from

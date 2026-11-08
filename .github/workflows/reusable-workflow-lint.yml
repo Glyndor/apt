@@ -5,7 +5,7 @@ name: Workflow lint (reusable)
 # are today validated by nobody. This is where the phantom-required-check
 # naming mismatches and the PowerShell $VAR-under-pwsh trap have actually
 # shipped, because nothing caught them before a consumer's CI ran for real.
-# Contrast with actionlint.yml in this repository: that one is this repo's own
+# Contrast with workflow-lint.yml in this repository: that one is this repo's own
 # self-CI over ITS reusables; this one runs actionlint over the CALLER's
 # checkout, wherever the calling job invokes it from.
 #
