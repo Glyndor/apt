@@ -62,6 +62,7 @@ jobs:
         ./tests/keyring/maintainer-postinst-trust.test.sh
         ./tests/keyring/glyndor-upgrade-errors.test.sh
         ./tests/keyring/maintainer-timer.test.sh
+        ./tests/keyring/maintainer-offer-guards.test.sh
         ./tests/build/build-repo.test.sh
         ./tests/build/build-repo-expiry.test.sh
         ./tests/publish/purge-cache.test.sh
@@ -75,6 +76,8 @@ jobs:
         ./tests/installer/install-template/install-template-limits.test.sh
         ./tests/installer/install-template/install-template-tmpdir.test.sh
         ./tests/installer/install-template/install-template-delivery.test.sh
+        ./tests/installer/install-template/install-template-guards.test.sh
+        ./tests/installer/install-template/install-template-swap.test.sh
         ./tests/installer/unattended-upgrades.test.sh
         ./tests/build/architectures-agree.test.sh
         ./tests/installer/readme-bootstrap.test.sh

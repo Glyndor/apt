@@ -54,7 +54,9 @@ offer_timer() {
 	fi
 	# The mark goes before the enable, so an interrupted offer cannot leave
 	# the machine looking like it was never offered.
-	if ! : > "$state/timer-offering" 2>/dev/null; then
+	# true and not `:`: a failed redirection on a special builtin ends a POSIX
+	# shell, dash included, and this has to be a warning, not an aborted configure.
+	if ! true 2>/dev/null > "$state/timer-offering"; then
 		echo "glyndor-archive-keyring: $state is not writable; the upgrade timer was not offered" >&2
 		return 0
 	fi
