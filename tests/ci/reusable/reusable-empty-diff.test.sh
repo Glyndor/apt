@@ -29,7 +29,7 @@ check() { # <description> <expected> <actual>
 }
 
 # Pull one step's `run:` body out of a workflow, dedented, so it can be run.
-# Same helper as tests/update-workflow.test.sh: the point is to exercise the
+# Same helper as tests/publication/update/update-workflow.test.sh in the tap and the bucket: the point is to exercise the
 # shell as it ships rather than a copy of it that can drift.
 step_script() { # $1=workflow path  $2=step name substring
 	python3 - "$1" "$2" <<'PY'
