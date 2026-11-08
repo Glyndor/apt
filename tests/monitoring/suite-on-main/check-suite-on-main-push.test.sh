@@ -3,7 +3,7 @@
 #
 # GITHUB_EVENT_NAME=push, GITHUB_SHA is the commit that was pushed. The script
 # reads a 30-item page, picks the newest run with that head_sha, and polls for
-# up to 8 minutes (32 attempts of 15 seconds) when the run is not yet completed.
+# up to 20 minutes (80 attempts of 15 seconds) when the run is not yet completed.
 # A cancelled run for that commit is red.
 #
 # The push path answers a different question from the cron and pull_request
@@ -47,7 +47,7 @@ says() { # $1=output  $2=pattern
 #
 # GITHUB_EVENT_NAME=push, GITHUB_SHA is the commit that was pushed. The
 # script reads a 30-item page, picks the newest run with that head_sha, and
-# polls for up to 8 minutes (32 attempts of 15 seconds) when the run is not
+# polls for up to 20 minutes (80 attempts of 15 seconds) when the run is not
 # yet completed. A cancelled run for that commit is red.
 # ===========================================================================
 
@@ -135,20 +135,20 @@ check "R3: and names the push commit" "1" \
 check "R3: and did not poll, only one call" "1" \
 	"$(logged .)"
 
-# --- R4: no run for GITHUB_SHA in any of 32 responses -----------------------
+# --- R4: no run for GITHUB_SHA in any of 80 responses -----------------------
 #
-# The loop polls for 8 minutes (32 attempts of 15 seconds). If none of the
+# The loop polls for 20 minutes (80 attempts of 15 seconds). If none of the
 # attempts see a run for the commit, the script must fail with a message
-# naming the commit and saying 8 minutes. 32 attempts means 31 sleeps: a
+# naming the commit and saying 20 minutes. 80 attempts means 79 sleeps: a
 # sleep is between attempts, not after the last one.
 #
-# The test must plant 32 responses. Doing so by hand would be a 32-line
+# The test must plant 80 responses. Doing so by hand would be an 80-line
 # fixture, so the helper builds them. The verdict must not name any other
 # run's conclusion: a script that fell back to the schedule path would
 # happily report someone else's run, which is the exact race this fix
 # exists to break.
 rm -rf "$WORK/json"; mkdir -p "$WORK/json"
-for i in $(seq 1 32); do
+for i in $(seq 1 80); do
 	# A page that contains runs but NONE for the push commit. The schedule
 	# path would happily report the first of these, so the test asserts the
 	# message does not name any of their conclusions.
@@ -157,18 +157,18 @@ for i in $(seq 1 32); do
 		> "$WORK/json/$i"
 done
 out="$(run_gate_json_dir push "$PUSH_SHA")"; rc=$?
-check "R4: no run for GITHUB_SHA in 32 attempts, fails the check" "1" "$rc"
-check "R4: and made exactly 32 API calls" "32" \
+check "R4: no run for GITHUB_SHA in 80 attempts, fails the check" "1" "$rc"
+check "R4: and made exactly 80 API calls" "80" \
 	"$(logged .)"
-check "R4: and slept exactly 31 times" "31" \
+check "R4: and slept exactly 79 times" "79" \
 	"$(grep -acz . "$WORK/sleep.log" | tr -d ' ')"
 check "R4: and every sleep argument was 15" \
-	"$(yes 15 | head -31 | tr '\n' ' ' | sed 's/ $//')" \
+	"$(yes 15 | head -79 | tr '\n' ' ' | sed 's/ $//')" \
 	"$(tr '\0' '\n' < "$WORK/sleep.log" | xargs)"
 check "R4: and the message names the commit (bbbbbbb)" "1" \
 	"$(says "$out" 'bbbbbbb')"
-check "R4: and the message says 8 minutes" "1" \
-	"$(says "$out" '8 minutes')"
+check "R4: and the message says 20 minutes" "1" \
+	"$(says "$out" '20 minutes')"
 check "R4: and does not name any other run's conclusion as the verdict" "0" \
 	"$(says "$out" "concluded 'success'")"
 

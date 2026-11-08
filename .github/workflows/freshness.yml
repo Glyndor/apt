@@ -205,7 +205,7 @@ jobs:
   # branches on GITHUB_EVENT_NAME to answer the question each one asks. The
   # schedule reports a red main on the next tick rather than the next time
   # somebody happens to push, and `push: main` reports on the run for the
-  # commit that was pushed: it polls the API for up to eight minutes so the
+  # commit that was pushed: it polls the API for up to twenty minutes so the
   # verdict comes from that commit's run, not from an older one that the API
   # happened to return first.
   #
@@ -223,11 +223,12 @@ jobs:
     runs-on: ubuntu-latest
     # Bound: on the schedule path one API call plus a checkout measures 2 to
     # 15s (the identical call in reusable-schedule-freshness). On the push
-    # path the script polls the API for up to eight minutes (32 attempts of
-    # 15 seconds), so the ten-minute bound is the outer limit: it covers the
+    # path the script polls the API for up to twenty minutes (80 attempts of
+    # 15 seconds, enough for a queued suite that measured ten minutes on
+    # 2026-11-08), so the 25-minute bound is the outer limit: it covers the
     # worst case plus a checkout, and a hang would otherwise cost the six-hour
     # default.
-    timeout-minutes: 10
+    timeout-minutes: 25
     permissions:
       contents: read
       actions: read # reading this repository's workflow-run history
