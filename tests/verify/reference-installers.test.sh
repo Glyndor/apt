@@ -61,7 +61,7 @@ chmod +x "$CLONE/scripts/build/build-installers.sh" "$CLONE/scripts/verify/refer
 
 mkdir -p "$WORK/bin"
 fake_gh() { # <stdout> <exit>
-	printf '#!/usr/bin/env bash\nprintf "%%s\\n" %q\nexit %s\n' "$1" "$2" > "$WORK/bin/gh"
+	printf '#!/usr/bin/env bash\nprintf "%%s " "$@" >> "%s/gh.args"\nprintf "\\n" >> "%s/gh.args"\nprintf "%%s\\n" %q\nexit %s\n' "$WORK" "$WORK" "$1" "$2" > "$WORK/bin/gh"
 	chmod +x "$WORK/bin/gh"
 }
 
@@ -77,6 +77,7 @@ check "the published commit, older than HEAD, renders the reference" "version 1"
 check "and the log says which commit it used" "1" "$(grep -c "published commit ${OLD:0:7}" "$WORK/log")"
 
 fake_gh "$NEW" 0
+check "the lookup asks only for runs on main" "1" "$(grep -c -- '--branch main' "$WORK/gh.args" | grep -q '^0$' && echo 0 || echo 1)"
 check "a published commit equal to HEAD uses this checkout" "version 2" "$(run)"
 
 fake_gh "" 1

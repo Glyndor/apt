@@ -26,7 +26,9 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Outside a git checkout there is nothing to fetch into: this checkout it is.
 head="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)"
 
-sha="$(gh run list --workflow publish.yml --status success --limit 1 \
+# Only a run on main answers: a publish dispatched from another branch must not
+# make this job fetch and execute that branch's generator.
+sha="$(gh run list --workflow publish.yml --branch main --status success --limit 1 \
 	--json headSha --jq '.[0].headSha // empty' 2>/dev/null || true)"
 if [ -z "$head" ] || ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
 	sha=""
