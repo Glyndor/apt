@@ -113,7 +113,8 @@ sha256_of() { # $1=file
 # pre-release below the release it precedes, numeric pre-release identifiers
 # below text ones, build metadata ignored. It is the rule the tap and the
 # bucket apply to the same releases, so the three channels refuse the same
-# ones; their unit is release_order in scripts/release/render-formulae.sh.
+# ones; their units are release_order in the tap's scripts/release/render-formulae.sh and in
+# the bucket's scripts/release/render-manifests.sh.
 # The .deb versions additionally use dpkg ordering without normalization;
 # either comparison can refuse publication independently of the other.
 release_order() { # $1=product $2=tag version $3=debs dir $4...=verified Packages files

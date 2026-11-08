@@ -27,5 +27,6 @@ jobs:
       #
       # Nothing needed splitting to turn this on. Counted the way the check
       # counts -- comments and blank lines dropped -- the longest YAML in the
-      # three channel repositories is 183 lines against a soft limit of 300.
+      # three channel repositories was 183 lines against a soft limit of 300; the
+      # shared reusable-workflow-lint.yml has since grown past that soft limit.
       extensions: "rs go ts tsx js jsx mjs cjs py sh astro vue svelte yml yaml"

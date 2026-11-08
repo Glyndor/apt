@@ -6,7 +6,7 @@
 # vouches for, with its own GPG key) a binary it did not verify.
 #
 # Each product's release workflow signs its .deb with the org release signing
-# key (the same key install.sh trusts) and attaches a <deb>.sig asset. This is
+# key and attaches a <deb>.sig asset. This is
 # a separate trust anchor from the apt archive GPG key: the release key proves
 # the upstream binary is authentic; the archive key proves the repository
 # metadata is authentic.

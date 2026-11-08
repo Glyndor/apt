@@ -14,7 +14,7 @@
 # extractor below makes that trade-off explicit so the success line stays
 # honest about what was inspected. Single-line `run: cmd` is also covered;
 # it was skipped when this was written, and the check said so on every run
-# rather than closing it. The seven such steps across the three channel
+# rather than closing it. The such steps across the three channel
 # repositories turned out to be plain invocations with nothing the linter
 # could say about them, so this closes holes that were cheap rather than
 # urgent.

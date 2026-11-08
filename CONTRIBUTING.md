@@ -44,7 +44,7 @@ squash-merge back. Releases are tagged directly off `main`.
 
 ## Tests
 
-Run the suite before pushing. It needs `reprepro`, `gnupg`, `python3-cryptography`,
+Run the suite before pushing. It needs `reprepro`, `gnupg`, `jq`, `python3-cryptography`,
 `python3-yaml` and `shellcheck` installed:
 
 ```sh
@@ -73,7 +73,8 @@ at the first red one, which is what you want locally, but it means the loop ends
 on `echo` and reports success no matter how many scripts failed. Without the
 flag the status you glance at disagrees with the output you scrolled past. CI
 lists the suites one per line in `.github/workflows/tests.yml` and runs them
-through a runner that stops at the first failure, so the job goes red.
+through one runner that runs every suite and fails at the end if any failed, so
+the job goes red.
 `tests/ci/suites/ci-runs-every-test.test.sh` fails when a test exists that the
 list does not run.
 
@@ -91,7 +92,7 @@ something the test does not look at, and one where the red comes from
 somewhere else entirely. All three were hit here in a single day.
 
 Assert **which** failure fired, never that some failure did. Every script runs
-under `set -euo pipefail`, so almost any mistake exits non-zero and a bare
+under `set -e` (`set -euo pipefail` in bash, `set -eu` in the POSIX shell ones), so almost any mistake exits non-zero and a bare
 non-zero assertion is satisfied by the failure you did not mean.
 
 New test files must be added to `test-command` in `.github/workflows/tests.yml`.
@@ -125,6 +126,8 @@ CI is split by responsibility rather than gathered in one file:
 | `dco.yml`, `line-limit.yml`, `workflow-lint.yml` | one rule each |
 | `publish.yml` | the daily build and upload of the archive |
 | `health-check.yml` | the published archive is stale, unreachable or unsigned |
+| `distro-floor.yml` | a release the README lists as supported stops installing, or the unsupported one stops being refused |
+| `drift.yml` | this repository's reusables or shared files differ from the sibling channels |
 
 Every reusable this repository calls lives in `.github/workflows/reusable-*.yml`
 as a copy kept identical in logic to the

@@ -15,7 +15,7 @@
 #
 #   Each copy's comments describe its own repository, so the prose legitimately
 #   differs -- dco.yml, pr-hygiene.yml and workflow-lint.yml already differ in
-#   comments only, and the seven reusables are byte-identical today. Comparing
+#   comments only, and the seven reusables carry the same logic today. Comparing
 #   bytes would therefore turn every honest, repository-specific comment edit
 #   into a red check, and a gate that goes red for a correct change is a gate
 #   people learn to click past. So comment-only lines and blank lines are

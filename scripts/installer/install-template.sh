@@ -380,9 +380,9 @@ banner "@PRODUCT@"
 doing "downloading the archive keyring"
 # Bounded, and redirects kept on https.
 #
-# The keyring is ~2 KB and stays kilobytes even carrying both keys through a
-# rotation, so 8 MB is four thousand times the real size and still refuses a
-# server that answers a 2 KB request with an endless body. Without it the only
+# The keyring package is under 10 KB and stays kilobytes even carrying both keys
+# through a rotation, so 8 MB is about nine hundred times the real size and still
+# refuses a server that answers a 10 KB request with an endless body. Without it the only
 # limit is the disk: this runs as root, and /tmp filling up takes the machine
 # with it, before any fingerprint is ever compared.
 #
