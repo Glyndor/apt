@@ -212,6 +212,8 @@ check "the stock install still succeeds" "0" "$rc"
 # the real archive with the real key, which this suite does not reach.
 check "a replaced keyring source is announced" "1" \
 	"$(said 'keyring source:')"
+check "the replaced key fingerprint is announced" "1" \
+	"$(said 'expected key:')"
 
 # Both replaced is the combination where nothing traces back to Glyndor's
 # published key, and it gets its own sentence.
