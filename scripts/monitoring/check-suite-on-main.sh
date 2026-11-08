@@ -33,10 +33,10 @@
 #
 #   The push path now lists runs of `tests.yml` on `main` with `per_page=30`,
 #   picks the newest one whose `head_sha` is `GITHUB_SHA`, and if it has no
-#   verdict yet, waits 15 seconds and looks again, for up to 32 attempts (eight
-#   minutes, inside the job's ten-minute bound). A push that lands while the
+#   verdict yet, waits 15 seconds and looks again, for up to 80 attempts (twenty
+#   minutes, inside the job's 25-minute bound). A push that lands while the
 #   suite is still running is the case this loop exists for, and the worst case
-#   it costs is the eight minutes the suite takes. A `cancelled` run for the
+#   it costs is the twenty minutes a queued suite can take. A `cancelled` run for the
 #   pushed commit itself is red: nothing newer can answer for that commit, so
 #   the only honest verdict is the one the run reached.
 #
@@ -103,8 +103,8 @@ fi
 # --- the push path -----------------------------------------------------------
 #
 # The job and tests.yml start at the same instant on push, so the run for
-# `GITHUB_SHA` may not have a verdict yet. The loop polls for up to 8
-# minutes (32 attempts of 15 seconds); the job's 10-minute bound is the
+# `GITHUB_SHA` may not have a verdict yet. The loop polls for up to 20
+# minutes (80 attempts of 15 seconds); the job's 25-minute bound is the
 # outer limit. The lookup is unfiltered by status so a run still in flight
 # is visible; only `head_sha` selects the run that answers for the push.
 # A `cancelled` run for that head_sha is red: nothing newer can answer
@@ -112,9 +112,9 @@ fi
 
 push_report_no_verdict() {
 	local short="${sha:0:7}"
-	echo "::error::no $workflow run for commit $short on $branch finished within 8 minutes" >&2
+	echo "::error::no $workflow run for commit $short on $branch finished within 20 minutes" >&2
 	echo "  This job polled the API from the instant tests.yml for that commit started and" >&2
-	echo "  saw no completed verdict in 8 minutes, so the state of $branch for that commit is" >&2
+	echo "  saw no completed verdict in 20 minutes, so the state of $branch for that commit is" >&2
 	echo "  unknown rather than green. A run for that commit may still be in flight, or the" >&2
 	echo "  suite never started for it. Open the workflow run list on $branch to see which." >&2
 	exit 1
@@ -136,12 +136,12 @@ if [ "$event" = "push" ] && [ -n "$sha" ]; then
 		| @tsv'
 
 	run=""
-	for attempt in $(seq 1 32); do
+	for attempt in $(seq 1 80); do
 		# A transient API error (a 502, a dropped connection) on one attempt is not
 		# a verdict: it reads like "no run yet" and is asked again. A failure that
 		# persists runs out the attempts and ends in the no-verdict error below.
 		run="$(gh api "$url" --jq "$filter")" || {
-			echo "::warning::gh api failed on attempt $attempt of 32; asking again" >&2
+			echo "::warning::gh api failed on attempt $attempt of 80; asking again" >&2
 			run=""
 		}
 		if [ -n "$run" ]; then
@@ -151,7 +151,7 @@ if [ "$event" = "push" ] && [ -n "$sha" ]; then
 			fi
 			run=""
 		fi
-		if [ "$attempt" -lt 32 ]; then
+		if [ "$attempt" -lt 80 ]; then
 			sleep 15
 		fi
 	done
