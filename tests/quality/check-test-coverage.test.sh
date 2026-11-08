@@ -99,6 +99,26 @@ assert_error 1 "no scripts/ directory" \
 	"a tree without scripts/ is refused rather than silently passing" \
 	-- "$GATE" "$WORK/noscripts"
 
+# --- the maintainer scripts outside scripts/ ----------------------------------
+#
+# dpkg runs keyring/upgrade/maintainer-* as root on the customer's machine. They
+# were the one set of executables the gate did not look at.
+mkdir -p "$WORK/mnt/scripts" "$WORK/mnt/keyring/upgrade" "$WORK/mnt/tests/keyring"
+mkscript "$WORK/mnt/keyring/upgrade/maintainer-prerm"
+: > "$WORK/mnt/keyring/upgrade/glyndor-upgrade.timer"
+assert_error 1 "keyring/upgrade/maintainer-prerm" \
+	"a maintainer script with no test is named" -- "$GATE" "$WORK/mnt"
+: > "$WORK/mnt/tests/keyring/maintainer-prerm.test.sh"
+assert 0 "a maintainer script with a test of its name passes, and a unit file needs none" \
+	-- "$GATE" "$WORK/mnt"
+rm "$WORK/mnt/tests/keyring/maintainer-prerm.test.sh"
+: > "$WORK/mnt/tests/keyring/maintainer-prerm-extra.test.sh"
+assert 0 "a suite named <name>-<topic> covers it too" -- "$GATE" "$WORK/mnt"
+rm "$WORK/mnt/tests/keyring/maintainer-prerm-extra.test.sh"
+: > "$WORK/mnt/tests/keyring/maintainer-prerm.test.sh.bak"
+assert_error 1 "keyring/upgrade/maintainer-prerm" \
+	"a stray file that is not a test does not cover it" -- "$GATE" "$WORK/mnt"
+
 # --- the gate is inside its own input set -----------------------------------
 #
 # This is the case the design exists for. Delete tests/quality/check-test-coverage.test.sh
