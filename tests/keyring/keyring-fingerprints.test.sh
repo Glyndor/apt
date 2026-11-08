@@ -207,7 +207,7 @@ if [ -z "${GLYNDOR_KEYRING_PROBE:-}" ]; then
 		>/dev/null 2>&1
 	GNUPGHOME="$gpghome" gpg --batch --armor --export "fixture" \
 		> "$probe/keyring/glyndor-apt-key.asc"
-	GNUPGHOME="$gpghome" gpgconf --kill all >/dev/null 2>&1 || true
+	GNUPGHOME="$gpghome" timeout 10 gpgconf --kill all >/dev/null 2>&1 || true
 
 	# The planted keyring has to differ from the committed one, or the probe
 	# proves nothing about a check that never saw a violation.

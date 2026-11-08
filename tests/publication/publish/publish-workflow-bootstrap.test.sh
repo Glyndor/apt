@@ -140,7 +140,7 @@ check "and says which product had none" "1" \
 #
 # Requires: gpg.
 WORK_PW="$(mktemp -d)"
-trap 'gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK_PW"' EXIT
+trap 'timeout 10 gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK_PW"' EXIT
 
 mkkey_pw() { # $1=uid -> prints the armored secret key
 	local home="$WORK_PW/gnupg-$1"

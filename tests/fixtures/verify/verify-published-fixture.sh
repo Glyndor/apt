@@ -31,7 +31,7 @@ chmod 700 "$GNUPGHOME"
 SERVER_PID=""
 cleanup() {
 	[ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null
-	gpgconf --homedir "$GNUPGHOME" --kill all 2>/dev/null || true
+	timeout 10 gpgconf --homedir "$GNUPGHOME" --kill all 2>/dev/null || true
 	rm -rf "$WORK"
 }
 trap cleanup EXIT

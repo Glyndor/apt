@@ -24,7 +24,7 @@ set -u
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 WORKFLOW="$HERE/.github/workflows/health-check.yml"
 WORK="$(mktemp -d)"
-trap 'gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK"' EXIT
+trap 'timeout 10 gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK"' EXIT
 pass=0; fail=0
 
 check() { # <description> <expected> <actual>

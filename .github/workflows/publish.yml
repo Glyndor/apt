@@ -383,7 +383,7 @@ jobs:
           GNUPGHOME="$(mktemp -d)"
           export GNUPGHOME
           chmod 700 "$GNUPGHOME"
-          cleanup() { gpgconf --kill all 2>/dev/null || true; rm -rf "$GNUPGHOME"; }
+          cleanup() { timeout 10 gpgconf --kill all 2>/dev/null || true; rm -rf "$GNUPGHOME"; }
           trap cleanup EXIT
           printf '%s' "$GLYNDOR_APT_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
           unset GLYNDOR_APT_GPG_PRIVATE_KEY

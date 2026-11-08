@@ -406,6 +406,12 @@ tests/ci/policy/locale-pinned.test.sh
 tests/ci/policy/network-calls-are-bounded.test.sh
 	scripts/**
 
+# The kill is looked for wherever a cleanup can call it.
+tests/ci/policy/gpgconf-kill-is-bounded.test.sh
+	scripts/**
+	tests/**
+	.github/workflows/**
+
 # The workflow gates walk every workflow.
 
 tests/ci/policy/workflow-shape.test.sh

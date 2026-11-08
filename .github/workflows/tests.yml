@@ -100,6 +100,7 @@ jobs:
         ./tests/publication/health-check/health-check-workflow.test.sh
         ./tests/verify/distro-floor.test.sh
         ./tests/ci/policy/locale-pinned.test.sh
+        ./tests/ci/policy/gpgconf-kill-is-bounded.test.sh
         ./tests/ci/policy/publish-workflow-triggers.test.sh
         ./tests/quality/check-test-coverage.test.sh
         ./tests/quality/check-action-pins.test.sh

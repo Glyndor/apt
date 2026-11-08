@@ -154,7 +154,7 @@ GNUPGHOME="$(mktemp -d)"
 export GNUPGHOME
 chmod 700 "$GNUPGHOME"
 cleanup() {
-	gpgconf --homedir "$GNUPGHOME" --kill all 2>/dev/null || true
+	timeout 10 gpgconf --homedir "$GNUPGHOME" --kill all 2>/dev/null || true
 	rm -rf "$WORK" "$GNUPGHOME"
 }
 trap cleanup EXIT
