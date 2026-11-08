@@ -39,12 +39,12 @@ jobs:
   shell:
     uses: ./.github/workflows/reusable-shell-ci.yml
     with:
-      # Only prose the suite does not read. README.md is read by
-      # readme-bootstrap, keyring-fingerprints, build-index-page and
-      # distro-floor, and docs/ by readme-bootstrap, so neither is listed;
-      # tests/ci/suites/shell-ci-scope.test.sh fails if this list grows to a file the
-      # suite reads.
-      skip-suite-paths: CONTRIBUTING.md
+      # No path is skippable here. check-editorconfig walks every tracked file
+      # (git ls-files), so every file, CONTRIBUTING.md included, is an input of
+      # the suite's verdict: a pull request that only edited it and dropped its
+      # final newline would have merged without the one check that reads it.
+      # tests/ci/suites/shell-ci-scope.test.sh fails if this list is not empty
+      # while that walk exists, or names a file the suite reads.
       test-command: >-
         ./tests/ci/suites/check-suite-completeness.test.sh
         ./tests/verify/verify-debs.test.sh
