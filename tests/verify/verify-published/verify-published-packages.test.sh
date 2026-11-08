@@ -52,6 +52,23 @@ for bad in . .. ./x a/./b a/.; do
 		"the declared path '$bad' is rejected" -- run
 done
 
+# --- Paths with characters outside the allowlist ------------------------------
+# A path is fetched as a URL, so a character the pool layout never uses (an
+# equals sign, a space, a percent) is refused rather than escaped.
+for bad in 'pool/main/p/podup/podup=1.12.0_amd64.deb' 'pool/main/p/a%20b.deb' 'pool/main/p/a;b.deb'; do
+	build_archive
+	python3 -I - "$DIST/main/binary-amd64/Packages" "$PODUP_POOL/podup_1.12.0_amd64.deb" "$bad" <<'PY'
+import sys
+p, old, new = sys.argv[1:]
+text = open(p).read()
+assert "Filename: " + old in text
+open(p, "w").write(text.replace("Filename: " + old, "Filename: " + new, 1))
+PY
+	write_release "$TRUSTED_KEY"
+	assert_error 1 "unexpected characters" \
+		"the declared path '$bad' is rejected" -- run
+done
+
 # --- A stanza that lacks a field is an error, not a silent omission ----------
 # A signed index with the podup stanza minus its Filename produced nothing for
 # that package and exit 0, and the stanza of the keyring package was enough to

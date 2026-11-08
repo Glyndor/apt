@@ -173,6 +173,17 @@ with tempfile.TemporaryDirectory() as temp:
     put(bucket, 'install/retired')
     refused(run(), 'removed paths', keys())
 
+    shutil.rmtree(journal)
+    reset()
+    before = keys()
+    result = subprocess.run(['bash', str(root / 'scripts/publish/prune-installers.sh'),
+                             str(built), 'bad/bucket', 'https://r2.invalid', str(journal)],
+                            env=env, capture_output=True, text=True)
+    check(result.returncode == 2 and 'the bucket must be a plain name' in result.stderr,
+          'a bucket name with a slash is refused with exit 2')
+    check(keys() == before and not any(c[1] == 'delete-object' for c in records()),
+          'the refused bucket name makes no delete call')
+
 print(f'{passed} passed, 0 failed')
 print(f'DONE prune-installers.test.sh {passed} 0')
 PY

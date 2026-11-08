@@ -307,6 +307,10 @@ tests/publish/purge-cache/purge-cache-budget.test.sh
 	scripts/publish/**
 	tests/publish/**
 
+tests/publish/purge-cache/purge-cache-guards.test.sh
+	scripts/publish/**
+	tests/publish/**
+
 tests/publish/sync-archive.test.sh
 	tests/fixtures/publish/**
 	scripts/publish/**
