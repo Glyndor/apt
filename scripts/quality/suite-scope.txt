@@ -283,6 +283,7 @@ tests/keyring/maintainer-postrm.test.sh
 
 tests/installer/install-template/install-template-tmpdir.test.sh
 	scripts/installer/**
+	scripts/build/**
 	tests/fixtures/**
 	tests/installer/**
 
@@ -526,6 +527,7 @@ tests/quality/check-editorconfig.test.sh
 
 tests/quality/check-test-coverage.test.sh
 	scripts/**
+	keyring/**
 	tests/**
 
 tests/quality/check-action-pins.test.sh
@@ -551,3 +553,9 @@ tests/quality/suite-scope-map.test.sh
 tests/quality/lint-workflow-shell.test.sh
 	scripts/quality/lint-workflow-shell.sh
 	.github/workflows/**
+
+# The committed release key is read by this suite alone: every other suite that
+# reaches verify-debs generates a key of its own.
+tests/keyring/release-key.test.sh
+	keyring/glyndor-release-ed25519.b64
+	tests/keyring/**
