@@ -274,6 +274,29 @@ check "and the refusal says what it found" "1" \
 	"$(printf '%s' "$out" | grep -q 'glob metacharacter' && echo 1 || echo 0)"
 check "and it refused before any download" "0" "$(download_calls)"
 
+# --- an asset name that climbs out of the download directory ----------------
+#
+# The name is also the path gh writes under --dir. `../podup/evil_amd64.deb`
+# has no glob metacharacter, matches the arch selection and would be written
+# outside debs/<product>; the count check that happened to stop it names the
+# wrong cause. The refusal has to name the separator and come before any download.
+ASSETS_SLASH="1000 ../podup/evil_amd64.deb
+100 ../podup/evil_amd64.deb.sig
+1000 podup_1.0.0_arm64.deb
+100 podup_1.0.0_arm64.deb.sig"
+out="$(run_step v1.0.0 "$ASSETS_SLASH" podup 'amd64 arm64')"; rc=$?
+check "an asset name carrying a path separator fails the publish" "1" "$rc"
+check "and the refusal names the separator" "1" \
+	"$(printf '%s' "$out" | grep -q 'path separator' && echo 1 || echo 0)"
+check "and it refused before any download" "0" "$(download_calls)"
+ASSETS_BACKSLASH='1000 evil\\x_amd64.deb
+100 evil\\x_amd64.deb.sig
+1000 podup_1.0.0_arm64.deb
+100 podup_1.0.0_arm64.deb.sig'
+out="$(run_step v1.0.0 "$ASSETS_BACKSLASH" podup 'amd64 arm64')"; rc=$?
+check "a backslash in the name is refused the same way" "1 1" \
+	"$([ "$rc" -eq 1 ] && echo 1) $(printf '%s' "$out" | grep -q 'path separator' && echo 1 || echo 0)"
+
 # --- an oversized asset: refused and named ----------------------------------
 #
 # The advertised size is attacker-controlled but checking it costs nothing

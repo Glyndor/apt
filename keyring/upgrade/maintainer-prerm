@@ -15,8 +15,14 @@ case "$1" in
 			# leaves it running, and it must not keep firing upgrades while
 			# the package is being removed.
 			if systemctl is-enabled --quiet glyndor-upgrade.timer 2>/dev/null; then
-				mkdir -p "$state"
-				: > "$state/suspended-by-package"
+				# Remembering the restore is best effort. A state directory that
+				# cannot be written (a read-only /var/lib, a file where the
+				# directory should be) must not abort the removal with set -e or
+				# leave the timer firing: the postinst treats the same condition
+				# as a warning.
+				if ! { mkdir -p "$state" && : > "$state/suspended-by-package"; } 2>/dev/null; then
+					echo "glyndor-archive-keyring: $state is not writable; the timer is stopped but its restore is not remembered" >&2
+				fi
 				systemctl disable --now glyndor-upgrade.timer || true
 			elif systemctl is-active --quiet glyndor-upgrade.timer 2>/dev/null; then
 				systemctl stop glyndor-upgrade.timer || true

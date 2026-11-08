@@ -103,6 +103,32 @@ echo enabled > "$WORK/unit-state"
 run prerm remove >/dev/null 2>&1
 check "the script exits 0" "0" "$?"
 
+# A state directory that cannot be written. A regular file where the directory
+# should be fails mkdir and the redirection for root too, which a chmod would not.
+reset
+rm -rf "$WORK/state"; : > "$WORK/state"
+echo enabled > "$WORK/unit-state"; echo active > "$WORK/active-state"
+out="$(run prerm remove 2>&1)"; rc=$?
+check "an unwritable state directory does not abort the removal" "0" "$rc"
+check "the timer is still switched off now" "disabled" "$(cat "$WORK/unit-state")"
+check "and stopped" "inactive" "$(cat "$WORK/active-state")"
+check "and the warning says it is not writable" "1" "$(printf '%s' "$out" | grep -c 'is not writable')"
+
+# The control: the two unguarded lines the script used to have abort it with set -e.
+python3 -I - "$WORK/prerm" "$WORK/prerm-unguarded" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+start = s.index('if ! { mkdir -p')
+end = s.index('fi\n', start) + 3
+assert start > 0
+open(sys.argv[2], 'w').write(s[:start] + 'mkdir -p "$state"\n\t\t\t\t: > "$state/suspended-by-package"\n' + s[end:])
+PY
+reset
+rm -rf "$WORK/state"; : > "$WORK/state"
+echo enabled > "$WORK/unit-state"; echo active > "$WORK/active-state"
+PATH="$WORK/sbin:$PATH" sh "$WORK/prerm-unguarded" remove >/dev/null 2>&1; rc=$?
+check "without the guard the removal aborts and the timer stays on" "1 enabled" "$([ "$rc" -ne 0 ] && echo 1) $(cat "$WORK/unit-state")"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
