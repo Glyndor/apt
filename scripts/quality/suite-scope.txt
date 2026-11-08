@@ -153,6 +153,12 @@ tests/verify/verify-installers.test.sh
 	scripts/installer/**
 	scripts/verify/**
 	tests/verify/**
+
+# It renders nothing real: a stub generator in a throwaway repository, so only
+# the script and this suite can change its verdict.
+tests/verify/reference-installers.test.sh
+	scripts/verify/reference-installers.sh
+	tests/verify/reference-installers.test.sh
 	.github/workflows/health-check.yml
 	.github/workflows/publish.yml
 

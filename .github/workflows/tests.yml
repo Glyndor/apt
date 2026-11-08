@@ -56,6 +56,7 @@ jobs:
         ./tests/verify/verify-published/verify-published-collision.test.sh
         ./tests/verify/check-release-order.test.sh
         ./tests/verify/verify-installers.test.sh
+        ./tests/verify/reference-installers.test.sh
         ./tests/build/build-keyring.test.sh
         ./tests/build/keyring/build-keyring-generator.test.sh
         ./tests/build/keyring/build-keyring-contents.test.sh

@@ -26,6 +26,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   BASE_URL: "https://apt.glyndor.net"
@@ -132,6 +133,8 @@ jobs:
           ./scripts/verify/verify-published.sh "$BASE_URL" keyring/glyndor-apt-key.asc 3 10 360
 
       - name: Advertised installers reachable
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # The landing page publishes one line per product,
@@ -166,7 +169,11 @@ jobs:
             product="${spec%%:*}"
             installers+=("$product")
           done
-          # The reference comes from this checkout, not from the host being
-          # checked. A template change will alert until the next publish.
-          ./scripts/build/build-installers.sh "$expected" "${installers[@]}"
+          # The reference does not come from the host being checked. It is
+          # rendered by the generator of the commit the last successful publish
+          # ran from, because that is what produced the served files; a template
+          # change merged since then is not a difference to alert on. When that
+          # commit cannot be learned or fetched the script uses this checkout,
+          # which is the strict behaviour.
+          ./scripts/verify/reference-installers.sh "$expected" "${installers[@]}"
           ./scripts/verify/verify-installers.sh "$BASE_URL" "$expected" "${installers[@]}"
