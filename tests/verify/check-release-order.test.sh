@@ -100,6 +100,12 @@ case_with_control 'missing InRelease (HTTP 404) fails closed' 1 'could not fetch
 snapshot oversized
 TAG=v3.0.0
 case_with_control 'valid signed InRelease over 1 MiB cap fails' 1 'could not fetch the served index' cap
+snapshot new
+# A served Packages of 9 MiB against the 8 MiB cap, with a size that matches no
+# signed one: the cap has to stop the transfer before the size comparison can
+# name a mismatch, so the message is the one the fetch writes.
+python3 -I -c 'open("'"$DIST"'/main/binary-amd64/Packages", "wb").write(b"x" * (9 * 1024 * 1024))'
+case_with_control 'served Packages over the 8 MiB cap fails at the fetch' 1 'could not fetch the served index file' index-cap
 snapshot near-cap
 case_with_control 'valid signed InRelease just under cap passes' 0 'is not older' lower-cap
 snapshot new

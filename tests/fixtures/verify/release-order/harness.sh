@@ -139,7 +139,7 @@ case_with_control() { # label status output mutation
 		pass="$saved_pass"; fail=$((saved_fail + 1))
 		echo "FAIL - CONTROL survived: $label"
 	else
-		if [ "$want" -eq 1 ] && [ "$mutation" != size ] && [ "$mutation" != description ] && [ "$LAST_STATUS" -ne 0 ]; then
+		if [ "$want" -eq 1 ] && [ "$mutation" != size ] && [ "$mutation" != description ] && [ "$mutation" != index-cap ] && [ "$LAST_STATUS" -ne 0 ]; then
 			pass="$saved_pass"; fail=$((saved_fail + 1))
 			echo "FAIL - CONTROL rejected for another reason: $label"
 		else
