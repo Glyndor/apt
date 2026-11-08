@@ -64,7 +64,7 @@ jobs:
           # check would pass; the same anchor apt clients trust must gate the alert.
           gpghome="$(mktemp -d)"
           verified="$(mktemp)"
-          cleanup() { gpgconf --homedir "$gpghome" --kill all 2>/dev/null || true; rm -rf "$gpghome" "$tmp" "$verified"; }
+          cleanup() { timeout 10 gpgconf --homedir "$gpghome" --kill all 2>/dev/null || true; rm -rf "$gpghome" "$tmp" "$verified"; }
           trap cleanup EXIT
           gpg --homedir "$gpghome" --batch --quiet --import keyring/glyndor-apt-key.asc
           if ! gpgv --keyring "$gpghome/pubring.kbx" --quiet \

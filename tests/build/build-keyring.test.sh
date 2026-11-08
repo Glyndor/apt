@@ -206,7 +206,7 @@ key_repo() { # $1=dir $2=gpg lifetime spec
 		>/dev/null 2>&1
 	GNUPGHOME="$home" gpg --batch --armor --export fixture \
 		> "$dir/keyring/glyndor-apt-key.asc"
-	GNUPGHOME="$home" gpgconf --kill all >/dev/null 2>&1 || true
+	GNUPGHOME="$home" timeout 10 gpgconf --kill all >/dev/null 2>&1 || true
 	git -C "$dir" init -q
 	git -C "$dir" add -A
 	git -C "$dir" -c user.name=test -c user.email=test@example.invalid \

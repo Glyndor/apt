@@ -12,7 +12,7 @@ mkdir -m 700 "$GNUPGHOME"
 pass=0
 fail=0
 cleanup() {
-	gpgconf --homedir "$GNUPGHOME" --kill all 2>/dev/null || true
+	timeout 10 gpgconf --homedir "$GNUPGHOME" --kill all 2>/dev/null || true
 	rm -rf "$WORK"
 }
 trap cleanup EXIT
