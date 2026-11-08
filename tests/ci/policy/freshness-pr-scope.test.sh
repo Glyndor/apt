@@ -2,9 +2,9 @@
 #
 # freshness.yml answers questions about main and about crons, never about the
 # change in a pull request, so it must not run on every pull request. It may
-# run on one that changes what it is made of: the workflow itself and the two
-# reusables it calls. A filter that left its own file out would stop testing the
-# workflow it guards, and a filter on a required check would never report it, so
+# run on one that changes what it is made of: the workflow itself, the two
+# reusables it calls and the script its suite job runs. A filter that left its
+# own file out would stop testing the workflow it guards, and a filter on a required check would never report it, so
 # this also requires that no job of the file is one the repository requires.
 #
 # Requires: python3 with PyYAML (tests.yml installs python3-yaml).
@@ -38,7 +38,8 @@ present = "pull_request" in on
 pr = on.get("pull_request")
 need = {".github/workflows/freshness.yml",
         ".github/workflows/reusable-dependabot-freshness.yml",
-        ".github/workflows/reusable-schedule-freshness.yml"}
+        ".github/workflows/reusable-schedule-freshness.yml",
+        "scripts/monitoring/check-suite-on-main.sh"}
 if not present:
     print("ok")  # no pull_request trigger at all is also fine
 elif not isinstance(pr, dict) or "paths" not in pr:
@@ -56,13 +57,13 @@ plant() { # $1 = file, rest = the pull_request block lines
 	local f="$1"; shift
 	{ printf 'on:\n'; printf '  %s\n' "$@"; printf 'jobs: {}\n'; } > "$f"
 }
-FULL=('pull_request:' '  paths:' '    - .github/workflows/freshness.yml' '    - .github/workflows/reusable-dependabot-freshness.yml' '    - .github/workflows/reusable-schedule-freshness.yml')
+FULL=('pull_request:' '  paths:' '    - .github/workflows/freshness.yml' '    - .github/workflows/reusable-dependabot-freshness.yml' '    - .github/workflows/reusable-schedule-freshness.yml' '    - scripts/monitoring/check-suite-on-main.sh')
 
 plant "$WORK/c/good.yml" "${FULL[@]}"
 check "the three files and nothing else pass" "ok" "$(scope "$WORK/c/good.yml")"
 plant "$WORK/c/unfiltered.yml" 'pull_request:'
 check "an unfiltered pull_request trigger is reported" "the pull_request trigger has no paths filter" "$(scope "$WORK/c/unfiltered.yml")"
-plant "$WORK/c/noself.yml" 'pull_request:' '  paths:' '    - .github/workflows/reusable-dependabot-freshness.yml' '    - .github/workflows/reusable-schedule-freshness.yml'
+plant "$WORK/c/noself.yml" 'pull_request:' '  paths:' '    - .github/workflows/reusable-dependabot-freshness.yml' '    - .github/workflows/reusable-schedule-freshness.yml' '    - scripts/monitoring/check-suite-on-main.sh'
 check "a filter that leaves out the workflow itself is reported" \
 	"paths missing: ['.github/workflows/freshness.yml']; paths not allowed: []" "$(scope "$WORK/c/noself.yml")"
 plant "$WORK/c/wide.yml" "${FULL[@]}" '    - README.md'
