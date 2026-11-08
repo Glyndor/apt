@@ -18,6 +18,8 @@ changes = {
     "sha256": ('if [ "$(sha256_of "$dest")" != "$digest" ]; then', 'if false; then'),
     "cap": ('MAX_INRELEASE_BYTES=$((1024 * 1024))',
             'MAX_INRELEASE_BYTES=$((2 * 1024 * 1024))'),
+    "index-cap": ('MAX_INDEX_BYTES=$((8 * 1024 * 1024))',
+                  'MAX_INDEX_BYTES=$((16 * 1024 * 1024))'),
     "lower-cap": ('MAX_INRELEASE_BYTES=$((1024 * 1024))',
                   'MAX_INRELEASE_BYTES=$((1024 * 1024 - 4096))'),
     "semver": ('new = precedence(candidate)', 'new = precedence("9.0.0")'),
