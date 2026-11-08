@@ -309,6 +309,14 @@ rc=0
 check "a Release naming an index path with .. fails the purge" "1" "$rc"
 check "and names the path problem" "1" "$(grep -c "containing '..'" "$WORK/out")"
 
+build_archive 1 "amd64 arm64"
+sed -i '0,/^Filename: /s|^Filename: .*|Filename: ../../../../etc/passwd|' "$BUILT"/dists/stable/main/binary-amd64/Packages
+rc=0
+"$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 || rc=$?
+check "a Packages naming a pool path with .. fails the purge" "1" "$rc"
+check "and names the pool path problem" "1" "$(grep -c "pool path containing '..'" "$WORK/out")"
+check "and sent nothing to Cloudflare" "0" "$(grep -c 'etc/passwd' "$WORK/out")"
+
 rc=0
 CF_TOKEN="" "$PURGE" "https://apt.example" "$BUILT" >/dev/null 2>&1 || rc=$?
 check "an absent CF_TOKEN fails closed" "1" "$rc"
