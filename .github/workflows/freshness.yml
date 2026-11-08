@@ -55,8 +55,9 @@ on:
   schedule:
     - cron: "13 8,20 * * *"
   # A pull request runs these only when it changes what these jobs are made of:
-  # this file and the two reusables it calls. Anything else cannot change the
-  # verdict, so it would only repeat the same verdicts. None of the jobs here is a
+  # this file, the two reusables it calls and the script its suite job runs.
+  # Anything else cannot change the verdict, so it would only repeat the same
+  # verdicts. None of the jobs here is a
   # required check, which is what makes a path filter safe: a required check
   # behind a filter would never be reported and the pull request would wait for
   # ever. They measure main and crons elsewhere, never the change in the pull
@@ -67,6 +68,7 @@ on:
       - .github/workflows/freshness.yml
       - .github/workflows/reusable-dependabot-freshness.yml
       - .github/workflows/reusable-schedule-freshness.yml
+      - scripts/monitoring/check-suite-on-main.sh
   push:
     branches: [main]
 
