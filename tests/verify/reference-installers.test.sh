@@ -77,7 +77,7 @@ check "the published commit, older than HEAD, renders the reference" "version 1"
 check "and the log says which commit it used" "1" "$(grep -c "published commit ${OLD:0:7}" "$WORK/log")"
 
 fake_gh "$NEW" 0
-check "the lookup asks only for runs on main" "1" "$(grep -c -- '--branch main' "$WORK/gh.args" | grep -q '^0$' && echo 0 || echo 1)"
+check "the lookup asks only for runs on main" "1" "$(grep -q -- '--branch main' "$WORK/gh.args" && echo 1 || echo 0)"
 check "a published commit equal to HEAD uses this checkout" "version 2" "$(run)"
 
 fake_gh "" 1
