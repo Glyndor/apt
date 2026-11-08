@@ -137,6 +137,12 @@ pool_paths="$(awk '/^Filename:/ { print $2 }' \
 	"$BUILT_DIR"/dists/stable/main/binary-*/Packages | LC_ALL=C sort -u)"
 [ -n "$pool_paths" ] \
 	|| { echo "::error::the built indices declare no packages to purge"; exit 1; }
+# The same rule as for the indices above: a Filename that climbs out of the
+# archive would be sent to Cloudflare as a URL elsewhere on the host, and the
+# purge would report success over a file it never cleared.
+case "$pool_paths" in
+	*..*) echo "::error::a built Packages index names a pool path containing '..'"; exit 1 ;;
+esac
 
 # The bootstrap installers. Derived from what was built rather than from
 # PRODUCTS, for the same reason the index list is derived from the Release: a
