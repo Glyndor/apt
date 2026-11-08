@@ -11,7 +11,7 @@
 # key has to be: 32 bytes. The helper is run over broken copies first, because a
 # check that accepts a bad file proves nothing about the real one.
 #
-# Requires: bash, base64, wc.
+# Requires: bash, python3.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -40,7 +40,14 @@ audit() { # <file>
 	while IFS= read -r line || [ -n "$line" ]; do
 		line="$(printf '%s' "$line" | tr -d '[:space:]')"
 		case "$line" in '' | '#'*) continue ;; esac
-		if ! bytes="$(printf '%s' "$line" | base64 -d 2>/dev/null | wc -c)"; then
+		# The same decoding as verify-debs.sh: pad to a 4-character boundary, then
+		# refuse anything that is not base64. The committed key is written without
+		# padding, which GNU base64 -d rejects, so the shell tool cannot be the judge.
+		if ! bytes="$(printf '%s' "$line" | python3 -I -c '
+import base64, sys
+b64 = sys.stdin.read()
+b64 += "=" * (-len(b64) % 4)
+print(len(base64.b64decode(b64, validate=True)))' 2>/dev/null)"; then
 			echo "bad: not base64"
 			return
 		fi
