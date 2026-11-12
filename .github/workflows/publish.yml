@@ -43,7 +43,12 @@ env:
   # --delete, so a product quietly skipped is a product EVICTED from the served
   # archive. A declared architecture that does not arrive is still a hard error;
   # an undeclared one is never looked for.
-  PRODUCTS: "podup epistle"
+  #
+  # A package whose control Architecture is `all` (epistle-panel) is declared
+  # as "epistle-panel:all" and ships one epistle-panel_<version>_all.deb. A bare
+  # name would look for _amd64 and _arm64 assets that do not exist. reprepro
+  # indexes an `all` package in every architecture the distribution declares.
+  PRODUCTS: "podup epistle epistle-panel:all"
   # There is no INSTALLERS list. Every product in PRODUCTS gets a bootstrap
   # installer at /install/<product>, derived from PRODUCTS below, with no
   # per-product opt-in.
@@ -112,9 +117,11 @@ jobs:
             fi
             # A product cannot declare an architecture the archive does not
             # serve: reprepro would refuse the .deb after it had been downloaded
-            # and verified, which is a confusing place to find a typo.
+            # and verified, which is a confusing place to find a typo. `all` is
+            # not a served architecture but a package kind, and it is accepted
+            # because reprepro puts such a package in every served index.
             for a in $product_archs; do
-              case " $ARCHITECTURES " in
+              case " $ARCHITECTURES all " in
                 *" $a "*) ;;
                 *)
                   echo "::error::Glyndor/$p declares architecture $a, which is not in ARCHITECTURES ($ARCHITECTURES)"

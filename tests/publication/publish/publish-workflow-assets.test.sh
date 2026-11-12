@@ -377,6 +377,47 @@ check "and the arm64 call did not select the amd64 asset" "0" \
 	   grep -F -- '--pattern podup_1.0.0_arm64.deb' | \
 	   grep -cF 'podup_1.0.0_amd64' || true)"
 
+# --- a product that ships one architecture-independent package ----------------
+#
+# epistle-panel is `Architecture: all`: one epistle-panel_<version>_all.deb and
+# its .sig, no _amd64 or _arm64 asset. It is declared "epistle-panel:all".
+# Before `all` was accepted as a declared architecture the entry was refused
+# for naming an architecture that ARCHITECTURES does not contain, and the bare
+# entry looked for _amd64 and _arm64 assets that the release does not carry.
+ASSETS_ALL="1000 epistle-panel_0.1.0_all.deb
+100 epistle-panel_0.1.0_all.deb.sig
+100 SHA256SUMS"
+out="$(run_step v0.1.0 "$ASSETS_ALL" 'epistle-panel:all' 'amd64 arm64')"; rc=$?
+check "an all-architecture product publishes" "0" "$rc"
+check "and downloads exactly once" "1" "$(download_calls)"
+check "and asks for the _all .deb and .sig by name" "1" \
+	"$(grep '^call .*release download' "$WORK/calls" | \
+	   grep -qF -- '--pattern epistle-panel_0.1.0_all.deb ' && \
+	   grep '^call .*release download' "$WORK/calls" | \
+	   grep -qF -- '--pattern epistle-panel_0.1.0_all.deb.sig' && echo 1 || echo 0)"
+check "and the package landed in its own directory" "1" \
+	"$(find "$WORK"/run.* -path '*debs/epistle-panel/epistle-panel_0.1.0_all.deb' | grep -c .)"
+
+# The roster itself declares it with `all`; a bare entry would fail every run.
+check "the roster declares epistle-panel as an all-architecture product" "1" \
+	"$(grep -E '^[[:space:]]*PRODUCTS:' "$WF" | grep -cE '(^|[ "])epistle-panel:all([ "]|$)')"
+
+# Declared bare, the same release is refused: the entry would look for the
+# per-architecture assets and the release has none. A hard error, never a skip.
+out="$(run_step v0.1.0 "$ASSETS_ALL" 'epistle-panel' 'amd64 arm64')"; rc=$?
+check "the same release declared bare fails the publish" "1" "$rc"
+check "and the refusal says no amd64 .deb was found" "1" \
+	"$(printf '%s' "$out" | grep -c 'carries 0 amd64 .deb file(s)')"
+check "and it refused before any download" "0" "$(download_calls)"
+
+# `all` does not open the door to other names: an architecture that is neither
+# served nor `all` is still refused before anything is listed or downloaded.
+out="$(run_step v0.1.0 "$ASSETS_ALL" 'epistle-panel:riscv64' 'amd64 arm64')"; rc=$?
+check "an undeclared architecture still fails the publish" "1" "$rc"
+check "and the refusal names it" "1" \
+	"$(printf '%s' "$out" | grep -c 'declares architecture riscv64, which is not in ARCHITECTURES')"
+check "and it refused before any download" "0" "$(download_calls)"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

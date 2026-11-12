@@ -29,6 +29,7 @@ Swap `podup` for any package marked `served` below.
 | --- | --- | --- |
 | [`podup`](https://github.com/Glyndor/podup) | Docker-compose translator and runner for rootless Podman | served |
 | [`epistle`](https://github.com/Glyndor/epistle) | Self-hosted headless mail server: SMTP, IMAP | served |
+| [`epistle-panel`](https://github.com/Glyndor/epistle-panel) | Web panel for the epistle mail server | served |
 | [`helmly-agent`](https://github.com/Glyndor/helmly-agent) | Hardened server agent for the Glyndor panel: signed commands over WireGuard and mTLS | not packaged |
 
 ```bash
