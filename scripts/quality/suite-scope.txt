@@ -449,6 +449,11 @@ tests/ci/policy/publish-workflow-triggers.test.sh
 	.github/workflows/publish.yml
 	.github/workflows/health-check.yml
 
+# The documented test command is read from CONTRIBUTING.md.
+
+tests/ci/docs/documented-test-command.test.sh
+	CONTRIBUTING.md
+
 # The reusable gates read the reusable they cover.
 
 tests/ci/reusable/reusable-dco.test.sh
