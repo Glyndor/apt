@@ -221,6 +221,11 @@ jobs:
   suite-on-main:
     name: suite on main
     runs-on: ubuntu-latest
+    # A newer push to the same pull request supersedes the poll; on main and on
+    # the schedule every run is kept, as each answers for its own commit.
+    concurrency:
+      group: freshness-suite-on-main-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     # Bound: on the schedule path one API call plus a checkout measures 2 to
     # 15s (the identical call in reusable-schedule-freshness). On the push
     # path the script polls the API for up to twenty minutes (80 attempts of
