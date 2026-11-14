@@ -443,9 +443,17 @@ dpkg-deb --fsys-tarfile "$verified_deb" 2>/dev/null \
 # The ceiling above counts archive bytes, and a sparse member costs almost none:
 # a few kilobytes of tar can declare a file of gigabytes. The listing reports the
 # logical size, so the sum of what would be written is bounded before anything is.
-tar -t -v -f - --no-same-owner < "$workdir/keyring.tar" 2>/dev/null \
-	| awk -v max=$((8 * 1024 * 1024)) '{ total += $3 } END { exit (total > max) }' \
-	|| fail "the keyring package declares more than 8 MB of files; nothing was installed"
+# Fail closed: a listing tar could not finish, a line whose size is not purely
+# numeric, all refuse. Member types are judged later, on the extracted tree.
+# --numeric-owner keeps owner and group free of spaces, so the size column is
+# always the third field.
+tar -t -v --numeric-owner -f - < "$workdir/keyring.tar" > "$workdir/keyring.list" 2>/dev/null \
+	|| fail "could not read the keyring package listing; nothing was installed"
+awk -v max=$((8 * 1024 * 1024)) '
+	$3 !~ /^[0-9]+$/ { bad = 1 }
+	{ total += $3 }
+	END { exit (bad || total > max) }' "$workdir/keyring.list" \
+	|| fail "the keyring package declares more than 8 MB or cannot be measured; nothing was installed"
 # From stdin, not by file name: tar looks at a named file and decompresses it
 # when it is gzip or xz, so a data archive that is itself compressed twice would
 # have got past the ceiling above. On stdin tar refuses a compressed stream.
