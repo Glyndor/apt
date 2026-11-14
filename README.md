@@ -19,9 +19,10 @@ curl -fsSL https://apt.glyndor.net/install/podup | sudo sh
 It adds the archive, installs the signing key after checking its fingerprint,
 installs the package, and reports whether automatic security upgrades are on.
 It does not change that setting itself; if the `unattended-upgrades` package is
-missing it installs it. Anything but `Keyring installed` after the fingerprint
-and signature lines means it refused: it exits before `dpkg -i`, so no script from
-the downloaded package ran.
+missing it installs it. If it stops before the `installing the keyring` step, it refused:
+it exits before `dpkg -i`, so no script from the downloaded package ran. An error
+reported after that step comes from `dpkg` itself, which may already have run the
+package's maintainer scripts.
 
 Swap `podup` for any package marked `served` below.
 
