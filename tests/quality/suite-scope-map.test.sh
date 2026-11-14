@@ -103,6 +103,30 @@ check "a suite listed twice is reported" "listed twice: tests/a/one.test.sh" "$(
 
 check "the real map agrees with the real workflow and the real tree" "" "$(problems "$HERE")"
 
+# Validate all real map entries against the caller, including suites that the
+# install-step fixtures do not select. Unknown suites remain allowed to
+# be absent: that is the intentional full-install default.
+map_valid="$(python3 -I - "$HERE" <<'PYMAP'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+wf = (root / '.github/workflows/tests.yml').read_text()
+allowed = set(wf.split('apt-packages: ', 1)[1].splitlines()[0].split())
+seen = set()
+for line in (root / 'scripts/quality/suite-dependencies.txt').read_text().splitlines():
+    fields = line.split()
+    if not fields or fields[0].startswith('#'):
+        continue
+    suite, *deps = fields
+    assert suite not in seen and './' + suite in wf and (root / suite).is_file(), line
+    assert deps == ['-'] or (deps and set(deps) <= allowed), line
+    seen.add(suite)
+assert seen
+print('ok')
+PYMAP
+)"
+check "real dependency map names existing suites and supported packages without duplicates" "ok" "$map_valid"
+
 echo
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

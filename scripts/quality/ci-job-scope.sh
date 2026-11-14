@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Print true (run) or false (skip) for one lint job, or the list of suites a
-# pull request can affect. Call from the BASE commit on PRs; never trust a
+# pull request can affect. The packages mode derives an APT subset from that
+# same suite decision, without changing the test command. Call from BASE on PRs; never trust a
 # changed classifier to decide whether to lint itself, or which suites it may
 # skip. No network or extra Python packages. Unknown inputs deliberately cost a
 # run.
@@ -229,10 +230,69 @@ def normalise(path):
     return path[2:] if path.startswith("./") else path
 
 
+def packages():
+    """APT subset for the existing runner; uncertainty leaves the caller's list.
+
+    Only a plain runner invocation is understood. Never evaluate shell here:
+    compound commands, wrappers and substitutions retain the full install.
+    The runner still makes its own suite decision and checks every sentinel.
+    """
+    runner = "tests/ci/suites/check-suite-completeness.test.sh"
+    depmap = "scripts/quality/suite-dependencies.txt"
+    raw_command = os.environ.get("TEST_COMMAND", "")
+    command = raw_command.split()
+    if (os.environ.get("EVENT") != "pull_request"
+            or "\n" in raw_command or "\r" in raw_command
+            or os.environ.get("CHECK_SUITE_COMPLETENESS_SKIP_FIXTURE_TEST", "0") == "1"
+            or len(command) < 2 or command[0] != "./" + runner
+            or any(not re.fullmatch(r"\./tests/[A-Za-z0-9_./-]+\.test\.sh", s)
+                   for s in command[1:])):
+        raise ValueError("not a supported PR suite invocation")
+    candidates = [normalise(s) for s in command[1:]]
+    paths = changed_paths()
+    if paths is None:
+        raise ValueError("no usable PR diff")
+    # Match the runner's base-copy guard. Changes to dependency policy itself
+    # cost a full install without changing which suites the runner executes.
+    if (open(runner, "rb").read() != git("show", "HEAD^1:" + runner)
+            or depmap in paths):
+        raise ValueError("runner or dependency policy changed")
+    scope = parse_map(git("show", "HEAD^1:" + MAP).decode("utf-8"))
+    if scope is None:
+        raise ValueError("unusable suite map")
+    # Exercise the same BASE resolver in its suites mode as the runner does.
+    decision = subprocess.run(
+        ["bash", "/dev/stdin", "suites", *command[1:]],
+        input=git("show", "HEAD^1:scripts/quality/ci-job-scope.sh"),
+        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    selected = [normalise(s) for s in decision.stdout.decode("utf-8").splitlines() if s]
+    if (decision.stderr or not selected or not set(selected) <= set(candidates)
+            or set(selected) == set(candidates)):
+        raise ValueError("no usable reduced suite decision")
+    allowed = os.environ.get("APT_PACKAGES", "").split()
+    dependencies = {}
+    for raw in git("show", "HEAD^1:" + depmap).decode("utf-8").splitlines():
+        fields = raw.split()
+        if not fields or fields[0].startswith("#"):
+            continue
+        suite, *deps = fields
+        if (suite in dependencies or suite not in scope or not deps
+                or (deps != ["-"] and any(d not in allowed for d in deps))):
+            raise ValueError("invalid dependency entry: " + raw)
+        dependencies[suite] = set() if deps == ["-"] else set(deps)
+    if any(s not in dependencies for s in selected):
+        raise ValueError("suite dependencies not established")
+    required = set().union(*(dependencies[s] for s in selected))
+    print("packages=" + " ".join(p for p in allowed if p in required))
+
+
 def main():
     argv = sys.argv[1:]
     # Always operate at the root, including for a shell working-directory.
     os.chdir(os.fsdecode(git("rev-parse", "--show-toplevel")).strip())
+    if argv == ["packages"]:
+        packages()
+        return
     if argv and argv[0] == "suites":
         # The list of suites to run, one per line. The caller is
         # tests/ci/suites/check-suite-completeness.test.sh, which passes the
@@ -247,6 +307,9 @@ def main():
 try:
     main()
 except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+    if sys.argv[1:] == ["packages"]:
+        print(f"Cannot establish dependencies; install all: {exc}", file=sys.stderr)
+        sys.exit(1)
     if len(sys.argv) > 1 and sys.argv[1] == "suites":
         # Fail open: the whole list of suites the caller named.
         print(f"Cannot establish the suite scope; running every suite: {exc}", file=sys.stderr)

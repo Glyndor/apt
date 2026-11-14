@@ -305,12 +305,27 @@ jobs:
 
       - name: Install test dependencies
         if: steps.scope.outputs.docs_only != 'true'
+        env:
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          if [ -n "$APT_PACKAGES" ]; then
+          # Decide before apt, using the BASE resolver and dependency map.
+          # Older consumers, unsupported commands and failed decisions keep
+          # the full caller list. The test runner and its gates stay unchanged.
+          packages="$APT_PACKAGES"
+          script="$(mktemp "$RUNNER_TEMP/package-scope.XXXXXX")" || script=""
+          trap 'rm -f "$script"' EXIT
+          if [ "$EVENT" = pull_request ] && [ -n "$script" ] \
+            && git show HEAD^1:scripts/quality/ci-job-scope.sh > "$script" 2>/dev/null; then
+            if decision="$(bash "$script" packages)" \
+              && [[ "$decision" == packages=* && "$decision" != *$'\n'* ]]; then
+              packages="${decision#packages=}"
+            fi
+          fi
+          if [ -n "$packages" ]; then
             sudo apt-get update -qq
             # shellcheck disable=SC2086 # intentional word-splitting of the package list
-            sudo apt-get install -y -qq $APT_PACKAGES
+            sudo apt-get install -y -qq $packages
           fi
 
       # The guard in reusable-workflow-lint.yml already refuses a
