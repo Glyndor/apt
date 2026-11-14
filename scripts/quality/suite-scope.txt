@@ -308,6 +308,11 @@ tests/installer/install-template/install-template-hostile-tar.test.sh
 	tests/fixtures/**
 	tests/installer/**
 
+tests/installer/install-template/install-template-redirect.test.sh
+	scripts/installer/**
+	tests/fixtures/**
+	tests/installer/**
+
 tests/installer/unattended-upgrades.test.sh
 	scripts/installer/**
 	tests/installer/**
