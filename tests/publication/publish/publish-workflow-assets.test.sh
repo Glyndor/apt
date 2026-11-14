@@ -20,7 +20,7 @@
 # Each case plants a release listing on the stub (a tag and an assets file)
 # and asserts both which message fired and whether the stub recorded any
 # download call. The post-download count check still runs in the extracted
-# step, so the stub also writes empty files for each --pattern so that check
+# step, so the stub also writes files for each --pattern so that check
 # has something to count.
 #
 # The order of the steps around the download is in
@@ -81,6 +81,7 @@ check "the download step was extracted from the workflow" "1" \
 # One binary on PATH: serves a canned tag and listing, records every call,
 # and on `gh release download` creates empty files in --dir for each
 # --pattern so the step's post-download count check has something to count.
+# STUB_DEB_DELIVERED optionally gives those files a sparse logical size.
 cat >"$WORK/gh" <<'GH'
 #!/usr/bin/env bash
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -137,6 +138,7 @@ case "$1 $2" in
 							# post-download cap is reached at all.
 							case "$asset" in
 								*.sig) head -c "${STUB_SIG_DELIVERED:-0}" /dev/zero > "$dir/$asset" ;;
+								*.deb) truncate -s "${STUB_DEB_DELIVERED:-0}" "$dir/$asset" ;;
 								*) : > "$dir/$asset" ;;
 							esac
 							;;
@@ -255,6 +257,15 @@ out="$(STUB_SIG_DELIVERED=5000 run_step v1.0.0 "$ASSETS_LIES" podup 'amd64 arm64
 check "a signature that arrives over the cap fails the publish" "1" "$rc"
 check "and the refusal is the signature cap, naming the file" "1" \
 	"$(printf '%s' "$out" | grep -c '\.deb\.sig is 5000 bytes, over the')"
+
+# The .deb listing lies too: one byte beyond 300 MiB must be refused here,
+# before verify-debs.sh can read the whole object into memory. truncate creates
+# a sparse file: the logical size trips stat without allocating 300 MiB.
+out="$(STUB_DEB_DELIVERED=$((300 * 1024 * 1024 + 1)) run_step v1.0.0 "$ASSETS_LIES" podup amd64)"; rc=$?
+check "a .deb delivered over 300 MiB fails despite an allowed advertised size" "1" "$rc"
+check "and the refusal is the per-package cap, naming the .deb and actual bytes" "1" \
+	"$(printf '%s' "$out" | grep -c 'podup_1.0.0_amd64.deb is 314572801 bytes, over the 314572800-byte per-package cap')"
+check "and the oversized .deb was actually downloaded" "1" "$(download_calls)"
 
 # --- an asset name that is itself a glob ------------------------------------
 #
