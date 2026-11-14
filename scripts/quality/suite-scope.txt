@@ -303,6 +303,11 @@ tests/installer/install-template/install-template-delivery.test.sh
 	scripts/build/**
 	tests/installer/**
 
+tests/installer/install-template/install-template-hostile-tar.test.sh
+	scripts/installer/**
+	tests/fixtures/**
+	tests/installer/**
+
 tests/installer/unattended-upgrades.test.sh
 	scripts/installer/**
 	tests/installer/**

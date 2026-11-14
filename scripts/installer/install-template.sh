@@ -440,6 +440,12 @@ dpkg-deb --fsys-tarfile "$verified_deb" 2>/dev/null \
 [ -s "$workdir/keyring.tar" ] || fail "could not extract the keyring package"
 [ "$(wc -c < "$workdir/keyring.tar")" -le $((8 * 1024 * 1024)) ] \
 	|| fail "the keyring package unpacks to more than 8 MB; nothing was installed"
+# The ceiling above counts archive bytes, and a sparse member costs almost none:
+# a few kilobytes of tar can declare a file of gigabytes. The listing reports the
+# logical size, so the sum of what would be written is bounded before anything is.
+tar -t -v -f - --no-same-owner < "$workdir/keyring.tar" 2>/dev/null \
+	| awk -v max=$((8 * 1024 * 1024)) '{ total += $3 } END { exit (total > max) }' \
+	|| fail "the keyring package declares more than 8 MB of files; nothing was installed"
 # From stdin, not by file name: tar looks at a named file and decompresses it
 # when it is gzip or xz, so a data archive that is itself compressed twice would
 # have got past the ceiling above. On stdin tar refuses a compressed stream.
