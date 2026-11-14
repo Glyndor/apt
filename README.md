@@ -96,13 +96,14 @@ installer compares it for you; repeat it by hand to confirm a key already
 installed, or if you would rather not pipe a network response into a shell.
 
 ```bash
-curl -fsSLO https://apt.glyndor.net/glyndor-archive-keyring.deb
-curl -fsSLO https://apt.glyndor.net/glyndor-archive-keyring.deb.asc
+curl -fsSLO --proto '=https' --proto-redir '=https' --max-filesize 8388608 https://apt.glyndor.net/glyndor-archive-keyring.deb
+curl -fsSLO --proto '=https' --proto-redir '=https' --max-filesize 65536 https://apt.glyndor.net/glyndor-archive-keyring.deb.asc
 dpkg-deb -x glyndor-archive-keyring.deb keyring-check
 gpg --show-keys keyring-check/usr/share/keyrings/glyndor.gpg
 ```
 
-Nothing from the package runs. It must print **exactly**:
+Nothing from the package runs, and the downloads are capped at 8 MiB and 64 KiB,
+the same bound the installer applies. It must print **exactly**:
 
 ```
 9ADF 04EA 8C31 39CD B673  03CF A670 5C2E A153 F3D6
