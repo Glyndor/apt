@@ -217,7 +217,122 @@ print("ok" if not bare else "unguarded: " + ", ".join(bare))
 PY
 )"
 check "the shellcheck job decides whether its work is needed and guards every later step" "ok" "$shellcheck_gate"
+# Exercise the actual install body with a recording sudo, never the host's apt.
+# The resolver, suite map and dependency map live in real BASE commit objects.
+step_script "$WORKFLOW" "Install test dependencies" > "$WORK/install.sh"
+mkdir -p "$WORK/bin" "$WORK/rt-packages"
+cat > "$WORK/bin/sudo" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$APT_LOG"
+STUB
+chmod +x "$WORK/bin/sudo"
+FULL_PACKAGES='python3-cryptography reprepro shellcheck python3-yaml'
+RUNNER=tests/ci/suites/check-suite-completeness.test.sh
+EDITOR=tests/quality/check-editorconfig.test.sh
+BUILD=tests/build/build-repo.test.sh
+OTHER=tests/quality/check-action-pins.test.sh
+COMMAND="./$RUNNER ./$EDITOR ./$BUILD ./$OTHER"
+package_repo() {
+	R="$WORK/packages"
+	rm -rf "$R"; mkdir -p "$R/scripts/quality" "$R/tests/ci/suites"
+	git -C "$R" init -q -b main
+	git -C "$R" config user.name t; git -C "$R" config user.email t@example.invalid
+	git -C "$R" config commit.gpgsign false
+	cp "$HERE/scripts/quality/ci-job-scope.sh" "$R/scripts/quality/"
+	cp "$HERE/scripts/quality/suite-dependencies.txt" "$R/scripts/quality/"
+	cp "$HERE/$RUNNER" "$R/$RUNNER"
+	printf '%s\n\t**\n%s\n\tarchive.txt\n%s\n\tother.txt\n' \
+		"$EDITOR" "$BUILD" "$OTHER" > "$R/scripts/quality/suite-scope.txt"
+	if [ "${1:-}" = real ]; then
+		cp "$HERE/scripts/quality/suite-scope.txt" "$R/scripts/quality/"
+	fi
+	printf 'base\n' > "$R/docs.md"; printf 'archive\n' > "$R/archive.txt"
+	git -C "$R" add -A; git -C "$R" commit -qm base
+	git -C "$R" checkout -qb pr
+}
+package_merge() {
+	git -C "$R" add -A; git -C "$R" commit -qm change
+	git -C "$R" checkout -q main; git -C "$R" merge -q --no-ff pr -m merge
+}
+install_packages() {
+	: > "$WORK/apt.log"
+	( cd "$R" && PATH="$WORK/bin:$PATH" APT_LOG="$WORK/apt.log" \
+		RUNNER_TEMP="$WORK/rt-packages" EVENT="${1:-pull_request}" \
+		TEST_COMMAND="${2:-$COMMAND}" APT_PACKAGES="$FULL_PACKAGES" \
+		bash "$WORK/install.sh" ) > "$WORK/install.out" 2>&1
+	local status=$?
+	if [ "$status" -ne 0 ]; then
+		cat "$WORK/install.out"; echo "install step failed: $status"
+	else
+		cat "$WORK/apt.log"
+	fi
+}
+FULL_INSTALL=$(printf 'apt-get update -qq\napt-get install -y -qq %s' "$FULL_PACKAGES")
+package_repo real; echo more >> "$R/docs.md"; package_merge
+REAL_COMMAND="$(python3 - "$HERE/.github/workflows/tests.yml" <<'PYCOMMAND'
+import sys, yaml
+print(yaml.safe_load(open(sys.argv[1]))['jobs']['shell']['with']['test-command'])
+PYCOMMAND
+)"
+check "docs-only PR with the real suite list and scope map installs nothing" "" \
+	"$(install_packages pull_request "$REAL_COMMAND")"
+package_repo; echo more >> "$R/docs.md"; package_merge
+check "docs-only PR does not invoke apt at all (including reprepro)" "" "$(install_packages)"
+check "push installs the complete caller list" "$FULL_INSTALL" "$(install_packages push)"
+check "schedule installs the complete caller list" "$FULL_INSTALL" "$(install_packages schedule)"
+check "unsupported command installs everything" "$FULL_INSTALL" "$(install_packages pull_request 'true')"
+check "compound command installs everything" "$FULL_INSTALL" "$(install_packages pull_request "$COMMAND && true")"
+check "multiline command installs everything" "$FULL_INSTALL" "$(install_packages pull_request "$COMMAND"$'\ntrue')"
+# A PR cannot use its checkout's dependency map to override BASE.
+printf '%s reprepro\n' "$EDITOR" > "$R/scripts/quality/suite-dependencies.txt"
+check "checkout dependency map is ignored" "" "$(install_packages)"
+git -C "$R" checkout -- scripts/quality/suite-dependencies.txt
+echo '# changed' >> "$R/$RUNNER"
+check "changed runner installs everything as it would run every suite" "$FULL_INSTALL" "$(install_packages)"
 
+package_repo; echo more >> "$R/archive.txt"; package_merge
+check "suite requiring reprepro installs exactly reprepro before running" \
+	$'apt-get update -qq\napt-get install -y -qq reprepro' "$(install_packages)"
+
+package_repo; echo '# changed in PR' >> "$R/scripts/quality/suite-dependencies.txt"; package_merge
+check "committed dependency-policy change installs everything" "$FULL_INSTALL" "$(install_packages)"
+
+# Each defect is in BASE: the workflow must keep the full list when the
+# classifier fails, returns garbage/empty, or cannot supply the needed policy.
+for defect in failed empty unknown old empty-suites unknown-suites missing-map malformed-map duplicate-map unknown-package unmapped-suite missing-scope bad-scope; do
+	package_repo
+	case "$defect" in
+		failed) printf '#!/bin/bash\nexit 1\n' > "$R/scripts/quality/ci-job-scope.sh" ;;
+		empty) printf '#!/bin/bash\nexit 0\n' > "$R/scripts/quality/ci-job-scope.sh" ;;
+		unknown) printf '#!/bin/bash\necho garbage\n' > "$R/scripts/quality/ci-job-scope.sh" ;;
+		old) printf '#!/bin/bash\necho true\n' > "$R/scripts/quality/ci-job-scope.sh" ;;
+		empty-suites) sed -i 's/for name in suites(.*):/for name in []:/' "$R/scripts/quality/ci-job-scope.sh" ;;
+		unknown-suites) sed -i 's/for name in suites(.*):/for name in ["tests\/unknown.test.sh"]:/' "$R/scripts/quality/ci-job-scope.sh" ;;
+		missing-map) rm "$R/scripts/quality/suite-dependencies.txt" ;;
+		malformed-map) printf '%s\n' "$EDITOR" > "$R/scripts/quality/suite-dependencies.txt" ;;
+		duplicate-map) printf '%s -\n' "$EDITOR" >> "$R/scripts/quality/suite-dependencies.txt" ;;
+		unknown-package) printf '%s imaginary-package\n' "$EDITOR" > "$R/scripts/quality/suite-dependencies.txt" ;;
+		unmapped-suite) sed -i "\|^$EDITOR |d" "$R/scripts/quality/suite-dependencies.txt" ;;
+		missing-scope) rm "$R/scripts/quality/suite-scope.txt" ;;
+		bad-scope) printf '%s\n' "$EDITOR" > "$R/scripts/quality/suite-scope.txt" ;;
+	esac
+	git -C "$R" add -A; git -C "$R" commit -qm "$defect"
+	git -C "$R" checkout -q main; git -C "$R" merge -q --ff-only pr
+	git -C "$R" checkout -qb change
+	echo more >> "$R/docs.md"; package_merge
+	check "$defect decision installs every dependency" "$FULL_INSTALL" "$(install_packages)"
+done
+
+package_repo; echo more >> "$R/docs.md"
+git -C "$R" add -A; git -C "$R" commit -qm 'branch head, not merge'
+check "non-merge checkout installs everything" "$FULL_INSTALL" "$(install_packages)"
+package_repo; git -C "$R" commit -qm empty --allow-empty
+git -C "$R" checkout -q main; git -C "$R" merge -q --no-ff pr -m merge
+check "empty diff installs everything" "$FULL_INSTALL" "$(install_packages)"
+package_repo; echo more >> "$R/docs.md"; package_merge
+parent=$(git -C "$R" rev-parse HEAD^1)
+rm "$R/.git/objects/${parent:0:2}/${parent:2}"
+check "unreadable base installs everything" "$FULL_INSTALL" "$(install_packages)"
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -1,0 +1,15 @@
+# APT additions beyond the ubuntu-latest runner's standard tools.
+# Exact suite path followed by packages; '-' explicitly needs no additions.
+# Read from BASE. Missing/unknown suites or malformed entries install the full
+# apt-packages input. Keep this deliberately sparse until a suite's tools have
+# been reviewed; a new suite therefore gets the full install automatically.
+# No globs, inheritance or package groups. The resolver validates entries and
+# tests/ci/reusable/reusable-shell-ci.test.sh exercises the actual install step.
+
+# These suites use bash/coreutils/git/python3 from the runner image.
+tests/quality/check-editorconfig.test.sh -
+tests/quality/check-action-pins.test.sh -
+
+# build-repo's full-run case invokes the real reprepro binary and GnuPG (the
+# latter is already on ubuntu-latest); build-index-page uses bash/awk/coreutils.
+tests/build/build-repo.test.sh reprepro
