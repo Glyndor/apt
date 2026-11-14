@@ -69,46 +69,33 @@ render() {
 
 render podup
 
-# --- Case 1: dpkg-deb -x appears in the rendered installer --------------------
-# `dpkg-deb -x` extracts the data archive without running any maintainer
-# script, which is the only way the verify can read what the download
-# contained before the package is allowed to write anything to the system. A
-# regression that drops extraction in favour of straight `dpkg -i` is the bug
-# the order cases below are about.
-if grep -qF 'dpkg-deb -x' "$WORK/install.sh"; then
-	echo "ok   - dpkg-deb -x appears in the rendered installer"
-	pass=$((pass + 1))
-else
-	echo "FAIL - dpkg-deb -x is missing from the rendered installer"
-	fail=$((fail + 1))
-fi
+# --- Cases 1-3: inspect executable extraction, never comments -----------------
+# The producer reads the deb into a bounded tar stream. The consumer must run
+# after that stream exists and before gpg reads the extracted keyring.
+extraction_order() { # $1=rendered installer
+	local producer extract verify install
+	producer="$(grep -nE '^[[:blank:]]*dpkg-deb --fsys-tarfile ' "$1" | cut -d: -f1)"
+	extract="$(grep -nE '^[[:blank:]]*tar -x -f - -C ' "$1" | cut -d: -f1)"
+	verify="$(grep -nE '^keyring_fprs=.*gpg --show-keys --with-colons ' "$1" | cut -d: -f1)"
+	install="$(grep -nE '^[[:blank:]]*dpkg -i ' "$1" | cut -d: -f1)"
+	[ -n "$producer" ] && [ -n "$extract" ] && [ -n "$verify" ] && [ -n "$install" ] \
+		&& [ "$producer" -lt "$extract" ] && [ "$extract" -lt "$verify" ] \
+		&& [ "$verify" -lt "$install" ]
+}
+assert 0 "the tar stream is extracted before fingerprint verification and installation" \
+	-- extraction_order "$WORK/install.sh"
 
-# --- Cases 2 and 3: the verify happens AFTER extraction and BEFORE dpkg -i ---
-# Structural assertions on the rendered script, read off line numbers rather
-# than running the installer, because running the real one needs root and a
-# live archive. A regression that lets `dpkg -i` execute first, or that moves
-# the verify before extraction, will reorder the line numbers below.
-extract_line="$(grep -nF 'dpkg-deb -x' "$WORK/install.sh" | head -1 | cut -d: -f1 || true)"
-verify_line="$(grep -nF 'gpg --show-keys --with-colons' "$WORK/install.sh" | head -1 | cut -d: -f1 || true)"
-install_line="$(grep -nF 'dpkg -i ' "$WORK/install.sh" | head -1 | cut -d: -f1 || true)"
-
-# Case 2: the fingerprint check appears BEFORE dpkg -i.
-if [ -n "$verify_line" ] && [ -n "$install_line" ] && [ "$verify_line" -lt "$install_line" ]; then
-	echo "ok   - the fingerprint check appears before dpkg -i (verify line $verify_line < install line $install_line)"
-	pass=$((pass + 1))
-else
-	echo "FAIL - fingerprint check (line $verify_line) must precede dpkg -i (line $install_line)"
-	fail=$((fail + 1))
-fi
-
-# Case 3: extraction appears BEFORE the fingerprint check.
-if [ -n "$extract_line" ] && [ -n "$verify_line" ] && [ "$extract_line" -lt "$verify_line" ]; then
-	echo "ok   - extraction appears before the fingerprint check (extract line $extract_line < verify line $verify_line)"
-	pass=$((pass + 1))
-else
-	echo "FAIL - extraction (line $extract_line) must precede the fingerprint check (line $verify_line)"
-	fail=$((fail + 1))
-fi
+# Sabotage copies only: leaving the old dpkg-deb -x COMMENT must not save them.
+sed '/^tar -x /,+1d' "$WORK/install.sh" > "$WORK/no-extraction.sh"
+assert 1 "deleting extraction fails the order check even with the old comment" \
+	-- extraction_order "$WORK/no-extraction.sh"
+# Move the real consumer before the producer. Merely seeing both commands is
+# insufficient: it would try to read a stream that has not yet been produced.
+awk '/^dpkg-deb --fsys-tarfile / {print "tar -x -f - -C \"$workdir/extracted\" --no-same-owner < \"$workdir/keyring.tar\""}
+	/^tar -x / {skip=1; next} skip {skip=0; next} {print}' \
+	"$WORK/install.sh" > "$WORK/early-extraction.sh"
+assert 1 "moving extraction before its producer fails the order check" \
+	-- extraction_order "$WORK/early-extraction.sh"
 
 # --- Case 4: a machine without apt-get is refused before any download --------
 # Run the installer with an empty PATH so apt-get cannot be found. The script
