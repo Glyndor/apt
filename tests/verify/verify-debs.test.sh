@@ -394,6 +394,33 @@ sign "$d/podup_1.0.0_arm64.deb"
 assert 0 "a package whose control architecture matches its name passes" \
 	-- "$VERIFY" "$d" "$WORK/key.b64" podup
 
+# --- Case 21: an Architecture: all package named _all.deb is admitted -------
+#             and bound to its release. epistle-panel ships one such package
+# for every architecture, so the filename says `all` and so does the signed
+# control field. The gate has to read that as a match, not as an unknown one.
+d="$WORK/case21"; mkdir -p "$d"
+deb="$(make_deb all_match epistle-panel 0.1.0 all)"; cp "$deb" "$d/epistle-panel_0.1.0_all.deb"
+sign "$d/epistle-panel_0.1.0_all.deb"
+assert 0 "an architecture-independent package named _all.deb passes with its product and tag" \
+	-- "$VERIFY" "$d" "$WORK/key.b64" epistle-panel v0.1.0
+
+# --- Case 22: a signed amd64 package attached under the _all.deb name -------
+#             is refused. The name is set by whoever uploads the asset, so
+# without the control-field comparison an arch-specific binary could be served
+# to every architecture as if it were architecture-independent.
+d="$WORK/case22"; mkdir -p "$d"
+deb="$(make_deb all_mismatch epistle-panel 0.1.0 amd64)"; cp "$deb" "$d/epistle-panel_0.1.0_all.deb"
+sign "$d/epistle-panel_0.1.0_all.deb"
+rc=0
+out="$("$VERIFY" "$d" "$WORK/key.b64" epistle-panel v0.1.0 2>&1)" || rc=$?
+if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -qF "architecture mismatch: epistle-panel_0.1.0_all.deb is named for all but its control field says amd64"; then
+	echo "ok   - an amd64 package under the _all.deb name is refused, naming both"
+	pass=$((pass + 1))
+else
+	echo "FAIL - an amd64 package under the _all.deb name is refused, naming both (rc=$rc: $out)"
+	fail=$((fail + 1))
+fi
+
 echo "passed $pass, failed $fail"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
