@@ -1,15 +1,118 @@
 # APT additions beyond the ubuntu-latest runner's standard tools.
 # Exact suite path followed by packages; '-' explicitly needs no additions.
 # Read from BASE. Missing/unknown suites or malformed entries install the full
-# apt-packages input. Keep this deliberately sparse until a suite's tools have
-# been reviewed; a new suite therefore gets the full install automatically.
+# apt-packages input. A new suite is not listed until its tools have been
+# reviewed and therefore gets the full install automatically.
 # No globs, inheritance or package groups. The resolver validates entries and
 # tests/ci/reusable/reusable-shell-ci.test.sh exercises the actual install step.
 
-# These suites use bash/coreutils/git/python3 from the runner image.
-tests/quality/check-editorconfig.test.sh -
-tests/quality/check-action-pins.test.sh -
+# Every suite is mapped. The packages were found three ways and unioned: by running
+# each suite with its tools wrapped to record use, by reading the suite and the
+# scripts it references (comments excluded), and by running the whole set on a
+# machine without reprepro, where only the two build-repo suites failed. A suite
+# that uses nothing beyond the runner image is "-". A suite added later is not
+# listed here, so it gets the full install until someone reviews what it needs.
 
-# build-repo's full-run case invokes the real reprepro binary and GnuPG (the
-# latter is already on ubuntu-latest); build-index-page uses bash/awk/coreutils.
+# nothing beyond the runner image
+tests/build/build-index-page.test.sh -
+tests/build/build-installers.test.sh -
+tests/build/build-keyring.test.sh -
+tests/build/keyring/build-keyring-contents.test.sh -
+tests/build/keyring/build-keyring-generator.test.sh -
+tests/ci/policy/cancel-policy.test.sh -
+tests/ci/policy/gpgconf-kill-is-bounded.test.sh -
+tests/ci/policy/locale-pinned.test.sh -
+tests/ci/policy/network-calls-are-bounded.test.sh -
+tests/ci/reusable/reusable-dco.test.sh -
+tests/ci/reusable/reusable-dependabot-freshness.test.sh -
+tests/ci/reusable/reusable-empty-diff.test.sh -
+tests/ci/reusable/reusable-line-limit.test.sh -
+tests/ci/reusable/reusable-schedule-freshness.test.sh -
+tests/ci/suites/ci-runs-every-test.test.sh -
+tests/installer/install-template.test.sh -
+tests/installer/install-template/install-template-behaviour.test.sh -
+tests/installer/install-template/install-template-delivery.test.sh -
+tests/installer/install-template/install-template-empty-keyring.test.sh -
+tests/installer/install-template/install-template-guards.test.sh -
+tests/installer/install-template/install-template-hostile-tar.test.sh -
+tests/installer/install-template/install-template-limits.test.sh -
+tests/installer/install-template/install-template-redirect.test.sh -
+tests/installer/install-template/install-template-special-files.test.sh -
+tests/installer/install-template/install-template-swap.test.sh -
+tests/installer/install-template/install-template-tmpdir.test.sh -
+tests/installer/readme-bootstrap.test.sh -
+tests/installer/unattended-upgrades.test.sh -
+tests/keyring/glyndor-upgrade-errors.test.sh -
+tests/keyring/glyndor-upgrade.test.sh -
+tests/keyring/keyring-fingerprints.test.sh -
+tests/keyring/maintainer-offer-guards.test.sh -
+tests/keyring/maintainer-postinst-trust.test.sh -
+tests/keyring/maintainer-postrm.test.sh -
+tests/keyring/maintainer-prerm.test.sh -
+tests/keyring/maintainer-timer.test.sh -
+tests/keyring/release-key.test.sh -
+tests/monitoring/check-reusable-drift.test.sh -
+tests/monitoring/check-suite-on-main.test.sh -
+tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh -
+tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh -
+tests/publication/health-check/health-check-workflow.test.sh -
+tests/publication/publish/publish-workflow-assets.test.sh -
+tests/publication/publish/publish-workflow-bootstrap.test.sh -
+tests/publication/publish/publish-workflow-release-order.test.sh -
+tests/publication/publish/publish-workflow-signing-key.test.sh -
+tests/publication/publish/publish-workflow-sync.test.sh -
+tests/publication/publish/publish-workflow.test.sh -
+tests/publish/prune-installers.test.sh -
+tests/publish/purge-cache.test.sh -
+tests/publish/purge-cache/purge-cache-budget.test.sh -
+tests/publish/purge-cache/purge-cache-guards.test.sh -
+tests/publish/sync-archive.test.sh -
+tests/quality/check-action-pins.test.sh -
+tests/quality/check-editorconfig.test.sh -
+tests/quality/check-test-coverage.test.sh -
+tests/quality/ci-job-scope-suites.test.sh -
+tests/quality/ci-job-scope.test.sh -
+tests/quality/suite-scope-map.test.sh -
+tests/verify/check-release-order.test.sh -
+tests/verify/distro-floor.test.sh -
+tests/verify/reference-installers.test.sh -
+tests/verify/verify-installers.test.sh -
+tests/verify/verify-published.test.sh -
+tests/verify/verify-published/verify-published-bootstrap.test.sh -
+tests/verify/verify-published/verify-published-budget.test.sh -
+tests/verify/verify-published/verify-published-collision.test.sh -
+tests/verify/verify-published/verify-published-object-size.test.sh -
+tests/verify/verify-published/verify-published-packages.test.sh -
+
+# python3-cryptography
+tests/publication/publish/publish-workflow-verify-debs.test.sh python3-cryptography
+tests/verify/verify-debs.test.sh python3-cryptography
+
+# python3-yaml
+tests/ci/policy/freshness-job-scope.test.sh python3-yaml
+tests/ci/policy/freshness-pr-scope.test.sh python3-yaml
+tests/ci/policy/jobs-are-bounded.test.sh python3-yaml
+tests/ci/policy/publish-workflow-triggers.test.sh python3-yaml
+tests/ci/policy/workflow-shape.test.sh python3-yaml
+tests/ci/suites/lint-job-scope.test.sh python3-yaml
+tests/ci/suites/shell-ci-scope.test.sh python3-yaml
+tests/publish/purge-cache/purge-cache-pruned.test.sh python3-yaml
+tests/verify/verify-published/verify-published-build.test.sh python3-yaml
+
+# reprepro
+tests/build/architectures-agree.test.sh reprepro
+tests/build/build-repo-expiry.test.sh reprepro
 tests/build/build-repo.test.sh reprepro
+
+# shellcheck
+tests/ci/docs/documented-test-command.test.sh shellcheck
+tests/quality/lint-workflow-shell.test.sh shellcheck
+
+# python3-yaml, shellcheck
+tests/ci/reusable/reusable-workflow-lint.test.sh python3-yaml shellcheck
+
+# python3-cryptography, python3-yaml, reprepro
+tests/ci/reusable/reusable-workflow-lint-install.test.sh python3-cryptography python3-yaml reprepro
+
+# python3-cryptography, python3-yaml, reprepro, shellcheck
+tests/ci/reusable/reusable-shell-ci.test.sh python3-cryptography python3-yaml reprepro shellcheck
