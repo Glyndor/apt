@@ -84,16 +84,32 @@ fake_gh "0123456789abcdef0123456789abcdef01234567" 0
 check "a commit that cannot be fetched falls back" "alpha beta gamma" "$(run)"
 check "and says so" "1" "$(grep -c 'not usable' "$WORK/log")"
 
-# A published commit whose workflow has no roster is not usable either.
-EMPTY="$WORK/empty"
-git init -q -b main "$EMPTY"
-mkdir -p "$EMPTY/scripts/verify" "$EMPTY/.github/workflows"
-cp "$SCRIPT" "$EMPTY/scripts/verify/published-roster.sh"
-printf 'env:\n  OTHER: "x"\n' > "$EMPTY/.github/workflows/publish.yml"
-git_in "$EMPTY" add -A; git_in "$EMPTY" commit -qm none
-check "a checkout with no PRODUCTS list fails and says why" "exit 1" \
-	"$(cd "$EMPTY" && PATH="$WORK/bin:$PATH" bash "$EMPTY/scripts/verify/published-roster.sh" >/dev/null 2>"$WORK/log"; echo "exit $?")"
-check "and the message names the missing list" "1" "$(grep -c 'cannot tell which installers to ask for' "$WORK/log")"
+# A published commit that is fetched but whose workflow has no roster it can read: the
+# checkout must not stand in for it, because its roster is the one to avoid.
+write_roster_other() { printf 'env:\n  OTHER: "x"\n' > "$ORIGIN/.github/workflows/publish.yml"; }
+write_roster_other
+git_in "$ORIGIN" add -A; git_in "$ORIGIN" commit -qm three
+UNREADABLE="$(git_in "$ORIGIN" rev-parse HEAD)"
+fake_gh "$UNREADABLE" 0
+check "a published commit with no readable roster stops the check, not the checkout's list" "exit 1" "$(run)"
+check "and the error names the published commit" "1" "$(grep -c "published commit ${UNREADABLE:0:7} has no PRODUCTS list" "$WORK/log")"
+
+# A name that is not a plain product name never reaches the installer paths.
+write_roster "alpha;touch-x beta"
+git_in "$ORIGIN" add -A; git_in "$ORIGIN" commit -qm four
+HOSTILE="$(git_in "$ORIGIN" rev-parse HEAD)"
+fake_gh "$HOSTILE" 0
+check "a hostile published roster is refused" "exit 1" "$(run)"
+check "and the error names the name" "1" "$(grep -c "not a plain product name" "$WORK/log")"
+
+# The lookup asks for exactly what it needs: the real CLI would answer something else
+# if a flag went missing, and the script would fall back without a word.
+fake_gh "$OLD" 0
+rm -f "$WORK/gh.args"
+run >/dev/null
+for flag in '--workflow publish.yml' '--branch main' '--status success' '--limit 1' '--json headSha'; do
+	check "the lookup passes ${flag}" "1" "$(grep -c -- "$flag" "$WORK/gh.args")"
+done
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
