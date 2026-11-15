@@ -1,0 +1,39 @@
+name: Roster releases
+
+# A pull request that changes the roster has to leave every product in it with a release the
+# publish can resolve. The publish stops when it cannot, so one product listed before its
+# first release stopped the whole archive from refreshing on 15 November 2026; this says so
+# on the pull request instead of in the next scheduled run.
+#
+# Advisory, and path-filtered on purpose: it is not a required check, so a filter cannot
+# leave a required status pending, and a pull request that does not touch the roster
+# cannot change the answer. It runs on the pull request only: the scheduled publish is the
+# check that reads the real releases every day.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/publish.yml
+      - .github/workflows/roster-releases.yml
+      - scripts/verify/roster-has-releases.sh
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roster-releases-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  roster:
+    name: every roster product has a release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Ask each product of the roster for its latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/verify/roster-has-releases.sh
