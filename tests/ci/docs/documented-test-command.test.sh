@@ -57,6 +57,15 @@ out="$(cd "$WORK/t" && PATH="$WORK/bin:$PATH" bash -c "$block" 2>&1)"
 rc=$?
 check "with every suite passing the documented command succeeds" "0" "$rc"
 
+# A runner that lost its executable bit must not turn the command green by being
+# skipped: it fails the command and says which file is the problem.
+chmod -x "$WORK/t/tests/ci/suites/check-suite-completeness.test.sh"
+out="$(cd "$WORK/t" && PATH="$WORK/bin:$PATH" bash -c "$block" 2>&1)"
+rc=$?
+check "a runner that is not executable fails the documented command" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+check "and the message names the runner" "1" "$(printf '%s' "$out" | grep -c 'check-suite-completeness.test.sh is not executable')"
+chmod +x "$WORK/t/tests/ci/suites/check-suite-completeness.test.sh"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
