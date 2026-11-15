@@ -57,6 +57,14 @@ check 'and the refusal says it is a link' 1 "$(said 'symbolic link')"
 rc=0; run_timed "$CUT" "$DEB" || rc=$?
 check 'without the check the same package is installed' 0 "$rc"
 
+# A directory is neither a link nor a FIFO: it reaches the last refusal of the check,
+# which names the path as "not a regular file".
+DEB="$(special_deb dir 'mkdir glyndor.gpg')"
+rc=0; run_timed "$TEMPLATE" "$DEB" || rc=$?
+check 'a keyring that is a directory is refused' 1 "$rc"
+check 'and the refusal says it is not a regular file' 1 "$(said 'is not a regular file')"
+check 'and nothing is installed from it' 0 "$(installed)"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
