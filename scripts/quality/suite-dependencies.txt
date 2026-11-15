@@ -15,6 +15,7 @@
 
 # nothing beyond the runner image
 tests/ci/suites/check-suite-completeness.test.sh -
+tests/ci/policy/freshness-poll-concurrency.test.sh -
 tests/build/build-index-page.test.sh -
 tests/build/build-installers.test.sh -
 tests/build/build-keyring.test.sh -
