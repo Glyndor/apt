@@ -164,6 +164,9 @@ tests/verify/reference-installers.test.sh
 	scripts/verify/reference-installers.sh
 	tests/verify/reference-installers.test.sh
 
+tests/ci/policy/roster-releases-workflow.test.sh
+	.github/workflows/roster-releases.yml
+
 tests/verify/roster-has-releases.test.sh
 	scripts/verify/roster-has-releases.sh
 	tests/verify/roster-has-releases.test.sh
