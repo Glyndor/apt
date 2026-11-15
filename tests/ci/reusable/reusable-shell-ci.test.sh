@@ -239,12 +239,17 @@ package_repo() {
 	git -C "$R" config user.name t; git -C "$R" config user.email t@example.invalid
 	git -C "$R" config commit.gpgsign false
 	cp "$HERE/scripts/quality/ci-job-scope.sh" "$R/scripts/quality/"
-	cp "$HERE/scripts/quality/suite-dependencies.txt" "$R/scripts/quality/"
 	cp "$HERE/$RUNNER" "$R/$RUNNER"
 	printf '%s\n\t**\n%s\n\tarchive.txt\n%s\n\tother.txt\n' \
 		"$EDITOR" "$BUILD" "$OTHER" > "$R/scripts/quality/suite-scope.txt"
+	# The resolver refuses a map that names a suite the scope map does not know, so
+	# the fixture has a map of its own for its three suites, and only the real
+	# case carries the real scope map together with the real dependency map.
+	printf '%s -\n%s reprepro\n%s -\n' "$EDITOR" "$BUILD" "$OTHER" \
+		> "$R/scripts/quality/suite-dependencies.txt"
 	if [ "${1:-}" = real ]; then
 		cp "$HERE/scripts/quality/suite-scope.txt" "$R/scripts/quality/"
+		cp "$HERE/scripts/quality/suite-dependencies.txt" "$R/scripts/quality/"
 	fi
 	printf 'base\n' > "$R/docs.md"; printf 'archive\n' > "$R/archive.txt"
 	git -C "$R" add -A; git -C "$R" commit -qm base
@@ -276,6 +281,21 @@ PYCOMMAND
 )"
 check "docs-only PR with the real suite list and scope map installs nothing" "" \
 	"$(install_packages pull_request "$REAL_COMMAND")"
+# The real maps, a change that selects only the suites reading one script: the
+# install is narrowed to what those suites use, not to the full caller list.
+package_repo real
+mkdir -p "$R/scripts/verify"; echo 'echo changed' >> "$R/scripts/verify/verify-debs.sh"
+package_merge
+check "a change to the .deb verifier installs what its suites use, not reprepro" \
+	$'apt-get update -qq\napt-get install -y -qq python3-cryptography python3-yaml' \
+	"$(install_packages pull_request "$REAL_COMMAND")"
+package_repo real
+mkdir -p "$R/scripts/build"; echo 'echo changed' >> "$R/scripts/build/build-repo.sh"
+package_merge
+check "a change to the repository builder installs reprepro, not the .deb verifier's package" \
+	"$(printf 'apt-get update -qq\napt-get install -y -qq reprepro python3-yaml')" \
+	"$(install_packages pull_request "$REAL_COMMAND" | head -n 2)"
+
 package_repo; echo more >> "$R/docs.md"; package_merge
 check "docs-only PR does not invoke apt at all (including reprepro)" "" "$(install_packages)"
 check "push installs the complete caller list" "$FULL_INSTALL" "$(install_packages push)"
