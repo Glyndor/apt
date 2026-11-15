@@ -53,6 +53,9 @@ case_with_control 'Version ahead of Package still reaches the product' 1 'refusi
 snapshot twice
 TAG=v5.0.0
 case_with_control 'a stanza with two Versions is refused' 1 'exactly once' once
+snapshot package-twice
+TAG=v5.0.0
+case_with_control 'a stanza naming its Package twice is refused' 1 'names its Package more than once' pkgtwice
 snapshot arch-gap
 TAG=v2.5.0
 case_with_control 'a declared architecture with no Packages file is refused' 1 'lists no Packages file' arch

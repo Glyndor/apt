@@ -16,6 +16,8 @@ independent trust anchor for rejecting signatures from this other key.
 - `description`: indented Package/Version lines inside a description.
 - `order`: `Version` ahead of `Package` in the stanza (dpkg accepts it).
 - `twice`: a stanza of the product with two `Version` fields.
+- `package-twice`: a stanza of the product that names `Package` twice. Signed with a third
+  ephemeral RSA-2048 key (public half in the directory, private half not saved), on 2026-11-15.
 - `arch-gap`: the index declares `amd64 arm64` and lists only the amd64
   Packages file. These three are signed by a second ephemeral RSA-2048 key
   (the public half sits in each directory as `archive-key.asc`; the private

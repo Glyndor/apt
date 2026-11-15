@@ -34,6 +34,7 @@ changes = {
     ],
     "once": ('if len(fields.get("Version", [])) != 1:',
              'if len(fields.get("Version", [])) < 1:'),
+    "pkgtwice": ('if len(fields["Package"]) != 1:', 'if len(fields["Package"]) < 1:'),
     "arch": ('if declared - listed:', 'if False:'),
     # The full Debian version comparison, the check that candidates exist, that
     # they are the product, and that their versions are valid.
