@@ -7,7 +7,7 @@
 # a signing key nor a listening socket nor external network access is needed.
 # The destination is /dev/null: even the 300 MiB boundary allocates no disk.
 #
-# Requires: curl, python3, truncate.
+# Requires: curl, python3, truncate, sha256sum.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -76,6 +76,55 @@ check_transfer package "$MAX_POOL_OBJECT_BYTES" 0
 check_transfer package "$((MAX_POOL_OBJECT_BYTES + 1))" 63
 check_transfer signature "$MAX_BOOTSTRAP_SIG_BYTES" 0
 check_transfer signature "$((MAX_BOOTSTRAP_SIG_BYTES + 1))" 63
+
+# The real verify_set, with the real check_entry and fetch behind it, handed a small cap:
+# the cap it is given has to reach curl. Replacing verify_set by a function that calls
+# fetch directly, as the cases above do, would not notice a verify_set that dropped it.
+python3 - "$VERIFY" > "$WORK/chain.sh" <<'PY'
+import re
+import sys
+source = open(sys.argv[1]).read()
+print(re.search(r'^sha256_of\(\) \{.*\}$', source, re.M)[0])
+for name in ('check_entry', 'verify_set'):
+    print(re.search(r'^' + name + r'\(\) \{\n.*?^\}', source, re.M | re.S)[0])
+PY
+chain() { # $1=body size; the cap handed to verify_set is 1024 bytes
+	(
+		# shellcheck source=/dev/null
+		. "$WORK/transport.sh"
+		# shellcheck source=/dev/null
+		. "$WORK/chain.sh"
+		# The functions below are called by the extracted verify_set, not from here.
+		# shellcheck disable=SC2317,SC2329
+		elapsed() { echo 0; }
+		# shellcheck disable=SC2317,SC2329
+		retry_wait() { echo 0; }
+		# shellcheck disable=SC2317,SC2329
+		sleep() { :; }
+		# shellcheck disable=SC2034
+		BUDGET=600
+		# shellcheck disable=SC2034
+		ATTEMPTS=1
+		BASE_URL="file://$WORK"
+		rm -f "$WORK/obj.bin" "$WORK/served"
+		head -c "$1" /dev/zero > "$WORK/obj.bin"
+		printf '%s %s obj.bin\n' "$(sha256sum "$WORK/obj.bin" | cut -d' ' -f1)" "$1" > "$WORK/entries"
+		verify_set "objects" "$WORK/entries" "" 1024 "" >/dev/null 2>&1
+	)
+}
+rc=0; chain 1024 || rc=$?
+check_exit() { # <description> <expected exit> <actual exit>
+	if [ "$2" = "$3" ]; then
+		echo "ok   - $1 (exit $3)"
+		pass=$((pass + 1))
+	else
+		echo "FAIL - $1 (want exit $2, got $3)"
+		fail=$((fail + 1))
+	fi
+}
+check_exit "verify_set serves an object exactly at the cap it was handed" 0 "$rc"
+rc=0; chain 1025 || rc=$?
+check_exit "verify_set refuses an object one byte over the cap it was handed" 1 "$rc"
 
 # The bootstrap package goes through the same pool cap on a call written over two
 # lines, which the extraction above does not read. Join the continuation and

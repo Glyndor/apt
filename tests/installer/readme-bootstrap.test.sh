@@ -12,7 +12,8 @@
 #      heading does not break a build and does not 404 -- GitHub drops the
 #      reader at the top of the page instead, which looks like it worked.
 #
-# Requires: nothing beyond coreutils and grep.
+# Requires: coreutils, grep, python3, ar and dpkg-deb for the case that runs the size
+# guard; they are on the runner image.
 set -u
 
 cd "$(dirname "$0")/../.." || exit 1
@@ -54,6 +55,51 @@ check "unpacking comes before the fingerprint" "1" \
 	"$([ -n "$extract_at" ] && [ -n "$fpr_at" ] && [ "$extract_at" -lt "$fpr_at" ] && echo 1 || echo 0)"
 check "the fingerprint comes before dpkg -i" "1" \
 	"$([ -n "$fpr_at" ] && [ -n "$install_at" ] && [ "$fpr_at" -lt "$install_at" ] && echo 1 || echo 0)"
+
+# The package is read before it is extracted: the guard line refuses one whose files
+# declare more than 8 MiB once unpacked, because a sparse member costs a few kilobytes
+# in the archive and sixteen megabytes on disk. It has to come before the extraction,
+# and it has to refuse a real sparse package and accept a plain one.
+guard_at="$(line_of 'dpkg-deb --fsys-tarfile glyndor-archive-keyring.deb')"
+check "the size guard comes before the extraction" "1" \
+	"$([ -n "$guard_at" ] && [ -n "$extract_at" ] && [ "$guard_at" -lt "$extract_at" ] && echo 1 || echo 0)"
+guard="$(sed -n "${guard_at},$((guard_at + 1))p" "$README")"
+WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+build_deb() { # $1=name $2=plain|sparse
+	python3 -I - "$WORK" "$2" <<'PY'
+import sys, tarfile
+root, kind = sys.argv[1:]
+with tarfile.open(root + "/data.tar", "w", format=tarfile.GNU_FORMAT) as archive:
+    plain = tarfile.TarInfo("usr/share/keyrings/glyndor.gpg")
+    plain.size = 0
+    if kind == "plain":
+        archive.addfile(plain)
+    else:
+        member = tarfile.TarInfo("sparse")
+        member.type = tarfile.GNUTYPE_SPARSE
+        member.size = 1
+        header = bytearray(member.tobuf(format=tarfile.GNU_FORMAT))
+        header[386:398] = tarfile.itn(16 * 1024 * 1024 - 1, 12)
+        header[398:410] = tarfile.itn(1, 12)
+        header[483:495] = tarfile.itn(16 * 1024 * 1024, 12)
+        header[148:156] = b"        "
+        header[148:156] = bytes("%06o\0 " % sum(header), "ascii")
+        archive.fileobj.write(header + b"\0" * 512)
+        archive.offset += 1024
+PY
+	printf '2.0\n' > "$WORK/debian-binary"
+	printf 'Package: x\nVersion: 1\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' > "$WORK/control"
+	tar -czf "$WORK/control.tar.gz" -C "$WORK" control
+	rm -f "$WORK/$1"
+	( cd "$WORK" && ar rc "$1" debian-binary control.tar.gz data.tar )
+}
+run_guard() { # $1=deb in $WORK
+	( cd "$WORK" && cp "$1" glyndor-archive-keyring.deb && bash -c "$guard" >/dev/null 2>&1; echo $? )
+}
+build_deb plain.deb plain
+check "the guard accepts an ordinary keyring package" "0" "$(run_guard plain.deb)"
+build_deb sparse.deb sparse
+check "the guard refuses a package that declares 16 MiB of sparse data" "1" "$(run_guard sparse.deb)"
 
 # The fingerprint here must be the one the installer enforces, or the manual
 # path and the scripted path disagree about which key is the right one.
