@@ -219,6 +219,17 @@ assert 0 "the caps at their defaults accept the same archive" -- run
 
 # --- Result ------------------------------------------------------------------
 
+# The three numbers that bound the retry loop are checked before anything is fetched: a typo in a
+# workflow must be a named error, not an endless or a zero-length loop.
+assert_error 1 "attempts must be a positive integer" "non-numeric attempts are refused" -- \
+	"$VERIFY" "$BASE" "$TRUSTED_ASC" abc 0 600
+assert_error 1 "attempts must be at least 1" "zero attempts are refused" -- \
+	"$VERIFY" "$BASE" "$TRUSTED_ASC" 0 0 600
+assert_error 1 "delay must be a non-negative integer" "a non-numeric delay is refused" -- \
+	"$VERIFY" "$BASE" "$TRUSTED_ASC" 1 x 600
+assert_error 1 "budget must be at least 1 second" "a zero budget is refused" -- \
+	"$VERIFY" "$BASE" "$TRUSTED_ASC" 1 0 0
+
 echo
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
