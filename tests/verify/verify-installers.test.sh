@@ -129,6 +129,20 @@ PY
 	check "$workflow diagnoses the body mismatch" 1 "$(said 'installer content differs at')"
 done
 
+# With no product to name there is nothing to compare: that is a refusal, not a pass, or a call that
+# lost its product list would turn green without checking anything.
+rc=0; "$VERIFY" "file://$WORK/site" "$WORK/expected" > "$WORK/out" 2>&1 || rc=$?
+check 'no installers to verify is refused' 1 "$rc"
+check 'and the refusal says there is nothing to verify' 1 "$(said 'no installers to verify')"
+
+# An empty reference compared with an empty page is equal: the empty reference is refused first.
+reset_site
+: > "$WORK/empty-ref/podup" 2>/dev/null || { mkdir -p "$WORK/empty-ref"; : > "$WORK/empty-ref/podup"; }
+: > "$WORK/site/install/podup"
+rc=0; "$VERIFY" "file://$WORK/site" "$WORK/empty-ref" podup > "$WORK/out" 2>&1 || rc=$?
+check 'an empty generated installer is refused' 1 "$rc"
+check 'and the refusal names the missing generated installer' 1 "$(said 'missing generated installer for podup')"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
