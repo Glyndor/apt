@@ -148,25 +148,18 @@ jobs:
           #
           # The roster is read from PRODUCTS in publish.yml, the one list the
           # installers are generated from, so a product added there is asked for
-          # here with no second list to keep in step.
-          # `grep` finding nothing exits 1, and under `set -e` an assignment
-          # from a failing substitution kills the step before the diagnostic
-          # below can run: the job would go red with no line saying why.
-          products="$(grep -oE '^[[:space:]]*PRODUCTS:[[:space:]]*"[^"]*"' \
-            .github/workflows/publish.yml | head -1 | sed 's/.*"\(.*\)"/\1/' \
-            || true)"
-          if [ -z "$products" ]; then
-            echo "::error::no PRODUCTS list found in .github/workflows/publish.yml; this check cannot tell which installers to ask for"
-            exit 1
-          fi
+          # here with no second list to keep in step. It is the list of the
+          # commit the last successful publish ran from, like the reference
+          # below: a product merged after that publish has no installer served
+          # yet, and asking for it was a red check with nothing to fix until the
+          # next publish. When that commit cannot be learned the script reads this
+          # checkout. An empty roster stops the step with the reason, never
+          # passes it vacuously.
+          products="$(./scripts/verify/published-roster.sh)" || exit 1
           expected="$(mktemp -d)"
           trap 'rm -rf "$expected"' EXIT
           installers=()
-          for spec in $products; do
-            # A PRODUCTS entry may carry an architecture spec ("klyradb:amd64").
-            # The installer is the same script whatever a product ships, so the
-            # path is the product name alone.
-            product="${spec%%:*}"
+          for product in $products; do
             installers+=("$product")
           done
           # The reference does not come from the host being checked. It is

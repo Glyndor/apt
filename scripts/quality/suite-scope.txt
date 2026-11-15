@@ -163,6 +163,12 @@ tests/verify/verify-installers.test.sh
 tests/verify/reference-installers.test.sh
 	scripts/verify/reference-installers.sh
 	tests/verify/reference-installers.test.sh
+
+tests/verify/published-roster.test.sh
+	scripts/verify/published-roster.sh
+	tests/verify/published-roster.test.sh
+	.github/workflows/health-check.yml
+	.github/workflows/publish.yml
 	.github/workflows/health-check.yml
 	.github/workflows/publish.yml
 
