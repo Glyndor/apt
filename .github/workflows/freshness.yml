@@ -76,12 +76,67 @@ permissions:
   contents: read
 
 jobs:
+  # A pull request reaches this file only through the paths above, and each of
+  # them can change the answer of one group of jobs, not of all seven. This job
+  # reads the changed files and says which groups have anything to look at. It
+  # fails open: on a push or a schedule it does not run, and if it cannot read
+  # the diff, or sees a path it does not know, every output is true. A job below
+  # is skipped only when an output here is exactly "false".
+  scope:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      dependabot: ${{ steps.scope.outputs.dependabot }}
+      schedule: ${{ steps.scope.outputs.schedule }}
+      suite: ${{ steps.scope.outputs.suite }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Decide which watchers have anything to look at
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          dependabot=true
+          schedule=true
+          suite=true
+          changed="$(mktemp)"
+          trap 'rm -f "$changed"' EXIT
+          if git diff --no-renames --name-only -z HEAD^1..HEAD -- > "$changed" && [ -s "$changed" ]; then
+            dependabot=false
+            schedule=false
+            suite=false
+            while IFS= read -r -d '' path; do
+              case "$path" in
+                .github/workflows/reusable-dependabot-freshness.yml) dependabot=true ;;
+                .github/workflows/reusable-schedule-freshness.yml) schedule=true ;;
+                scripts/monitoring/check-suite-on-main.sh) suite=true ;;
+                *) dependabot=true; schedule=true; suite=true ;;
+              esac
+            done < "$changed"
+          fi
+          {
+            echo "dependabot=$dependabot"
+            echo "schedule=$schedule"
+            echo "suite=$suite"
+          } >> "$GITHUB_OUTPUT"
+
   dependabot-freshness:
+    needs: scope
+    if: ${{ always() && needs.scope.outputs.dependabot != 'false' }}
     uses: ./.github/workflows/reusable-dependabot-freshness.yml
     with:
       max-age-days: 15
 
   freshness-publish:
+    needs: scope
+    if: ${{ always() && needs.scope.outputs.schedule != 'false' }}
     permissions:
       contents: read
       actions: read
@@ -95,6 +150,8 @@ jobs:
   # measure against; before that the watcher would have opened red with
   # nothing wrong.
   freshness-distro-floor:
+    needs: scope
+    if: ${{ always() && needs.scope.outputs.schedule != 'false' }}
     permissions:
       contents: read
       actions: read
@@ -104,6 +161,8 @@ jobs:
       max-age-days: 10
 
   freshness-health-check:
+    needs: scope
+    if: ${{ always() && needs.scope.outputs.schedule != 'false' }}
     permissions:
       contents: read
       actions: read
@@ -141,6 +200,8 @@ jobs:
   # this job can honestly measure about itself is whether the cron fires; the
   # jobs above report the faults.
   freshness-itself:
+    needs: scope
+    if: ${{ always() && needs.scope.outputs.schedule != 'false' }}
     permissions:
       contents: read
       actions: read
@@ -165,6 +226,8 @@ jobs:
   # slow fault: it harms nobody today, it harms the day somebody fixes a bug in
   # one copy and not the others.
   freshness-drift:
+    needs: scope
+    if: ${{ always() && needs.scope.outputs.schedule != 'false' }}
     permissions:
       contents: read
       actions: read
@@ -219,6 +282,8 @@ jobs:
   # for reading workflow runs is the whole of what it can reach, and no personal
   # credential is ever used here.
   suite-on-main:
+    needs: scope
+    if: ${{ always() && needs.scope.outputs.suite != 'false' }}
     name: suite on main
     runs-on: ubuntu-latest
     # A newer push to the same pull request supersedes the poll; on main and on
