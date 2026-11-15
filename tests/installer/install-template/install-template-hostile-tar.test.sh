@@ -93,7 +93,12 @@ with tarfile.open(root + "/data.tar", "w", format=tarfile.GNU_FORMAT) as archive
         header[148:156] = bytes("%06o\0 " % sum(header), "ascii")
         archive.fileobj.write(header + b"\0" * 512)
         archive.offset += 1024
-    if attack not in ("hardlink", "sparse"):
+    elif attack == "unreadable":
+        # A block that is not a tar header, inside the archive: the stream is small
+        # and the download verifies, but the listing cannot be finished.
+        archive.fileobj.write(b"X" * 512)
+        archive.offset += 512
+    if attack not in ("hardlink", "sparse", "unreadable"):
         member.size = len(payload)
         archive.addfile(member, io.BytesIO(payload))
 assert os.path.getsize(root + "/data.tar") < 8 * 1024 * 1024
@@ -117,12 +122,12 @@ rc=0; run_installer "$DEB" "$FPR_GOOD" || rc=$?
 check 'control: a genuine keyring package succeeds' 0 "$rc"
 check 'control: dpkg -i is reached' 1 "$(installed)"
 
-for attack in absolute traversal intermediate-link hardlink sparse; do
+for attack in absolute traversal intermediate-link hardlink sparse unreadable; do
 	DEB="$(hostile_deb "$attack")"
 	rm -f "$WORK/escaped" "$WORK/tar-status" "$WORK/sparse-size"
 	rc=0; run_attack "$DEB" || rc=$?
-	# The sparse package is refused by the listing, before tar extracts anything.
-	[ "$attack" = sparse ] || check "$attack: extraction was exercised" 1 "$([ -f "$WORK/tar-status" ] && echo 1 || echo 0)"
+	# The sparse and unreadable packages are refused by the listing, before tar extracts anything.
+	[ "$attack" = sparse ] || [ "$attack" = unreadable ] || check "$attack: extraction was exercised" 1 "$([ -f "$WORK/tar-status" ] && echo 1 || echo 0)"
 	if [ "$attack" = absolute ]; then
 		# tar strips the leading slash, so the member lands inside the extraction
 		# directory and the otherwise genuine package installs; what must hold is
@@ -132,6 +137,9 @@ for attack in absolute traversal intermediate-link hardlink sparse; do
 		check "$attack: the installer refuses the package" 1 "$rc"
 		check "$attack: dpkg -i is never reached" 0 "$(installed)"
 	fi
+	# Another guard further on also refuses this package, so the exit status alone
+	# cannot tell the listing check from it: the message names the one that fired.
+	[ "$attack" != unreadable ] || check 'unreadable: the listing check is what refuses it' 1 "$(said 'could not read the keyring package listing')"
 	check "$attack: no traversal write outside extraction" 0 "$([ -e "$WORK/escaped" ] && echo 1 || echo 0)"
 	check "$attack: the outside directory has no new members" sentinel "$(ls -A "$WORK/outside")"
 	check "$attack: the outside sentinel is unchanged" unchanged "$(cat "$WORK/outside/sentinel")"
