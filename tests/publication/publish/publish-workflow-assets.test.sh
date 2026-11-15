@@ -409,9 +409,11 @@ check "and asks for the _all .deb and .sig by name" "1" \
 check "and the package landed in its own directory" "1" \
 	"$(find "$WORK"/run.* -path '*debs/epistle-panel/epistle-panel_0.1.0_all.deb' | grep -c .)"
 
-# The roster itself declares it with `all`; a bare entry would fail every run.
-check "the roster declares epistle-panel as an all-architecture product" "1" \
-	"$(grep -E '^[[:space:]]*PRODUCTS:' "$WF" | grep -cE '(^|[ "])epistle-panel:all([ "]|$)')"
+# When epistle-panel is in the roster it is declared with `all`; a bare entry would fail
+# every run. It joins the roster with its first release, not before: a product with no
+# release at all stops the publish, which fails closed, and the archive is not updated.
+check "the roster never declares epistle-panel bare" "0" \
+	"$(grep -E '^[[:space:]]*PRODUCTS:' "$WF" | grep -cE '(^|[ "])epistle-panel([ "]|$)')"
 
 # Declared bare, the same release is refused: the entry would look for the
 # per-architecture assets and the release has none. A hard error, never a skip.

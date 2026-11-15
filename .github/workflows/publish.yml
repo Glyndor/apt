@@ -48,7 +48,13 @@ env:
   # as "epistle-panel:all" and ships one epistle-panel_<version>_all.deb. A bare
   # name would look for _amd64 and _arm64 assets that do not exist. reprepro
   # indexes an `all` package in every architecture the distribution declares.
-  PRODUCTS: "podup epistle epistle-panel:all"
+  #
+  # A product joins this list with its first release, not before. The publish
+  # resolves each product's latest release and stops when it cannot, so a product
+  # with no release stopped every daily run (15 November 2026, epistle-panel) and
+  # the archive stayed at the previous day's content. When epistle-panel releases
+  # its first .deb, add "epistle-panel:all" here.
+  PRODUCTS: "podup epistle"
   # There is no INSTALLERS list. Every product in PRODUCTS gets a bootstrap
   # installer at /install/<product>, derived from PRODUCTS below, with no
   # per-product opt-in.
