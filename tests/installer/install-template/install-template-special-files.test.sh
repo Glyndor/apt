@@ -13,10 +13,10 @@
 . "$(cd "$(dirname "$0")/../../fixtures/installer" && pwd)/fixture.sh"
 
 # run_installer with a deadline: 124 means the installer was still waiting.
-run_timed() { # $1=template $2=deb
+run_timed() { # $1=template $2=deb $3=optional directory of stubs ahead of the rest
 	rm -f "$WORK/marker"
 	sed 's/@PRODUCT@/testpkg/g' "$1" > "$WORK/install.sh"
-	timeout 20 env -i PATH="$BIN:$PATH" HOME="$WORK" WORK="$WORK" \
+	timeout 20 env -i PATH="${3:+$3:}$BIN:$PATH" HOME="$WORK" WORK="$WORK" \
 		DPKG_MARKER="$WORK/marker" KEYRING_URL="file://$2" GLYNDOR_APT_FPR="$FPR_GOOD" \
 		/bin/sh "$WORK/install.sh" >"$WORK/out" 2>&1
 }
@@ -64,6 +64,24 @@ rc=0; run_timed "$TEMPLATE" "$DEB" || rc=$?
 check 'a keyring that is a directory is refused' 1 "$rc"
 check 'and the refusal says it is not a regular file' 1 "$(said 'is not a regular file')"
 check 'and nothing is installed from it' 0 "$(installed)"
+
+# The verified package is copied into a file the script makes, and made private. Each
+# step has its own refusal; a stub that fails exactly that command reaches it.
+FAILBIN="$WORK/failbin"; mkdir -p "$FAILBIN"
+REAL_MKDIR="$(command -v mkdir)"; REAL_CHMOD="$(command -v chmod)"
+printf '#!/bin/sh\nfor a in "$@"; do last=$a; done\ncase $last in */install) exit 1 ;; esac\nexec %s "$@"\n' "$REAL_MKDIR" > "$FAILBIN/mkdir"
+printf '#!/bin/sh\n[ "$1" = 600 ] && exit 1\nexec %s "$@"\n' "$REAL_CHMOD" > "$FAILBIN/chmod"
+"$REAL_CHMOD" +x "$FAILBIN/mkdir" "$FAILBIN/chmod"
+DEB="$(mkdeb copy good no)"
+rc=0; run_timed "$TEMPLATE" "$DEB" "$FAILBIN" || rc=$?
+check 'a package that cannot be copied to a private file is refused' 1 "$rc"
+check 'and the refusal says it could not prepare the package' 1 "$(said 'could not prepare the verified package')"
+check 'and nothing is installed after the failed copy' 0 "$(installed)"
+rm -f "$FAILBIN/mkdir"
+rc=0; run_timed "$TEMPLATE" "$DEB" "$FAILBIN" || rc=$?
+check 'a private copy that cannot be made private is refused' 1 "$rc"
+check 'and the refusal says it could not make it private' 1 "$(said 'could not make the verified package private')"
+check 'and nothing is installed after the failed chmod' 0 "$(installed)"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
