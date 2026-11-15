@@ -78,6 +78,11 @@ rm "$DIST/Release.gpg"
 assert_error 1 "detached Release" "a missing detached signature is rejected" -- run
 
 build_archive
+# A detached signature that no longer matches the Release it sits beside: the pair is stale.
+printf '# edited after it was signed\n' >> "$DIST/Release"
+assert_error 1 "does not verify against Release" "a detached signature over a different Release is rejected" -- run
+
+build_archive
 # Re-sign a Release that no longer matches InRelease: the archive is serving
 # two different builds to two different client paths.
 printf 'Origin: Glyndor\nSHA256:\n 00 1 main/binary-amd64/Packages\n' > "$DIST/Release"
