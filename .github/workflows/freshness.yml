@@ -108,7 +108,12 @@ jobs:
           suite=true
           changed="$(mktemp)"
           trap 'rm -f "$changed"' EXIT
-          if git diff --no-renames --name-only -z HEAD^1..HEAD -- > "$changed" && [ -s "$changed" ]; then
+          # HEAD^1..HEAD is the pull request only on the merge commit the
+          # runner checks out. On any other checkout it is just the last commit
+          # of a branch, so anything but two parents leaves every output true.
+          parents="$(git rev-list --parents -n 1 HEAD | wc -w)"
+          if [ "$parents" -eq 3 ] \
+            && git diff --no-renames --name-only -z HEAD^1..HEAD -- > "$changed" && [ -s "$changed" ]; then
             dependabot=false
             schedule=false
             suite=false
@@ -129,14 +134,14 @@ jobs:
 
   dependabot-freshness:
     needs: scope
-    if: ${{ always() && needs.scope.outputs.dependabot != 'false' }}
+    if: ${{ !cancelled() && needs.scope.outputs.dependabot != 'false' }}
     uses: ./.github/workflows/reusable-dependabot-freshness.yml
     with:
       max-age-days: 15
 
   freshness-publish:
     needs: scope
-    if: ${{ always() && needs.scope.outputs.schedule != 'false' }}
+    if: ${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}
     permissions:
       contents: read
       actions: read
@@ -151,7 +156,7 @@ jobs:
   # nothing wrong.
   freshness-distro-floor:
     needs: scope
-    if: ${{ always() && needs.scope.outputs.schedule != 'false' }}
+    if: ${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}
     permissions:
       contents: read
       actions: read
@@ -162,7 +167,7 @@ jobs:
 
   freshness-health-check:
     needs: scope
-    if: ${{ always() && needs.scope.outputs.schedule != 'false' }}
+    if: ${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}
     permissions:
       contents: read
       actions: read
@@ -201,7 +206,7 @@ jobs:
   # jobs above report the faults.
   freshness-itself:
     needs: scope
-    if: ${{ always() && needs.scope.outputs.schedule != 'false' }}
+    if: ${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}
     permissions:
       contents: read
       actions: read
@@ -227,7 +232,7 @@ jobs:
   # one copy and not the others.
   freshness-drift:
     needs: scope
-    if: ${{ always() && needs.scope.outputs.schedule != 'false' }}
+    if: ${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}
     permissions:
       contents: read
       actions: read
@@ -283,7 +288,7 @@ jobs:
   # credential is ever used here.
   suite-on-main:
     needs: scope
-    if: ${{ always() && needs.scope.outputs.suite != 'false' }}
+    if: ${{ !cancelled() && needs.scope.outputs.suite != 'false' }}
     name: suite on main
     runs-on: ubuntu-latest
     # A newer push to the same pull request supersedes the poll; on main and on
