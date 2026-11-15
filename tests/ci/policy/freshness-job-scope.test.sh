@@ -37,18 +37,25 @@ run = [s["run"] for s in steps if s.get("id") == "scope"][0]
 open(sys.argv[2], "w").write(run)
 PY
 
-# <path changed by the last commit> -> "dependabot schedule suite"
+# <path changed by the pull request> -> "dependabot schedule suite". The runner
+# checks out the merge commit of the pull request, so the repository gets one:
+# a base commit, a branch that changes the path, and a --no-ff merge of it.
 outputs() {
-	local repo="$WORK/r" out="$WORK/out"
+	local repo="$WORK/r" out="$WORK/out" id=(-c user.name=t -c user.email=t@users.noreply.github.com)
 	rm -rf "$repo" "$out" && mkdir -p "$repo" && : > "$out"
-	git -C "$repo" init -q
-	git -C "$repo" -c user.name=t -c user.email=t@users.noreply.github.com commit -q --allow-empty -m base
+	git -C "$repo" init -q -b main
+	git -C "$repo" "${id[@]}" commit -q --allow-empty -m base
+	git -C "$repo" checkout -q -b pr
 	if [ "$1" != "-" ]; then
 		mkdir -p "$repo/$(dirname "$1")"
 		echo x > "$repo/$1"
 		git -C "$repo" add -A
-		git -C "$repo" -c user.name=t -c user.email=t@users.noreply.github.com commit -q -m change
+		git -C "$repo" "${id[@]}" commit -q -m change
+	else
+		git -C "$repo" "${id[@]}" commit -q --allow-empty -m change
 	fi
+	git -C "$repo" checkout -q main
+	git -C "$repo" "${id[@]}" merge -q --no-ff -m merge pr
 	(cd "$repo" && GITHUB_OUTPUT="$out" bash "$WORK/scope.sh" >/dev/null 2>&1) || true
 	tr '\n' ' ' < "$out" | sed 's/dependabot=//;s/schedule=//;s/suite=//;s/ $//'
 }
@@ -59,6 +66,18 @@ check "the suite script runs only the suite watcher" "false false true" "$(outpu
 check "the workflow itself runs every watcher" "true true true" "$(outputs .github/workflows/freshness.yml)"
 check "a path it does not know runs every watcher" "true true true" "$(outputs README.md)"
 check "a commit with no changed file runs every watcher" "true true true" "$(outputs -)"
+
+# A checkout that is not a merge commit has one parent: HEAD^1..HEAD would be the
+# previous commit of the branch, not the pull request, so nothing may be skipped.
+rm -rf "$WORK/linear" "$WORK/out" && mkdir -p "$WORK/linear" && : > "$WORK/out"
+git -C "$WORK/linear" init -q
+git -C "$WORK/linear" -c user.name=t -c user.email=t@users.noreply.github.com commit -q --allow-empty -m base
+mkdir -p "$WORK/linear/.github/workflows"
+echo x > "$WORK/linear/.github/workflows/reusable-schedule-freshness.yml"
+git -C "$WORK/linear" add -A
+git -C "$WORK/linear" -c user.name=t -c user.email=t@users.noreply.github.com commit -q -m change
+(cd "$WORK/linear" && GITHUB_OUTPUT="$WORK/out" bash "$WORK/scope.sh" >/dev/null 2>&1) || true
+check "a checkout that is not a merge commit runs every watcher" "true true true" "$(tr '\n' ' ' < "$WORK/out" | sed 's/dependabot=//;s/schedule=//;s/suite=//;s/ $//')"
 
 # A repository with a single commit has no HEAD^1: the diff cannot be read.
 rm -rf "$WORK/single" "$WORK/out" && mkdir -p "$WORK/single" && : > "$WORK/out"
@@ -88,9 +107,11 @@ for name, out in want.items():
     cond = str(j.get("if", ""))
     if need != "scope" and need != ["scope"]:
         bad.append(f"{name} does not need scope")
-    expect = "${{ always() && needs.scope.outputs.%s != 'false' }}" % out
+    expect = "${{ !cancelled() && needs.scope.outputs.%s != 'false' }}" % out
     if cond != expect:
         bad.append(f"{name} gate is {cond!r}")
+if jobs.get("scope", {}).get("if") != "github.event_name == 'pull_request'":
+    bad.append("scope does not run only on a pull request")
 extra = sorted(set(jobs) - set(want) - {"scope"})
 if extra:
     bad.append("ungated jobs: " + ", ".join(extra))

@@ -479,6 +479,7 @@ tests/ci/reusable/reusable-line-limit.test.sh
 
 tests/ci/reusable/reusable-shell-ci.test.sh
 	.github/workflows/reusable-shell-ci.yml
+	scripts/quality/suite-dependencies.txt
 
 tests/ci/reusable/reusable-dependabot-freshness.test.sh
 	.github/workflows/reusable-dependabot-freshness.yml

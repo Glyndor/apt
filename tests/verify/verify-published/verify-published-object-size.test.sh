@@ -77,6 +77,22 @@ check_transfer package "$((MAX_POOL_OBJECT_BYTES + 1))" 63
 check_transfer signature "$MAX_BOOTSTRAP_SIG_BYTES" 0
 check_transfer signature "$((MAX_BOOTSTRAP_SIG_BYTES + 1))" 63
 
+# The bootstrap package goes through the same pool cap on a call written over two
+# lines, which the extraction above does not read. Join the continuation and
+# require the cap to be the one the pool uses.
+bootstrap_call="$(sed -z 's/\\\n[[:space:]]*/ /g' "$HERE/scripts/verify/verify-published.sh" | grep -F 'verify_set "bootstrap package(s)"' || true)"
+# shellcheck disable=SC2016 # the pattern is the literal text of the call
+case "$bootstrap_call" in
+*'"$MAX_POOL_OBJECT_BYTES"'*)
+	echo 'ok   - the bootstrap package is fetched under the pool object cap'
+	pass=$((pass + 1))
+	;;
+*)
+	echo "FAIL - the bootstrap package call does not pass MAX_POOL_OBJECT_BYTES: $bootstrap_call"
+	fail=$((fail + 1))
+	;;
+esac
+
 echo
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
