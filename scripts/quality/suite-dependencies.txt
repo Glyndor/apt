@@ -81,6 +81,7 @@ tests/verify/reference-installers.test.sh -
 tests/verify/published-roster.test.sh -
 tests/verify/roster-has-releases.test.sh -
 tests/ci/policy/roster-releases-workflow.test.sh -
+tests/ci/policy/workflows-run-their-scripts.test.sh -
 tests/verify/verify-installers.test.sh -
 tests/verify/verify-published.test.sh -
 tests/verify/verify-published/verify-published-bootstrap.test.sh -
