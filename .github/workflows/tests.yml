@@ -58,6 +58,7 @@ jobs:
         ./tests/verify/check-release-order.test.sh
         ./tests/verify/verify-installers.test.sh
         ./tests/verify/reference-installers.test.sh
+        ./tests/verify/published-roster.test.sh
         ./tests/build/build-keyring.test.sh
         ./tests/build/keyring/build-keyring-generator.test.sh
         ./tests/build/keyring/build-keyring-contents.test.sh
