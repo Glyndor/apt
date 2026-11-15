@@ -116,6 +116,10 @@ tests/verify/verify-published/verify-published-bootstrap.test.sh
 	scripts/verify/**
 	tests/verify/**
 
+tests/verify/verify-published/verify-published-object-size.test.sh
+	scripts/verify/**
+	tests/verify/**
+
 tests/verify/verify-published/verify-published-budget.test.sh
 	tests/fixtures/verify/**
 	scripts/verify/**
