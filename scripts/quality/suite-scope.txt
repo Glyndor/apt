@@ -164,6 +164,10 @@ tests/verify/reference-installers.test.sh
 	scripts/verify/reference-installers.sh
 	tests/verify/reference-installers.test.sh
 
+tests/verify/roster-has-releases.test.sh
+	scripts/verify/roster-has-releases.sh
+	tests/verify/roster-has-releases.test.sh
+
 tests/verify/published-roster.test.sh
 	scripts/verify/published-roster.sh
 	tests/verify/published-roster.test.sh
