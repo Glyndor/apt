@@ -294,7 +294,9 @@ mkdir -p "$R/scripts/build"; echo 'echo changed' >> "$R/scripts/build/build-repo
 package_merge
 check "a change to the repository builder installs reprepro, not the .deb verifier's package" \
 	"$(printf 'apt-get update -qq\napt-get install -y -qq reprepro python3-yaml')" \
-	"$(install_packages pull_request "$REAL_COMMAND" | head -n 2)"
+	"$(install_packages pull_request "$REAL_COMMAND")"
+check "and the verifier's package is nowhere in what it installs" "0" \
+	"$(install_packages pull_request "$REAL_COMMAND" | grep -c python3-cryptography)"
 
 package_repo; echo more >> "$R/docs.md"; package_merge
 check "docs-only PR does not invoke apt at all (including reprepro)" "" "$(install_packages)"

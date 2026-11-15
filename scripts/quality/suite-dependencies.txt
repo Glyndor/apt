@@ -6,7 +6,7 @@
 # No globs, inheritance or package groups. The resolver validates entries and
 # tests/ci/reusable/reusable-shell-ci.test.sh exercises the actual install step.
 
-# Every suite is mapped. The packages were found three ways and unioned: by running
+# Every suite was mapped when this was written. The packages were found three ways and unioned: by running
 # each suite with its tools wrapped to record use, by reading the suite and the
 # scripts it references (comments excluded), and by running the whole set on a
 # machine without reprepro, where only the two build-repo suites failed. A suite
@@ -14,6 +14,7 @@
 # listed here, so it gets the full install until someone reviews what it needs.
 
 # nothing beyond the runner image
+tests/ci/suites/check-suite-completeness.test.sh -
 tests/build/build-index-page.test.sh -
 tests/build/build-installers.test.sh -
 tests/build/build-keyring.test.sh -

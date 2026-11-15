@@ -36,10 +36,16 @@ fi
 
 roster=""
 if [ -n "$sha" ] && [ "$sha" != "$head" ]; then
-	if git -C "$root" fetch --no-tags --depth=1 origin "$sha" >/dev/null 2>&1; then
-		roster="$(git -C "$root" show "$sha:$workflow" 2>/dev/null | roster_of || true)"
-	fi
-	if [ -n "$roster" ]; then
+	if git -C "$root" fetch --no-tags --depth=1 origin "$sha" >/dev/null 2>&1 \
+		&& published="$(git -C "$root" show "$sha:$workflow" 2>/dev/null)"; then
+		# The commit was fetched and its workflow read. If no roster comes out of it,
+		# the way PRODUCTS is written changed, and the checkout cannot stand in for
+		# it: that is the list this script exists to avoid. Stop and say so.
+		roster="$(roster_of <<<"$published" || true)"
+		if [ -z "$roster" ]; then
+			echo "::error::the published commit ${sha:0:7} has no PRODUCTS list this script can read in $workflow; this check cannot tell which installers to ask for" >&2
+			exit 1
+		fi
 		echo "roster: read from the published commit ${sha:0:7}" >&2
 	else
 		echo "roster: published commit ${sha:0:7} is not usable; using this checkout" >&2
@@ -52,4 +58,12 @@ if [ -z "$roster" ]; then
 	echo "::error::no PRODUCTS list found in $workflow; this check cannot tell which installers to ask for" >&2
 	exit 1
 fi
+# The names become installer paths and shell words in the consumer, so only plain
+# product names go through.
+while IFS= read -r name; do
+	if ! [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+		echo "::error::the roster names '$name', which is not a plain product name" >&2
+		exit 1
+	fi
+done <<<"$roster"
 printf '%s\n' "$roster"
