@@ -102,6 +102,13 @@ New test files must be added to `test-command` in `.github/workflows/tests.yml`.
 sits in `tests/`, passes by hand, and reads as coverage while CI never runs it.
 That happened here.
 
+**A new suite needs an entry in `scripts/quality/suite-scope.txt`.**
+On a pull request the runner skips the suites whose paths the change does not touch;
+`tests/quality/suite-scope-map.test.sh` reports a suite with no entry, which would
+run every time. List every path the suite reads: a missing path lets a change merge
+without the suite that should have judged it, while an extra one only costs a run. A
+change to the map, to `scripts/quality/ci-job-scope.sh` or to the runner runs everything.
+
 Two traps a local run cannot see, and both cost a day here:
 
 **The exec bit that counts is git's.** `core.fileMode=false` is common on Linux
@@ -130,11 +137,12 @@ CI is split by responsibility rather than gathered in one file:
 | `health-check.yml` | the published archive is stale, unreachable or unsigned |
 | `distro-floor.yml` | a release the README lists as supported stops installing, or the unsupported one stops being refused |
 | `drift.yml` | this repository's reusables or shared files differ from the sibling channels |
+| `roster-releases.yml` | a product of the publish roster has no usable release (advisory, only on pull requests that change the roster) |
 
 Every reusable this repository calls lives in `.github/workflows/reusable-*.yml`
 as a copy kept identical in logic to the
 copies in the sibling channels (`scripts/monitoring/check-reusable-drift.sh` compares
-them). Nothing is pulled remotely.
+them). The comparison does fetch the sibling copies, read-only and size-capped, from `raw.githubusercontent.com`; it runs in `drift.yml`, and the test job fetches nothing.
 
 **Job ids are load-bearing.** A required status check is named
 `<caller job id> / <inner job name>`, so renaming a job renames its check and
