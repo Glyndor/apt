@@ -3,14 +3,14 @@ name: Dependabot freshness (reusable)
 # Fails when Dependabot has not opened a pull request recently enough in the
 # calling repository.
 #
-# The companion guard `schedule-freshness.yml` fails when a *workflow* stops
+# The companion guard `reusable-schedule-freshness.yml` fails when a *workflow* stops
 # firing. Dependabot is not a workflow; it is an integration with its own
 # schedule, and a silent Dependabot emits nothing. "All up to date" and
 # "Dependabot is dead" produce the same signal: silence. This job converts
 # that silence into a red check on ordinary work, by treating the newest
 # dependabot-authored PR as the last time Dependabot spoke.
 #
-# Two differences from `schedule-freshness.yml`, both forced by Dependabot:
+# Two differences from `reusable-schedule-freshness.yml`, both forced by Dependabot:
 #
 # 1. The signal is a pull request, not a workflow run. We cannot ask for the
 #    newest *scheduled* run of a Dependabot job because there is no such job;
@@ -54,7 +54,7 @@ name: Dependabot freshness (reusable)
 # syntax, and a future Windows caller would otherwise silently mis-parse the
 # date and fail the arithmetic on an empty string.
 #
-# `concurrency:` cancels an in-flight run when a newer one starts. The group
+# `concurrency:` cancels an in-flight run of a pull request when a newer one starts. The group
 # key uses `github.workflow` so an unrelated caller triggering the same
 # reusable does not collide, and `github.ref` to distinguish per-ref runs.
 

@@ -62,7 +62,7 @@ Not considered: an adversary holding the archive signing key, an adversary holdi
 
 | Threat | Control | Evidence |
 |---|---|---|
-| The bootstrap keyring is substituted on the way to the client | the generated installer extracts the package without running it, reads every fingerprint in it, and refuses unless every one is a fingerprint it was told to expect; nothing is installed before that | test: `tests/installer/install-template/install-template-behaviour.test.sh`, with a real `gpg` and a sandboxed `PATH`, including a keyring carrying the published key beside an attacker's |
+| The bootstrap keyring is substituted on the way to the client | the generated installer extracts the package without running it, reads every fingerprint in it, and refuses unless every one is a fingerprint it was told to expect; the downloaded package is not installed before that | test: `tests/installer/install-template/install-template-behaviour.test.sh`, with a real `gpg` and a sandboxed `PATH`, including a keyring carrying the published key beside an attacker's |
 | A hostile package's maintainer script runs before the key is checked | the check happens on the extracted tree, and `dpkg -i` is reached only after it passes | test: the "dpkg -i was never reached" assertions in the same suite |
 | An endless body at the download | `curl --max-filesize` bounds the keyring download; the `.deb` admission bounds the signature read | test: the oversized-download case |
 | The template loses its placeholder and serves a script that installs the wrong thing | the generator fails closed on a missing placeholder, a leftover placeholder, and output that does not pass `sh -n` | test: `tests/build/build-installers.test.sh` |
@@ -118,12 +118,11 @@ bytes, and that is the case `tests/build/keyring/build-keyring-generator.test.sh
   protects incomplete prefixes, not malicious replacements or a transfer error
   reported after the complete invocation has already arrived; a pipeline also
   needs its producer's status checked to report that error.
-- **One maintainer.** Every pull request is reviewed and merged by its author.
-  A required status check is matched by name, so a maintainer could replace a
-  gate with a job of the same name in the pull request that neutralises it.
-  Accepted while the repository is single-maintainer; the mitigation for the
-  day a second person gets write access is written down in the organization's
-  CI standard.
+- **A gate replaced in the pull request that should be judged by it.** A
+  required status check is matched by name, so someone with write access could
+  replace a gate with a job of the same name in the pull request that
+  neutralises it. The mitigation is Code Owner review on `.github/workflows/`
+  (see `.github/CODEOWNERS`).
 - **Monitoring shares fate with the monitored.** The publish, the health check
   and the freshness watchers all run on GitHub Actions. An outage there stops
   the archive and its alarms at once, silently, bounded only by the fourteen-day

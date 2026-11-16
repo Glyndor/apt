@@ -21,7 +21,7 @@ import sys
 # Both are read from the BASE commit, never from the checkout of the pull
 # request: a pull request that narrows the map or rewrites this script to
 # narrow its own scope gets the full set instead, because the base copy is
-# what decides. This is the rule the CI standard states for a gate script.
+# what decides. This is the rule for a gate script.
 MAP = "scripts/quality/suite-scope.txt"
 
 # The map, this script and the runner are an input of every suite, by rule

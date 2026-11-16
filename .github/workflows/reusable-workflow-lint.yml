@@ -11,7 +11,7 @@ name: Workflow lint (reusable)
 #
 # actionlint's embedded shellcheck pass otherwise falls back to whatever
 # shellcheck the runner image ships, which floats independently of the org's
-# pinned version (shell-ci.yml). Installing the same pinned shellcheck here
+# pinned version (reusable-shell-ci.yml). Installing the same pinned shellcheck here
 # and pointing actionlint at it with -shellcheck keeps that pass reproducible
 # too.
 
@@ -127,7 +127,7 @@ jobs:
           SHELLCHECK_SHA256: ${{ inputs.shellcheck-sha256 }}
         run: |
           set -euo pipefail
-          # Same verified-download idiom as shell-ci.yml: pinned by tag rather
+          # Same verified-download idiom as reusable-shell-ci.yml: pinned by tag rather
           # than whatever the runner image preinstalls, and checked against the
           # release's sha256 before extraction, since a plain HTTPS fetch has no
           # registry behind it vouching for what came back.
@@ -157,7 +157,7 @@ jobs:
       # the lockfile, so no surprise tree appears.
       #
       # `apt-get install` and `brew install` are the same shape and are judged
-      # by the same rule, with the exemptions the standard grants:
+      # by the same rule, with the exemptions this workflow grants:
       #
       #   - An apt install from the distribution's own archive is exempt. The
       #     mechanism is identical -- dpkg runs maintainer scripts as root in
@@ -166,7 +166,7 @@ jobs:
       #     maintainer, and the runner image already trusts it. A third-party
       #     apt source added in the job is not covered, and neither is an
       #     install that the archive's own metadata cannot resolve.
-      #   - That exemption covers the exposure the standard accepts, which is
+      #   - That exemption covers the exposure this workflow accepts, which is
       #     persistence: an install in a job whose secret arrives in a later
       #     step cannot read that secret, because secrets are injected per
       #     step. An install step whose own environment carries the secret is
@@ -488,28 +488,28 @@ jobs:
           )
 
           # `apt-get install` and `apt install`, and the two edges of the
-          # exemption the standard grants them.
+          # exemption this workflow grants them.
           #
-          # The standard exempts an apt install from the distribution's own
+          # This workflow exempts an apt install from the distribution's own
           # repositories, and the reason is the trust anchor rather than the
           # mechanism: dpkg runs maintainer scripts as root either way, so a
           # hostile package can persist the way a build.rs can. What differs
           # is who can put a package there. A distribution's archive is signed,
           # its uploads are gated on a maintainer, and the runner image already
           # trusts it; a third-party source added in the job is publish-on-
-          # demand with extra steps, and the standard says so in as many
+          # demand with extra steps, and this workflow says so in as many
           # words. Its other edge is that the package has to come from that
           # archive: an install the archive's own metadata cannot resolve
           # carries no archive signature.
           #
           # The second edge is this repository's own, and it is where the
-          # standard's own account of the exposure decides it. Secrets are
+          # the account of the exposure given above decides it. Secrets are
           # injected per step, so an install in a job whose secret arrives in
           # a LATER step cannot read that secret; what it can do is persist,
-          # and the standard accepts that residual for the distribution's
+          # and this workflow accepts that residual for the distribution's
           # archive. An install step whose own environment carries the secret
           # is a different exposure -- the package's maintainer scripts run
-          # as root with the secret in reach -- and the residual the standard
+          # as root with the secret in reach -- and the residual this workflow
           # accepted does not cover it.
           APT_INSTALL_RE = re.compile(r"\bapt(?:-get)?\s+install\b")
 
@@ -559,10 +559,10 @@ jobs:
           # carries and install nothing by themselves. What turns them into an
           # install is Homebrew's auto-update, which fetches formulae and
           # installs their bottles before the command runs. The variable that
-          # stops it is the one the CI standard requires of every job that
-          # invokes a tool with auto-update behaviour, so a job that sets it
-          # for the step that runs the command is exempt. An empty value
-          # disables it, which is what the tap's own policy test means by it.
+          # stops it is the one this workflow requires of a job that runs
+          # `brew style` or `brew audit` with a secret in reach, so a job that sets
+          # it for the step that runs the command is exempt. An empty value does
+          # not count: it is read as unset and the exemption is refused.
           BREW_TOOL_RE = re.compile(r"\bbrew\s+(style|audit)\b")
           NO_AUTO_UPDATE = "HOMEBREW_NO_AUTO_UPDATE"
 

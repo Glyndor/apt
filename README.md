@@ -22,7 +22,8 @@ It does not change that setting itself; if the `unattended-upgrades` package is
 missing it installs it. If it stops before the `installing the keyring` step, it refused:
 it exits before `dpkg -i`, so no script from the downloaded package ran. An error
 reported after that step comes from `dpkg` itself, which may already have run the
-package's maintainer scripts.
+package's maintainer scripts, or from the steps that follow it: `apt-get update`, installing the
+product and running it with `--version`.
 
 Swap `podup` for any package marked `served` below.
 

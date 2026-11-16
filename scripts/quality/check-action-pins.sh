@@ -12,7 +12,7 @@
 # bytes ran.
 #
 # The policy was already in force -- every reference in this repository was
-# already pinned, and the org standard says "Always SHA-pinned either way" --
+# already pinned, and the rule is "Always SHA-pinned either way" --
 # but nothing checked it. dependabot.yml moves the pins it finds and the
 # freshness reusable compares them with their upstream tags; neither of them
 # refuses a reference that was never pinned at all. A pull request that added

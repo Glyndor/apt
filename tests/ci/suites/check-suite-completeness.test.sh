@@ -75,7 +75,7 @@ self="${BASH_SOURCE[0]##*/}"
 # commit, never as this pull request ships them, so a pull request that
 # narrows the map to hide its own suite gets the full set instead. That is the
 # rule the shellcheck job of the same reusable already follows for the same
-# script, and the rule the CI standard states: a gate script is read from the
+# script, and the rule for a gate script: a gate script is read from the
 # base commit, never from the checkout of the pull request it is judging.
 #
 # Everything here fails open. A push, a schedule, an unreadable diff, a

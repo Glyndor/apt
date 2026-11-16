@@ -43,8 +43,8 @@ check "and dpkg -i was never reached" "0" "$(installed)"
 
 # --- a rotation keyring is accepted, an enriched one is not -----------------
 #
-# standards/releases mandates a two-phase rotation that ships the old and the
-# new key together, so a keyring carrying two keys must still install. What it
+# A two-phase rotation ships the old and the new key together, so a keyring
+# carrying two keys must still install. What it
 # must NOT do is install a keyring carrying a key nobody published.
 #
 # The installer used to test for presence: the published fingerprint had to be

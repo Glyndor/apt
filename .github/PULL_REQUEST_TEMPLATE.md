@@ -17,7 +17,6 @@
 <!--
 A test that was not watched fail is not a test. If this PR adds or changes a
 check, say which control you removed to make it go red, and what it reported.
-See standards/testing, "Three ways a sabotage lies to you".
 -->
 
 - [ ] New or changed checks were verified by deleting the control and watching them fail
