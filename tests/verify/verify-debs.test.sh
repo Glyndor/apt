@@ -224,6 +224,17 @@ head -c 5000 /dev/zero > "$d/oversized.deb.sig"
 assert_error 1 "over 4096 bytes" "oversized signature file is rejected" \
 	-- "$VERIFY" "$d" "$WORK/key.b64"
 
+# An Ed25519 signature is exactly 64 bytes. A shorter or longer file is refused by name, before the
+# cryptographic check, so the reason for the rejection is the length and not an exception.
+d="$WORK/case12b"; mkdir -p "$d"
+deb="$(make_deb shortsig podup)"; cp "$deb" "$d/"; sign "$d/shortsig.deb"
+head -c 63 "$d/shortsig.deb.sig" > "$d/short.sig" && mv "$d/short.sig" "$d/shortsig.deb.sig"
+assert_error 1 "expected exactly 64" "a 63-byte signature file is rejected for its length" \
+	-- "$VERIFY" "$d" "$WORK/key.b64"
+(cd "$d" && { cat shortsig.deb.sig; printf 'x\nx'; } > long.sig && mv long.sig shortsig.deb.sig)
+assert_error 1 "expected exactly 64" "a 65-byte signature file is rejected for its length" \
+	-- "$VERIFY" "$d" "$WORK/key.b64"
+
 # --- Case 13: a malformed local trust file, where the release public key
 #             itself fails to load, is diagnosed as our bug and must not be
 #             reported as "release may be tampered": that message points
