@@ -2,8 +2,8 @@
 #
 # WHAT THIS FILE IS
 #
-# The test job of .github/workflows/reusable-shell-ci.yml runs every suite on
-# every pull request. Most of them are cheap; three are not, and their cost
+# Before this map, the test job of .github/workflows/reusable-shell-ci.yml ran
+# every suite on every pull request. Most of them are cheap; three are not, and their cost
 # does not depend on the change: tests/verify/verify-published.test.sh,
 # tests/publish/purge-cache/purge-cache-budget.test.sh and
 # tests/publication/health-check/health-check-workflow.test.sh are integration suites that
