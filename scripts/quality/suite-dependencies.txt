@@ -57,6 +57,7 @@ tests/monitoring/check-reusable-drift.test.sh -
 tests/monitoring/check-suite-on-main.test.sh -
 tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh -
 tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh -
+tests/mutation/run-mutations.test.sh -
 tests/publication/health-check/health-check-workflow.test.sh -
 tests/publication/publish/publish-workflow-assets.test.sh -
 tests/publication/publish/publish-workflow-bootstrap.test.sh -

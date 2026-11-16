@@ -617,3 +617,14 @@ tests/quality/lint-workflow-shell.test.sh
 tests/keyring/release-key.test.sh
 	keyring/glyndor-release-ed25519.b64
 	tests/keyring/**
+
+# --- the mutation catalogue -----------------------------------------------------
+#
+# The runner and its own test live in tests/mutation/, and the suite reads
+# nothing else of this repository: the catalogue it checks is read by the
+# runner, and the runner's test builds a throwaway repository of its own with a
+# guard of its own. A change under tests/mutation/ is therefore the only thing
+# that can change its verdict.
+
+tests/mutation/run-mutations.test.sh
+	tests/mutation/**
