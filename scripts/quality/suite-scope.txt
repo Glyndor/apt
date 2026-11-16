@@ -32,7 +32,7 @@
 #     rewrites the map or the resolver to narrow its own scope gets the full
 #     suite instead, because the base copy is what decides. This is the same
 #     rule the shellcheck job of the reusable already follows for
-#     scripts/quality/ci-job-scope.sh, and the rule the CI standard states:
+#     scripts/quality/ci-job-scope.sh, and the rule for a gate script:
 #     a gate script is read from the base commit, never from the checkout of
 #     the pull request it is judging.
 #

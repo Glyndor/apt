@@ -5,8 +5,8 @@
 # the releases listed as supported install podup, the one listed as
 # unsupported is refused with a message that names podman. The script runs
 # once a week where nobody watches, so its own failure modes need exercising
-# here: a check that says "as the README says" on every input is the shape
-# standards/testing calls a cron hiding its failures.
+# here: a check that says "as the README says" on every input is a cron hiding
+# its failures.
 #
 # The script is run as it ships, with apt-get and curl replaced by stubs on
 # PATH and the installer replaced by a fixture that exits and prints what the

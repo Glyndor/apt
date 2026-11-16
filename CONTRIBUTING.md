@@ -56,7 +56,7 @@ suite=$(find tests -name '*.test.sh' -type f | sort)
 # shellcheck disable=SC2086
 # A runner that is not executable must fail the command, not skip the suites.
 if [ -x tests/ci/suites/check-suite-completeness.test.sh ]; then
-  tests/ci/suites/check-suite-completeness.test.sh $(grep -v check-suite-completeness <<< "$suite") || fail=1
+  tests/ci/suites/check-suite-completeness.test.sh $(printf '%s\n' "$suite" | grep -v check-suite-completeness) || fail=1
 else
   echo "FAILED: tests/ci/suites/check-suite-completeness.test.sh is not executable"; fail=1
 fi
@@ -88,10 +88,9 @@ its test makes it report itself.
 
 **A test you have not watched fail is not a test.** Before claiming a check
 works, delete or invert the control it covers, run it, and confirm it goes red
-for the reason it names. Three ways that goes wrong are written up in
-`standards/testing`: a sabotage that changes nothing, one that changes
-something the test does not look at, and one where the red comes from
-somewhere else entirely. All three were hit here in a single day.
+for the reason it names. Three ways that goes wrong: a sabotage that changes
+nothing, one that changes something the test does not look at, and one where the
+red comes from somewhere else entirely.
 
 Assert **which** failure fired, never that some failure did. Every script runs
 under `set -e` (`set -euo pipefail` in bash, `set -eu` in the POSIX shell ones), so almost any mistake exits non-zero and a bare
@@ -100,7 +99,6 @@ non-zero assertion is satisfied by the failure you did not mean.
 New test files must be added to `test-command` in `.github/workflows/tests.yml`.
 `tests/ci/suites/ci-runs-every-test.test.sh` fails when one is not. An unregistered test
 sits in `tests/`, passes by hand, and reads as coverage while CI never runs it.
-That happened here.
 
 **A new suite needs an entry in `scripts/quality/suite-scope.txt`.**
 On a pull request the runner skips the suites whose paths the change does not touch;
@@ -109,7 +107,7 @@ run every time. List every path the suite reads: a missing path lets a change me
 without the suite that should have judged it, while an extra one only costs a run. A
 change to the map, to `scripts/quality/ci-job-scope.sh` or to the runner runs everything.
 
-Two traps a local run cannot see, and both cost a day here:
+Two traps a local run cannot see:
 
 **The exec bit that counts is git's.** `core.fileMode=false` is common on Linux
 setups, and with it `chmod +x` never reaches the index. A test file committed

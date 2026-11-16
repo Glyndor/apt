@@ -2,8 +2,7 @@
 #
 # .github/workflows/health-check.yml is what notices that the published archive
 # has gone stale, unreachable, or unsigned. Nothing tested it. A watcher whose
-# own failure modes are unexercised is the shape standards/testing calls a cron
-# hiding its failures: when it stops noticing, the silence is indistinguishable
+# own failure modes are unexercised is a cron hiding its failures: when it stops noticing, the silence is indistinguishable
 # from all-clear.
 #
 # The `run:` block is extracted from the workflow and executed as it ships,
