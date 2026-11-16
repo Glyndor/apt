@@ -60,6 +60,26 @@ snapshot arch-gap
 TAG=v2.5.0
 case_with_control 'a declared architecture with no Packages file is refused' 1 'lists no Packages file' arch
 
+# --- a dpkg that cannot answer is a refusal, not a pass -------------------------
+# dpkg exits 2 when it cannot validate or compare a version. Reading that as "not older" would let
+# a rollback through, so each failure has to end the publish with its own message. The stub
+# delegates everything else to the real dpkg, so only the call under test fails.
+REAL_DPKG="$(command -v dpkg)"
+export REAL_DPKG
+cat > "$WORK/bin/dpkg" <<'SH'
+#!/usr/bin/env bash
+case "${FAKE_DPKG_FAIL:-}:${1:-}" in
+	validate:--validate-version | compare:--compare-versions) exit 2 ;;
+esac
+exec "$REAL_DPKG" "$@"
+SH
+chmod 755 "$WORK/bin/dpkg"
+snapshot old
+TAG=v1.0.0
+FAKE_DPKG_FAIL=validate check 1 'cannot be compared' 'a dpkg that cannot validate the candidate version refuses the publish'
+FAKE_DPKG_FAIL=compare check 1 'dpkg could not compare' 'a dpkg that cannot compare the candidate refuses the publish'
+check 0 'is not older' 'the same archive with a working dpkg is accepted'
+
 # --- the full Debian version, not only the release the tag names -------------
 # The tag advances while the package goes back: the epoch or the revision is
 # dropped, and apt would treat the candidate as a downgrade.
