@@ -143,5 +143,24 @@ done
 build "$extra"
 refuses "an index list that cannot fit one request" "index URLs exceed BATCH_SIZE"
 
+# --- an install/ with no installer is refused, not reported as purged ----------
+# Without the refusal the purge lists the archive root instead of install/<product> and says it
+# is done: every product's install line would stay stale behind a green run.
+build ""
+rm -f "$BUILT/install/p"
+refuses "an install/ directory holding no installer" "no bootstrap installer was built"
+
+# --- the Cloudflare credentials are named when absent --------------------------
+build ""
+for v in CF_TOKEN CF_ZONE; do
+	rc=0
+	out="$(env -u "$v" "$PURGE" https://apt.example "$BUILT" 2>&1)" || rc=$?
+	check "$v unset exits 1" "1" "$rc"
+	case "$out" in
+		*"$v is not configured"*) check "$v unset is named" "yes" "yes" ;;
+		*) check "$v unset is named" "the $v message" "$out" ;;
+	esac
+done
+
 echo "DONE $(basename "$0") $pass $fail"
 [ "$fail" -eq 0 ]
