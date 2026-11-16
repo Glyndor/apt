@@ -25,6 +25,7 @@ PINNED = {
         "scripts/verify/reference-installers.sh",
         "scripts/verify/verify-installers.sh",
     ],
+    "mutation.yml": ["tests/mutation/run-mutations.sh"],
     "roster-releases.yml": ["scripts/verify/roster-has-releases.sh"],
     "publish.yml": [
         "scripts/verify/check-release-order.sh",

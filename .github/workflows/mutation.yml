@@ -1,0 +1,47 @@
+name: Mutation
+
+# The catalogue of mutations: every entry breaks one guard of the scripts of this
+# repository on purpose and names the tests that must notice. A guard that no test
+# notices is decoration, and the catalogue is what keeps that from being a matter
+# of opinion: it is checked here, every week, against the guards as they stand.
+#
+# Weekly and on demand, never on a pull request: the sweep is a report and not a
+# gate. The pull request path already runs the suites, and what the sweep adds is
+# the question the suites cannot answer on their own -- whether they would still
+# notice.
+#
+# The sweep copies the tree with `git archive HEAD` and runs the suites against
+# that copy, so it judges the repository as it is committed and not as it is in
+# the working directory of whoever ran it. The copy carries no git metadata, so
+# the suites that need it are excluded by the runner; which ones those are, and
+# why, is written down in tests/mutation/catalog.txt.
+
+on:
+  schedule:
+    - cron: "23 4 * * 1" # Monday, 04:23 UTC: a minute nobody else takes
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.workflow }}-${{ github.ref }}
+  # A scheduled run is never replaced by the next one (see cancel-policy.test.sh).
+  cancel-in-progress: false
+
+jobs:
+  mutations:
+    name: the guards still die under their mutations
+    runs-on: ubuntu-latest
+    # Bound: 10 minutes measured over the 60 entries of the catalogue, each one
+    # a copy of the tree and the suites it names. Thirty leaves more than double
+    # that for a slower runner and still bounds a hang; the six-hour default is
+    # what a hang would otherwise cost.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Every mutation is killed by a test
+        run: ./tests/mutation/run-mutations.sh

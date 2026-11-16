@@ -1,0 +1,124 @@
+# The catalogue of mutations: one entry per line, five fields separated by TAB.
+#
+#   id <TAB> file to mutate <TAB> exact text to replace <TAB> text that replaces it
+#        <TAB> tests of tests/ that must fail when the mutation is applied
+#
+# The text to replace has to appear EXACTLY ONCE in the file: a text that appears
+# nowhere changes nothing and proves nothing, and one that appears twice is
+# ambiguous. The runner refuses both, so an inert entry cannot sit in this file
+# unnoticed. A text holds no TAB: the line carries exactly four, and a fifth
+# would move every field after it. The text of a shell guard therefore starts
+# after the indentation, never inside it.
+#
+# The tests named by an entry are the ones that must notice when it is applied.
+# A suite that fails in a copy without git metadata is excluded: it fails there
+# whatever the mutant is, and it would count as a kill that never happened.
+#
+# THE SUITES LEFT OUT, AND WHY
+#
+#   tests/ci/suites/check-suite-completeness.test.sh
+#       Reads the base commit to scope the suites it runs. The copy is made
+#       with `git archive HEAD` and carries no history, so it fails there
+#       whatever the mutant is. Excluded by name in the runner.
+#
+#   tests/quality/check-editorconfig.test.sh
+#       Walks `git ls-files`. The copy carries no index, so it sees no tracked
+#       file and fails. Excluded by name in the runner.
+#
+# Any OTHER suite that fails in a pristine copy is excluded as well, measured
+# once per suite. On the machine this catalogue was measured on, that list was:
+#
+#   tests/build/build-repo-expiry.test.sh
+#       Needs reprepro to build an archive with an expired Release, and reprepro
+#       is not installed there, so the suite fails before it reaches a guard.
+#       It is not named by any entry below.
+#
+# Every entry below was measured on that machine: with the mutation applied at
+# least one of the suites it names goes red, and with the tree unmutated every
+# suite of this repository that can run there passes.
+#
+# THREE GUARDS THAT ARE NOT IN THIS CATALOGUE
+#
+# All three were measured and all three SURVIVED: no suite of this repository
+# goes red when the guard is removed. They are named here so that the gap is a
+# record and not a silence, and they are left out of the catalogue because an
+# entry that survives makes the whole sweep red.
+#
+#   scripts/verify/roster-has-releases.sh -- the refusal of a roster entry that
+#       is not a plain product name. The suite plants one and asks for exit 2,
+#       and the script still exits 2 when the refusal is gone, because the
+#       lookup of a name no repository has fails the same way. Nothing
+#       distinguishes the two refusals.
+#
+#   scripts/verify/verify-published.sh -- the cap on the NUMBER of packages
+#       the verified indices declare (`pool_count` against MAX_ENTRIES). The
+#       suite that exercises the caps sets MAX_ENTRIES to 3 and the archive it
+#       serves declares one package, so the cap is never the one that fires.
+#       The neighbouring cap, on the BYTES the packages declare, is covered.
+#
+#   scripts/installer/install-template.sh -- the comparison of the digest of
+#       the downloaded package with the digest of the copy dpkg is given.
+#       Nothing goes red when it is removed, because the signature check over
+#       the copy refuses the same substitution. It is redundancy, not a gap.
+#
+# Run: tests/mutation/run-mutations.sh [--list] [<id>]
+verify-debs-reserved-filename	scripts/verify/verify-debs.sh	if [[ "$(basename "$deb")" == glyndor-archive-keyring* ]]; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-reserved-control	scripts/verify/verify-debs.sh	if [ "$pkg" = "glyndor-archive-keyring" ]; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-unreadable-control	scripts/verify/verify-debs.sh	if ! pkg="$(dpkg-deb -f "$deb" Package)"; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-package-mismatch	scripts/verify/verify-debs.sh	if [ "$pkg" != "$EXPECTED_PACKAGE" ]; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-filename-prefix	scripts/verify/verify-debs.sh	if [[ "$(basename "$deb")" != "${EXPECTED_PACKAGE}_"* ]]; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-version-mismatch	scripts/verify/verify-debs.sh	if [ "$upstream" != "$want" ] && [ "${ver#*:}" != "$want" ]; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-revision-strip	scripts/verify/verify-debs.sh	if [ "$revision" != "$upstream" ] && [[ "$revision" =~ ^[0-9][0-9A-Za-z.+~]*$ ]]; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-architecture	scripts/verify/verify-debs.sh	if [ -n "$claimed_arch" ] && [ "$claimed_arch" != "$ctrl_arch" ]; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-missing-signature	scripts/verify/verify-debs.sh	if [ ! -f "$sig" ]; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-signature-length	scripts/verify/verify-debs.sh	if len(sig) != 64:	if False:	tests/verify/verify-debs.test.sh
+verify-debs-signature-size	scripts/verify/verify-debs.sh	if len(sig) > MAX_SIG_BYTES:	if False:	tests/verify/verify-debs.test.sh
+verify-debs-key-file-missing	scripts/verify/verify-debs.sh	[ -f "$KEY_FILE" ] || { echo "::error::release public key $KEY_FILE not found" >&2; exit 1; }	[ -f "$KEY_FILE" ] || true	tests/verify/verify-debs.test.sh
+verify-debs-no-keys	scripts/verify/verify-debs.sh	[ "${#KEYS[@]}" -ge 1 ] || { echo "::error::release public key $KEY_FILE has no keys" >&2; exit 1; }	[ "${#KEYS[@]}" -ge 1 ] || true	tests/verify/verify-debs.test.sh
+verify-debs-no-debs	scripts/verify/verify-debs.sh	[ "${#debs[@]}" -ge 1 ] || { echo "::error::no .deb files to verify in $DEBS_DIR" >&2; exit 1; }	[ "${#debs[@]}" -ge 1 ] || true	tests/verify/verify-debs.test.sh
+purge-cache-missing-release	scripts/publish/purge-cache.sh	|| { echo "::error::no signed Release at $release; nothing to derive a purge list from"; exit 1; }	|| true	tests/publish/purge-cache.test.sh
+purge-cache-no-index-files	scripts/publish/purge-cache.sh	|| { echo "::error::the built Release declares no index files to purge"; exit 1; }	|| true	tests/publish/purge-cache/purge-cache-guards.test.sh
+purge-cache-index-dotdot	scripts/publish/purge-cache.sh	*..*) echo "::error::the built Release names an index path containing '..'"; exit 1 ;;	*..*) : ;;	tests/publish/purge-cache.test.sh
+purge-cache-pool-dotdot	scripts/publish/purge-cache.sh	*..*) echo "::error::a built Packages index names a pool path containing '..'"; exit 1 ;;	*..*) : ;;	tests/publish/purge-cache.test.sh
+purge-cache-no-packages	scripts/publish/purge-cache.sh	|| { echo "::error::the built indices declare no packages to purge"; exit 1; }	|| true	tests/publish/purge-cache/purge-cache-guards.test.sh
+purge-cache-no-install-dir	scripts/publish/purge-cache.sh	|| { echo "::error::the built tree has no install/ directory; every product's install line would stay stale"; exit 1; }	|| true	tests/publish/purge-cache.test.sh
+purge-cache-no-installer	scripts/publish/purge-cache.sh	|| { echo "::error::no bootstrap installer was built; there is nothing to purge and every product's install line is stale"; exit 1; }	|| true	tests/publish/purge-cache/purge-cache-guards.test.sh
+purge-cache-credentials	scripts/publish/purge-cache.sh	|| { echo "::error::$v is not configured."; exit 1; }	|| true	tests/publish/purge-cache/purge-cache-guards.test.sh
+purge-cache-index-batch	scripts/publish/purge-cache.sh	[ "$index_total" -le "$BATCH_SIZE" ] || {	true || {	tests/publish/purge-cache/purge-cache-guards.test.sh
+purge-cache-url-slash	scripts/publish/purge-cache.sh	ARCHIVE_URL="${ARCHIVE_URL%/}"	ARCHIVE_URL="$ARCHIVE_URL"	tests/publish/purge-cache.test.sh
+purge-cache-cloudflare-success	scripts/publish/purge-cache.sh	echo "$resp" | jq -e '.success == true' >/dev/null || {	true || {	tests/publish/purge-cache.test.sh
+roster-has-releases-asset-count	scripts/verify/roster-has-releases.sh	if [ "$debs" -ne 1 ] || [ "$sigs" -ne 1 ]; then	if false; then	tests/verify/roster-has-releases.test.sh
+roster-has-releases-missing-exit	scripts/verify/roster-has-releases.sh	[ "$missing" -eq 0 ] || exit 1	[ "$missing" -eq 0 ] || true	tests/verify/roster-has-releases.test.sh
+roster-has-releases-unknown-exit	scripts/verify/roster-has-releases.sh	[ "$unknown" -eq 0 ] || exit 2	[ "$unknown" -eq 0 ] || true	tests/verify/roster-has-releases.test.sh
+published-roster-plain-name	scripts/verify/published-roster.sh	if ! [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then	if false; then	tests/verify/published-roster.test.sh
+build-installers-placeholder	scripts/build/build-installers.sh	grep -q '@PRODUCT@' "$TEMPLATE" \	grep -q '' "$TEMPLATE" \	tests/build/build-installers.test.sh
+build-installers-product-name	scripts/build/build-installers.sh	*[!a-z0-9.+-]* | '' | [!a-z0-9]* | ?)	'')	tests/build/build-installers.test.sh
+build-installers-shell-syntax	scripts/build/build-installers.sh	sh -n "$out" || { echo "::error::$out is not valid shell" >&2; exit 1; }	true || { echo "::error::$out is not valid shell" >&2; exit 1; }	tests/build/build-installers.test.sh
+build-installers-last-line	scripts/build/build-installers.sh	[ "$(tail -n 1 "$out")" = '{ install_main; }' ] \	true \	tests/build/build-installers.test.sh
+installer-root-required	scripts/installer/install-template.sh	[ "$run_uid" -eq 0 ] || fail "run this as root	true || fail "run this as root	tests/installer/install-template/install-template-guards.test.sh
+installer-regular-file	scripts/installer/install-template.sh	[ -f "$1" ] && [ ! -L "$1" ] && return 0	true && return 0	tests/installer/install-template/install-template-special-files.test.sh
+installer-symlink	scripts/installer/install-template.sh	[ -L "$1" ] && fail "$2 ($1) is a symbolic link, not a regular file; nothing was installed"	false && fail "$2 ($1) is a symbolic link, not a regular file; nothing was installed"	tests/installer/install-template/install-template-special-files.test.sh
+installer-fifo	scripts/installer/install-template.sh	[ -p "$1" ] && fail "$2 ($1) is a FIFO, not a regular file; nothing was installed"	false && fail "$2 ($1) is a FIFO, not a regular file; nothing was installed"	tests/installer/install-template/install-template-special-files.test.sh
+installer-not-regular	scripts/installer/install-template.sh	fail "$2 ($1) is not a regular file; nothing was installed"	:	tests/installer/install-template/install-template-special-files.test.sh
+installer-tar-size	scripts/installer/install-template.sh	[ "$(wc -c < "$workdir/keyring.tar")" -le $((8 * 1024 * 1024)) ] \	true \	tests/installer/install-template/install-template-limits.test.sh
+installer-tar-listing	scripts/installer/install-template.sh	|| fail "could not read the keyring package listing; nothing was installed"	|| true	tests/installer/install-template/install-template-hostile-tar.test.sh
+installer-declared-size	scripts/installer/install-template.sh	|| fail "the keyring package declares more than 8 MB or cannot be measured; nothing was installed"	|| true	tests/installer/install-template/install-template-hostile-tar.test.sh
+installer-keyring-fprs	scripts/installer/install-template.sh	[ -n "$keyring_fprs" ] \	true \	tests/installer/install-template/install-template-empty-keyring.test.sh
+installer-expected-fpr	scripts/installer/install-template.sh	printf '%s\n' "$GLYNDOR_APT_FPR" | grep -qxF "$fpr" || fail \	true || fail \	tests/installer/install-template/install-template-behaviour.test.sh
+installer-signature	scripts/installer/install-template.sh	|| fail "the downloaded package is not signed by the archive key it carries; nothing was installed"	|| true	tests/installer/install-template/install-template-behaviour.test.sh
+installer-copy	scripts/installer/install-template.sh	|| fail "could not prepare the verified package for installation; nothing was installed"	|| true	tests/installer/install-template/install-template-special-files.test.sh
+installer-private	scripts/installer/install-template.sh	chmod 600 "$install_deb" \	true \	tests/installer/install-template/install-template-special-files.test.sh
+installer-copy-signature	scripts/installer/install-template.sh	|| fail "the package to install is not the one that was verified; nothing was installed"	|| true	tests/installer/install-template/install-template-swap.test.sh
+installer-download-cap	scripts/installer/install-template.sh	curl -fsSL --proto-redir =https --max-filesize $((8 * 1024 * 1024)) \	curl -fsSL --proto-redir =https \	tests/installer/install-template/install-template-guards.test.sh
+installer-redirect	scripts/installer/install-template.sh	curl -fsSL --proto-redir =https --max-filesize $((64 * 1024)) \	curl -fsSL --max-filesize $((64 * 1024)) \	tests/installer/install-template/install-template-redirect.test.sh
+installer-dpkg-i	scripts/installer/install-template.sh	dpkg -i "$install_deb" >/dev/null </dev/null \	true \	tests/installer/install-template/install-template-guards.test.sh
+release-order-dpkg-compare	scripts/verify/check-release-order.sh	if comparison.returncode == 0:	if False:	tests/verify/check-release-order.test.sh
+release-order-dpkg-validate	scripts/verify/check-release-order.sh	if not version or run_tool("dpkg", "--validate-version", version).returncode != 0:	if False:	tests/verify/check-release-order.test.sh
+release-order-semver-validity	scripts/verify/check-release-order.sh	if not match:	if False:	tests/verify/check-release-order.test.sh
+release-order-arch-coverage	scripts/verify/check-release-order.sh	if declared - listed:	if False:	tests/verify/check-release-order.test.sh
+release-order-index-sha	scripts/verify/check-release-order.sh	if [ "$(sha256_of "$dest")" != "$digest" ]; then	if false; then	tests/verify/check-release-order.test.sh
+verify-published-index-cap	scripts/verify/verify-published.sh	if [ "$index_count" -gt "$MAX_ENTRIES" ]; then	if false; then	tests/verify/verify-published/verify-published-budget.test.sh
+verify-published-bootstrap-sig	scripts/verify/verify-published.sh	if [ "$bootstrap_sig_ok" -ne 1 ]; then	if false; then	tests/verify/verify-published/verify-published-bootstrap.test.sh
+quality-test-coverage	scripts/quality/check-test-coverage.sh	[ -f "$root/tests/$rel.test.sh" ] || missing+=("scripts/$rel.sh")	true || missing+=("scripts/$rel.sh")	tests/quality/check-test-coverage.test.sh
+quality-action-pins	scripts/quality/check-action-pins.sh	if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then	if true; then	tests/quality/check-action-pins.test.sh
+quality-lint-workflow-shell	scripts/quality/lint-workflow-shell.sh	if ! out="$(shellcheck -S "$severity" -f gcc "$block" 2>&1)"; then	if false; then	tests/quality/lint-workflow-shell.test.sh
