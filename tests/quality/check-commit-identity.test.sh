@@ -64,4 +64,5 @@ run >/dev/null; check "one bad commit among good ones fails" 1 "$?"
 "$SCRIPT" >/dev/null 2>&1; check "no arguments fails" 1 "$?"
 
 echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
