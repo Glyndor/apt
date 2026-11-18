@@ -5,8 +5,10 @@
 # the README says it should there?
 #
 #   distro-floor.sh install <product>   the product installs and is on PATH
-#   distro-floor.sh refuse  <product>   the install is refused, and the
-#                                       refusal names podman, which is the floor
+#   distro-floor.sh refuse  <product>   the install is refused, and the refusal
+#                                       names the floor: podman (>= 5.0), or the
+#                                       libc6 version the podman package of this
+#                                       archive needs
 #
 # The installer is downloaded to a file and run from it rather than piped, so
 # a failed download is a failure here and not an empty script that exits 0.
@@ -62,8 +64,12 @@ case "$expect" in
 	refuse)
 		[ "$rc" -ne 0 ] \
 			|| fail "the installer succeeded on a release the README lists as unsupported"
-		grep -q 'podman (>= 5.0)' "$work/log" \
-			|| fail "the installer was refused, but the refusal does not name podman (>= 5.0)"
-		echo "distro-floor: $product is refused here and the refusal names podman, as the README says"
+		# Two floors can refuse a release. Its own podman is older than 5, or the
+		# archive's podman is newer than the release's glibc can run: the package
+		# declares libc6 (>= 2.39), so apt refuses it where glibc is older rather
+		# than installing a binary that does not start.
+		grep -qE 'podman \(>= 5\.0\)|libc6 \(>= [0-9]+\.[0-9]+\)' "$work/log" \
+			|| fail "the installer was refused, but the refusal does not name the floor: podman (>= 5.0) or libc6 (>= N)"
+		echo "distro-floor: $product is refused here and the refusal names the floor, as the README says"
 		;;
 esac

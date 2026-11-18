@@ -2,13 +2,15 @@ name: Distribution floor
 
 # Which Debian and Ubuntu releases can install from this archive is a fact
 # about podman, not about this repository: podup depends on podman 5, and
-# epistle needs podup to run the mail stack, so the floor is "releases that
-# ship podman 5 or newer from their own repositories" (#237). A release
-# crosses that line when its repositories change, and no event here announces
-# that. So this runs the served install line inside fresh containers and
-# asserts exactly what the README table promises: the releases listed as
-# supported install, and the one listed as unsupported is refused with a
-# message that names podman.
+# epistle needs podup to run the mail stack. Since the archive serves its own
+# podman, the floor is no longer what a release ships: it is the glibc that
+# package needs (libc6 >= 2.39), and a release older than that is refused with
+# a message naming libc6 rather than given a podman that does not start. A
+# release crosses that line when its repositories change, and no event here
+# announces that. So this runs the served install line inside fresh containers
+# and asserts exactly what the README table promises: the releases listed as
+# supported install, and the ones listed as unsupported are refused with a
+# message that names the floor.
 #
 # Weekly and on demand, no push or pull_request: the question is about the
 # distributions and the served archive, not about a change in this tree. The
@@ -40,9 +42,13 @@ jobs:
         include:
           - image: debian:trixie
             expect: install
+          - image: ubuntu:24.04
+            expect: install
           - image: ubuntu:26.04
             expect: install
           - image: ubuntu:22.04
+            expect: refuse
+          - image: debian:12
             expect: refuse
     steps:
       - name: Checkout

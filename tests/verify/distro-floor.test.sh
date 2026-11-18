@@ -3,7 +3,7 @@
 # scripts/verify/distro-floor.sh is what .github/workflows/distro-floor.yml runs
 # inside a fresh Debian or Ubuntu container to assert the README's table:
 # the releases listed as supported install podup, the one listed as
-# unsupported is refused with a message that names podman. The script runs
+# unsupported is refused with a message that names the floor. The script runs
 # once a week where nobody watches, so its own failure modes need exercising
 # here: a check that says "as the README says" on every input is a cron hiding
 # its failures.
@@ -139,7 +139,11 @@ check "and says it does not start" "1" \
 out="$(run_floor refuse "$(installer "$REFUSAL" 1)" absent)"; rc=$?
 check "refuse: exit 1 naming podman (>= 5.0) passes" "0" "$rc"
 check "and says it is refused, as the README says" "1" \
-	"$(printf '%s' "$out" | grep -c 'refused here and the refusal names podman')"
+	"$(printf '%s' "$out" | grep -c 'refused here and the refusal names the floor')"
+
+# The release is refused by the archive's own podman: its glibc is too old.
+out="$(run_floor refuse "$(installer "$PRODUCT : Depends: libc6 (>= 2.39) but 2.35-0ubuntu3 is to be installed" 1)" absent)"; rc=$?
+check "refuse: exit 1 naming libc6 (>= 2.39) passes" "0" "$rc"
 
 # --- an unsupported release that installed anyway --------------------------
 #
@@ -159,8 +163,8 @@ check "and says the README lists it as unsupported" "1" \
 
 out="$(run_floor refuse "$(installer 'error: apt could not install it' 1)" absent)"; rc=$?
 check "refuse: exit 1 without podman in the output fails" "1" "$rc"
-check "and says the refusal does not name podman" "1" \
-	"$(printf '%s' "$out" | grep -c 'does not name podman (>= 5.0)')"
+check "and says the refusal does not name the floor" "1" \
+	"$(printf '%s' "$out" | grep -c 'does not name the floor')"
 
 # --- the installer could not be downloaded ---------------------------------
 
@@ -212,11 +216,13 @@ for line in open(sys.argv[1]):
         print(f"{m.group(1)} {'install' if m.group(2) == 'installs' else 'refuse'}")
 PY
 )"
-check "the workflow matrix lists three images" "3" "$(printf '%s\n' "$matrix" | grep -c .)"
+check "the workflow matrix lists five images" "5" "$(printf '%s\n' "$matrix" | grep -c .)"
 check "the README table names the same images with the same expectation" \
 	"$(printf '%s\n' "$matrix" | LC_ALL=C sort)" "$(printf '%s\n' "$readme" | LC_ALL=C sort)"
-check "and includes one release expected to refuse" "1" \
+check "and includes two releases expected to refuse" "2" \
 	"$(printf '%s\n' "$matrix" | grep -c ' refuse$')"
+check "and three expected to install" "3" \
+	"$(printf '%s\n' "$matrix" | grep -c ' install$')"
 
 echo
 echo "$pass passed, $fail failed"
