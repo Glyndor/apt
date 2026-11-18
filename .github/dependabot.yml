@@ -1,6 +1,11 @@
 version: 2
 
 updates:
+  # Dependabot opened nothing between 20 August and 17 November 2026 while
+  # actions/setup-go was behind upstream, and the registration is lost when this
+  # file stops changing on the default branch. A change to the file on main
+  # registers it again, so this note is that change; the watcher in
+  # freshness.yml is what noticed.
   # Keep the SHA-pinned actions in the workflows current. This repo has no
   # language package manifest (it is POSIX shell + reprepro), so GitHub Actions
   # is the only ecosystem to track.
