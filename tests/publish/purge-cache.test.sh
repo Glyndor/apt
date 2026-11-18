@@ -152,9 +152,10 @@ export CF_ZONE="fake-zone"
 export CF_API_BASE="http://127.0.0.1:$PORT/client/v4"
 
 # --- one product, two architectures: today's archive ------------------------
-# 3 root + 3 fixed indices + 6 derived indices (3 per arch) + 3 pool (1 per
-# arch, plus the keyring, which both indices declare and the list deduplicates)
-# + 1 installer = 16 URLs.
+# 3 root + 3 fixed indices + 6 derived indices (3 per arch) + 1 pool object
+# (the keyring, which both indices declare and the list deduplicates) + 1
+# installer = 14 URLs. The product .debs are not purged: their names carry the
+# version, so a purge would only evict what the edge already holds.
 #
 # Two requests, not one: content first, then the indices on their own. A
 # partial purge is not degradation for apt but a signature that does not
@@ -166,8 +167,10 @@ build_archive 1 "amd64 arm64"
 
 check "one product on two arches sends content and indices separately" \
 	"2" "$(wc -l < "$REQUESTS")"
-check "one product on two arches purges 16 URLs in total" \
-	"16" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
+check "one product on two arches purges 14 URLs in total" \
+	"14" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
+check "no product .deb is purged" \
+	"0" "$(jq -s -r '[.[].files[] | select(contains("/pool/main/p/"))] | length' < "$REQUESTS")"
 check "the pool object is deduplicated across the two indices" \
 	"1" "$(jq -s -r '[.[].files[] | select(endswith("_all.deb"))] | length' < "$REQUESTS")"
 check "the per-architecture Release files are purged" \
@@ -180,8 +183,8 @@ check "the per-architecture Release files are purged" \
 	|| { echo "FAIL  the trailing-slash case exited non-zero"; cat "$WORK/out"; exit 1; }
 check "a trailing slash on the archive URL does not double the separator" \
 	"0" "$(jq -s -r '[.[].files[] | select(contains("example//"))] | length' < "$REQUESTS")"
-check "and the same 16 URLs are purged" \
-	"16" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
+check "and the same 14 URLs are purged" \
+	"14" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
 
 # The signature is the file this list forgot. It is served from the root under a
 # fixed name with `max-age=86400`, next to a package that is rebuilt every run,
@@ -205,22 +208,22 @@ check "the last request carries nothing but indices" \
 	"9" "$(tail -1 "$REQUESTS" | jq -r '.files | length')"
 
 # --- the roster on three architectures: the case that used to fail ----------
-# 3 root + 12 index (3 fixed, 3 per arch) + (7 products + keyring) × 3 arches
-# deduplicated to 22 pool objects + 7 installers = 44 URLs. The old step refused
-# a list this long outright.
+# 3 root + 12 index (3 fixed, 3 per arch) + 1 pool object (the keyring) + 7
+# installers = 23 URLs. Purging every product .deb used to make this 44, which
+# was more than one request and evicted the packages for nothing.
 #
-# Three requests now, not two: content is 32 URLs against a BATCH_SIZE of 30, so
-# it splits, and the indices still go on their own and last.
+# Two requests: content is 11 URLs, one batch, and the indices go on their own
+# and last.
 start_server ok
 build_archive 7 "amd64 arm64 armhf"
 "$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 \
 	|| { echo "FAIL  the seven-product case exited non-zero"; cat "$WORK/out"; exit 1; }
 
 total="$(jq -rs '[.[].files[]] | length' < "$REQUESTS")"
-check "seven products on three arches needs three requests" \
-	"3" "$(wc -l < "$REQUESTS")"
-check "seven products on three arches purges 44 URLs" \
-	"44" "$total"
+check "seven products on three arches needs two requests" \
+	"2" "$(wc -l < "$REQUESTS")"
+check "seven products on three arches purges 23 URLs" \
+	"23" "$total"
 check "no request exceeds Cloudflare's 30-file limit" \
 	"" "$(jq -rs '[.[] | select((.files | length) > 30)] | length | select(. > 0) | "\(.) oversized"' < "$REQUESTS")"
 check "every URL is sent exactly once" \
@@ -310,7 +313,7 @@ check "a Release naming an index path with .. fails the purge" "1" "$rc"
 check "and names the path problem" "1" "$(grep -c "containing '..'" "$WORK/out")"
 
 build_archive 1 "amd64 arm64"
-sed -i '0,/^Filename: /s|^Filename: .*|Filename: ../../../../etc/passwd|' "$BUILT"/dists/stable/main/binary-amd64/Packages
+sed -i '/^Package: glyndor-archive-keyring/{n;s|^Filename: .*|Filename: ../../../../etc/passwd|}' "$BUILT"/dists/stable/main/binary-amd64/Packages
 rc=0
 "$PURGE" "https://apt.example" "$BUILT" > "$WORK/out" 2>&1 || rc=$?
 check "a Packages naming a pool path with .. fails the purge" "1" "$rc"

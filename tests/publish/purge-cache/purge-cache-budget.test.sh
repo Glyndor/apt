@@ -222,7 +222,7 @@ build_archive
 rc=0
 "$PURGE" "https://apt.example" "$BUILT" 60 > "$OUT" 2>&1 || rc=$?
 check "with room in the budget the purge succeeds" "0" "$rc"
-check "and it purges every URL" "16" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
+check "and it purges every URL" "14" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
 check "and it sends the content and the index groups separately" \
 	"2" "$(wc -l < "$REQUESTS")"
 
@@ -233,7 +233,7 @@ build_archive
 rc=0
 "$PURGE" "https://apt.example" "$BUILT" 60 > "$OUT" 2>&1 || rc=$?
 check "a slow but answering peer is still purged" "0" "$rc"
-check "and every URL is still purged" "16" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
+check "and every URL is still purged" "14" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
 
 # --- the budget stops a peer that never answers ----------------------------
 #

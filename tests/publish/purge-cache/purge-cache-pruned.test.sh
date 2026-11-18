@@ -62,7 +62,7 @@ with tempfile.TemporaryDirectory() as temp:
             shutil.rmtree(work / directory, ignore_errors=True)
             (work / directory).mkdir()
         journal.unlink(missing_ok=True)
-        put('public', 'dists/stable/main/binary-amd64/Packages', 'Filename: pool/current.deb\n')
+        put('public', 'dists/stable/main/binary-amd64/Packages', 'Package: glyndor-archive-keyring\nFilename: pool/current.deb\n')
         put('public', 'dists/stable/Release', 'SHA256:\n hash 1 main/binary-amd64/Packages\n')
         for key in ('dists/stable/InRelease', 'dists/stable/Release.gpg', 'pool/current.deb',
                     'glyndor-archive-keyring.deb', 'glyndor-archive-keyring.deb.asc',

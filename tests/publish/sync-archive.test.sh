@@ -42,7 +42,8 @@ def archive(generation):
     for arch in ('amd64', 'arm64'):
         prefix = f'dists/stable/main/binary-{arch}/'
         result[prefix + 'Packages'] = ''.join(
-            f'Filename: {key}\n\n' for key in packages + ['pool/shared.deb']).encode()
+            f'Package: product\nFilename: {key}\n\n' for key in packages).encode() + \
+            b'Package: glyndor-archive-keyring\nFilename: pool/shared.deb\n\n'
         result[prefix + 'Packages.gz'] = b'compressed ' + result[prefix + 'Packages']
         result[prefix + 'Release'] = f'architecture {arch} generation {generation}'.encode()
     release = b'SHA256:\n' + b''.join(

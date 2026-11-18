@@ -4,10 +4,10 @@
 #
 # Cloudflare caches by URL. A fresh sync changes the bytes behind the same URL,
 # so without a purge apt can fetch a new InRelease and a stale Packages it no
-# longer matches (hash/size mismatch). The immutable pool/ objects are purged
-# too: their filename carries the version, but the keyring package is rebuilt
-# under a stable name every run, and a bad edge copy of a pool object served
-# `immutable, max-age=31536000` would outlive a bad index by a year.
+# longer matches (hash/size mismatch). Product .debs in pool/ are NOT purged:
+# their filename carries the version and they are never rewritten, so a purge
+# would only evict a package the edge already holds. The keyring package is the
+# one pool object rebuilt under a stable name, so its path is purged with the rest.
 #
 # The URL list is DERIVED from the tree the run just built, never written by
 # hand. A hand-maintained list drifted from reprepro in both directions once
@@ -130,13 +130,21 @@ case "$index_paths" in
 	*..*) echo "::error::the built Release names an index path containing '..'"; exit 1 ;;
 esac
 
-# And the packages those indices point at.
+# The pool objects that are NOT immutable. A product .deb carries its version
+# in the name and is never rewritten, so purging it only throws away the copy
+# the edge already holds: a 60 MB podman .deb per architecture would be fetched
+# from R2 again after every daily publish for nothing. The keyring package is the
+# exception, rebuilt every run under a name that moves only when its inputs do,
+# so its pool object is the one pool path that can change under a fixed URL.
+# It is read out of the built indices by package name rather than named here.
 compgen -G "$BUILT_DIR/dists/stable/main/binary-*/Packages" >/dev/null \
 	|| { echo "::error::the built tree has no Packages index; there is nothing to purge"; exit 1; }
-pool_paths="$(awk '/^Filename:/ { print $2 }' \
-	"$BUILT_DIR"/dists/stable/main/binary-*/Packages | LC_ALL=C sort -u)"
+pool_paths="$(awk '
+	/^Package:/  { keyring = ($2 == "glyndor-archive-keyring") }
+	/^Filename:/ && keyring { print $2 }
+' "$BUILT_DIR"/dists/stable/main/binary-*/Packages | LC_ALL=C sort -u)"
 [ -n "$pool_paths" ] \
-	|| { echo "::error::the built indices declare no packages to purge"; exit 1; }
+	|| { echo "::error::the built indices declare no keyring package; its pool object is the one that has to be purged"; exit 1; }
 # The same rule as for the indices above: a Filename that climbs out of the
 # archive would be sent to Cloudflare as a URL elsewhere on the host, and the
 # purge would report success over a file it never cleared.
