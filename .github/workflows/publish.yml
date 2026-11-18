@@ -54,7 +54,7 @@ env:
   # with no release stopped every daily run (15 November 2026, epistle-panel) and
   # the archive stayed at the previous day's content. When epistle-panel releases
   # its first .deb, add "epistle-panel:all" here.
-  PRODUCTS: "podup epistle"
+  PRODUCTS: "podup epistle podman"
   # There is no INSTALLERS list. Every product in PRODUCTS gets a bootstrap
   # installer at /install/<product>, derived from PRODUCTS below, with no
   # per-product opt-in.
