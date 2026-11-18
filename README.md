@@ -41,11 +41,12 @@ apt list '?origin(Glyndor)'   # everything currently served
 
 ## Which releases
 
-The floor is podman. `podup` depends on podman 5, and `epistle` needs `podup`
-to run the mail stack, so this archive installs on the Debian and Ubuntu
-releases that ship podman 5 or newer from their own repositories, and refuses
-on the ones that do not. The refusal names it:
-`podman (>= 5.0) but it is not going to be installed`.
+The floor is glibc 2.39. `podup` depends on podman 5, and `epistle` needs `podup`
+to run the mail stack, and this archive serves its own podman, built to run on
+glibc 2.39 or newer. So it installs on the Debian and Ubuntu releases that have
+it, whatever podman they ship, and refuses on the older ones rather than
+installing a podman that does not start. The refusal names it:
+`libc6 (>= 2.39) but 2.35 is to be installed`.
 
 The [distribution floor workflow](.github/workflows/distro-floor.yml) runs the
 install line above in fresh containers every week and asserts exactly this:
@@ -53,12 +54,12 @@ install line above in fresh containers every week and asserts exactly this:
 | Image | Expected |
 | --- | --- |
 | `debian:trixie` | installs |
+| `ubuntu:24.04` | installs |
 | `ubuntu:26.04` | installs |
-| `ubuntu:22.04` | refused, naming podman |
+| `ubuntu:22.04` | refused, naming libc6 |
+| `debian:12` | refused, naming libc6 |
 
-A release missing from that table has not been measured. The check reads what
-the release serves from its own repositories; a podman added from elsewhere is
-not what the floor is about.
+A release missing from that table has not been measured.
 
 ## Updates take care of themselves
 
