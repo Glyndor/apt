@@ -59,7 +59,7 @@ build() { # $1=extra index lines to declare in the Release
 		echo " deadbeef 1 main/binary-amd64/Packages"
 		printf '%s' "$1"
 	} > "$BUILT/dists/stable/Release"
-	printf 'Package: p\nFilename: pool/main/p/p/p_1_amd64.deb\n\n' \
+	printf 'Package: p\nFilename: pool/main/p/p/p_1_amd64.deb\n\nPackage: glyndor-archive-keyring\nFilename: pool/main/g/glyndor-archive-keyring/glyndor-archive-keyring_1_all.deb\n\n' \
 		> "$BUILT/dists/stable/main/binary-amd64/Packages"
 	printf '#!/bin/sh\n' > "$BUILT/install/p"
 	for f in index.html glyndor-archive-keyring.deb glyndor-archive-keyring.deb.asc; do
@@ -127,7 +127,13 @@ refuses "a tree with no Packages index" "has no Packages index"
 
 build ""
 : > "$BUILT/dists/stable/main/binary-amd64/Packages"
-refuses "indices that declare no packages" "declare no packages to purge"
+refuses "indices that declare no keyring package" "declare no keyring package"
+
+# A product .deb is not what has to be purged, so an index naming only products
+# is the same refusal: the keyring is the object that changes under a fixed URL.
+build ""
+printf 'Package: p\nFilename: pool/main/p/p/p_1_amd64.deb\n\n' > "$BUILT/dists/stable/main/binary-amd64/Packages"
+refuses "indices that name only product packages" "declare no keyring package"
 
 build ""
 rm -f "$BUILT/index.html" "$BUILT/glyndor-archive-keyring.deb" "$BUILT/glyndor-archive-keyring.deb.asc"
