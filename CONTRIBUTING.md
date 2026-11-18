@@ -34,8 +34,10 @@ squash-merge back. Releases are tagged directly off `main`.
 
 - **An issue first.** Labels are the tracking system here; there is no board.
   Apply `type:`, `prio:`, `effort:`, `status:` and `area:` where they fit.
-- **Sign every commit off** with `git commit -s`. The `dco` check is required and
-  it is the only thing standing behind that attestation.
+- **Sign every commit off** with `git commit -s`, using your GitHub noreply address
+  (`git config user.email`). The `dco` check is required and it is the only thing
+  standing behind that attestation; `commit-hygiene.yml` rejects any other address
+  in the author, `Signed-off-by` or `Co-authored-by`, and a line that looks like a credential.
 - **Commits are signed**, GPG or SSH. `required_signatures` is enforced on
   `main`, and rebase-merge is disabled because GitHub re-creates rebased commits
   without signatures.
@@ -131,6 +133,7 @@ CI is split by responsibility rather than gathered in one file:
 | `pr-hygiene.yml` | the pull request itself is malformed |
 | `freshness.yml` | something scheduled stopped happening elsewhere |
 | `dco.yml`, `line-limit.yml`, `workflow-lint.yml` | one rule each |
+| `commit-hygiene.yml` | a commit carries a personal email address, or the change adds a line shaped like a credential |
 | `publish.yml` | the daily build and upload of the archive |
 | `health-check.yml` | the published archive is stale, unreachable or unsigned |
 | `distro-floor.yml` | a release the README lists as supported stops installing, or the unsupported one stops being refused |

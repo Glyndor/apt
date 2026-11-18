@@ -73,6 +73,8 @@ tests/publish/sync-archive.test.sh -
 tests/quality/check-action-pins.test.sh -
 tests/quality/check-editorconfig.test.sh -
 tests/quality/check-test-coverage.test.sh -
+tests/quality/check-commit-identity.test.sh -
+tests/quality/check-secrets.test.sh -
 tests/quality/ci-job-scope-suites.test.sh -
 tests/quality/ci-job-scope.test.sh -
 tests/quality/suite-scope-map.test.sh -
