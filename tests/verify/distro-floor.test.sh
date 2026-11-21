@@ -134,16 +134,24 @@ check "install: a binary on PATH that cannot start fails" "1" "$rc"
 check "and says it does not start" "1" \
 	"$(printf '%s' "$out" | grep -c 'does not start')"
 
-# --- an unsupported release: refused, and the refusal names podman ---------
-
-out="$(run_floor refuse "$(installer "$REFUSAL" 1)" absent)"; rc=$?
-check "refuse: exit 1 naming podman (>= 5.0) passes" "0" "$rc"
-check "and says it is refused, as the README says" "1" \
-	"$(printf '%s' "$out" | grep -c 'refused here and the refusal names the floor')"
+# --- an unsupported release: refused, and the refusal names libc6 (>= 2.39) -
 
 # The release is refused by the archive's own podman: its glibc is too old.
 out="$(run_floor refuse "$(installer "$PRODUCT : Depends: libc6 (>= 2.39) but 2.35-0ubuntu3 is to be installed" 1)" absent)"; rc=$?
 check "refuse: exit 1 naming libc6 (>= 2.39) passes" "0" "$rc"
+check "and says it is refused, as the README says" "1" \
+	"$(printf '%s' "$out" | grep -c 'refused here and the refusal names the floor')"
+
+# Two refusals that are not the floor the README documents: another package, and another number.
+# Each is paired with the case above, the same shape naming libc6 (>= 2.39), which passes.
+out="$(run_floor refuse "$(installer "$REFUSAL" 1)" absent)"; rc=$?
+check "refuse: a refusal that names podman (>= 5.0) and not libc6 fails" "1" "$rc"
+check "and says the refusal does not name the floor" "1" \
+	"$(printf '%s' "$out" | grep -c 'does not name the floor: libc6 (>= 2.39)')"
+out="$(run_floor refuse "$(installer "$PRODUCT : Depends: libc6 (>= 2.35) but 2.31-0ubuntu3 is to be installed" 1)" absent)"; rc=$?
+check "refuse: a refusal that names another libc6 floor fails" "1" "$rc"
+check "and says the refusal does not name the floor" "1" \
+	"$(printf '%s' "$out" | grep -c 'does not name the floor: libc6 (>= 2.39)')"
 
 # --- an unsupported release that installed anyway --------------------------
 #
@@ -219,6 +227,11 @@ PY
 check "the workflow matrix lists five images" "5" "$(printf '%s\n' "$matrix" | grep -c .)"
 check "the README table names the same images with the same expectation" \
 	"$(printf '%s\n' "$matrix" | LC_ALL=C sort)" "$(printf '%s\n' "$readme" | LC_ALL=C sort)"
+# The floor the README prints is the one the script asks for.
+readme_floor="$(grep -o 'libc6 (>= [0-9.]*) but' "$HERE/README.md" | head -1 | sed 's/ but$//')"
+script_floor="libc6 (>= $(sed -n 's/^floor_libc="\(.*\)"$/\1/p' "$SCRIPT"))"
+check "the refusal the README quotes is the floor the script asks for" "$script_floor" "$readme_floor"
+check "and the README says the floor in words too" "1" "$(grep -c 'The floor is glibc 2.39' "$HERE/README.md")"
 check "and includes two releases expected to refuse" "2" \
 	"$(printf '%s\n' "$matrix" | grep -c ' refuse$')"
 check "and three expected to install" "3" \

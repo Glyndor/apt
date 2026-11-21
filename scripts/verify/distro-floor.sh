@@ -6,9 +6,9 @@
 #
 #   distro-floor.sh install <product>   the product installs and is on PATH
 #   distro-floor.sh refuse  <product>   the install is refused, and the refusal
-#                                       names the floor: podman (>= 5.0), or the
+#                                       names the floor the README states: the
 #                                       libc6 version the podman package of this
-#                                       archive needs
+#                                       archive needs, `libc6 (>= 2.39)`
 #
 # The installer is downloaded to a file and run from it rather than piped, so
 # a failed download is a failure here and not an empty script that exits 0.
@@ -23,6 +23,9 @@ usage="usage: distro-floor.sh install|refuse <product>"
 expect="${1:?$usage}"
 product="${2:?$usage}"
 base_url="${BASE_URL:-https://apt.glyndor.net}"
+# The glibc the archive's podman needs, which is the floor the README states. A refusal
+# that names another number, or another package, is not the one the table promises.
+floor_libc="2.39"
 
 fail() {
 	echo "distro-floor: $*" >&2
@@ -64,12 +67,13 @@ case "$expect" in
 	refuse)
 		[ "$rc" -ne 0 ] \
 			|| fail "the installer succeeded on a release the README lists as unsupported"
-		# Two floors can refuse a release. Its own podman is older than 5, or the
-		# archive's podman is newer than the release's glibc can run: the package
-		# declares libc6 (>= 2.39), so apt refuses it where glibc is older rather
-		# than installing a binary that does not start.
-		grep -qE 'podman \(>= 5\.0\)|libc6 \(>= [0-9]+\.[0-9]+\)' "$work/log" \
-			|| fail "the installer was refused, but the refusal does not name the floor: podman (>= 5.0) or libc6 (>= N)"
+		# The archive serves its own podman, built for glibc 2.39 or newer: the package
+		# declares libc6 (>= 2.39), so apt refuses it where glibc is older rather than
+		# installing a binary that does not start. That is the refusal the README
+		# documents, so it is the one asked for: a refusal that names podman (>= 5.0)
+		# is the release shipping an old podman, which the archive no longer depends on.
+		grep -qF "libc6 (>= $floor_libc)" "$work/log" \
+			|| fail "the installer was refused, but the refusal does not name the floor: libc6 (>= $floor_libc)"
 		echo "distro-floor: $product is refused here and the refusal names the floor, as the README says"
 		;;
 esac
