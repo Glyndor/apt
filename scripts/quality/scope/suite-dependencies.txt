@@ -122,6 +122,7 @@ tests/ci/policy/mutation-workflow.test.sh python3-yaml
 tests/ci/policy/publish-workflow-triggers.test.sh python3-yaml
 tests/ci/policy/workflow-shape.test.sh python3-yaml
 tests/ci/policy/persist-credentials.test.sh python3-yaml
+tests/ci/policy/permissions-declared.test.sh python3-yaml
 tests/publication/publish/publish-workflow.test.sh python3-yaml
 tests/ci/suites/lint-job-scope.test.sh python3-yaml
 tests/ci/suites/mldsa-job-scope.test.sh python3-yaml

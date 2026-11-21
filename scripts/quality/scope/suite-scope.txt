@@ -535,6 +535,9 @@ tests/ci/policy/workflow-shape.test.sh
 tests/ci/policy/persist-credentials.test.sh
 	.github/workflows/**
 
+tests/ci/policy/permissions-declared.test.sh
+	.github/workflows/**
+
 tests/ci/policy/jobs-are-bounded.test.sh
 	.github/workflows/**
 

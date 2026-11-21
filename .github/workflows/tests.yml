@@ -153,6 +153,7 @@ jobs:
         ./tests/ci/policy/jobs-are-bounded.test.sh
         ./tests/ci/policy/workflow-shape.test.sh
         ./tests/ci/policy/persist-credentials.test.sh
+        ./tests/ci/policy/permissions-declared.test.sh
         ./tests/ci/policy/freshness-pr-scope.test.sh
         ./tests/ci/policy/scheduled-workflows-are-watched.test.sh
         ./tests/ci/policy/network-calls-are-bounded.test.sh

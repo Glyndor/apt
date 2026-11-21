@@ -452,3 +452,7 @@ verify-debs-changed-while-verified	scripts/verify/verify-debs.sh	if ! cmp -s "$d
 verify-debs-package-from-the-file	scripts/verify/verify-debs.sh	dpkg-deb -f "$verified" Package	dpkg-deb -f "$deb" Package	tests/verify/verify-debs-same-bytes.test.sh
 verify-debs-version-from-the-file	scripts/verify/verify-debs.sh	dpkg-deb -f "$verified" Version	dpkg-deb -f "$deb" Version	tests/verify/verify-debs-same-bytes.test.sh
 verify-debs-architecture-from-the-file	scripts/verify/verify-debs.sh	dpkg-deb -f "$verified" Architecture	dpkg-deb -f "$deb" Architecture	tests/verify/verify-debs-same-bytes.test.sh
+permissions-not-declared	.github/workflows/drift.yml	permissions:	x-permissions:	tests/ci/policy/permissions-declared.test.sh
+permissions-workflow-write	.github/workflows/drift.yml	contents: read	contents: write	tests/ci/policy/permissions-declared.test.sh
+permissions-write-all	.github/workflows/commit-hygiene.yml	permissions: {}	permissions: write-all	tests/ci/policy/permissions-declared.test.sh
+permissions-secret-job-inherits	.github/workflows/publish.yml	    permissions:	    x-permissions:	tests/ci/policy/permissions-declared.test.sh
