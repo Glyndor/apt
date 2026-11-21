@@ -203,8 +203,6 @@ tests/verify/published-roster.test.sh
 	tests/verify/published-roster.test.sh
 	.github/workflows/health-check.yml
 	.github/workflows/publish.yml
-	.github/workflows/health-check.yml
-	.github/workflows/publish.yml
 
 # Both run the verifier with its default ML-DSA-65 key and required files, the
 # committed ones under keyring/, so a change there can change either verdict.
@@ -242,8 +240,9 @@ tests/verify/verify-debs-same-bytes.test.sh
 # hashes, the vector under tests/fixtures/verify-debs, and the job that runs it.
 # The suite and the runner are inputs of every decision by rule.
 tests/verify/verify-debs-mldsa.test.sh
-	scripts/verify/**
-	tests/verify/**
+	scripts/verify/verify-debs.sh
+	scripts/verify/verify-debs-requirements.txt
+	tests/verify/verify-debs-mldsa.test.sh
 	tests/fixtures/verify-debs/**
 	keyring/**
 	.github/workflows/tests.yml
@@ -522,6 +521,7 @@ tests/publication/health-check/health-check-workflow.test.sh
 
 tests/ci/policy/locale-pinned.test.sh
 	scripts/**
+	keyring/upgrade/**
 
 tests/ci/policy/network-calls-are-bounded.test.sh
 	scripts/**
