@@ -93,6 +93,12 @@ with tempfile.TemporaryDirectory() as tmp:
         ("nested shell config", {"scripts/.shellcheckrc": "severity=warning\n"}, (True, True, False)),
         ("actionlint config", {".github/actionlint.yaml": "self-hosted-runner: {}\n"}, (False, True, True)),
         ("actionlint config yml", {".github/actionlint.yml": "self-hosted-runner: {}\n"}, (False, True, True)),
+        # The rules the workflow-lint steps run live in two scripts; a change to
+        # either one changes that job's verdict. Any other script under
+        # scripts/quality/ does not, which the "shell extension" case holds.
+        ("test-job rule", {"scripts/quality/check-test-job-not-switchable.sh": "echo changed\n"}, (True, True, True)),
+        ("tooling rule", {"scripts/quality/check-tooling-isolation.sh": "echo changed\n"}, (True, True, True)),
+        ("other quality script", {"scripts/quality/check-editorconfig.sh": "echo changed\n"}, (True, False, True)),
         ("shell caller config", {".github/workflows/tests.yml": "jobs: {}\n"}, (True, True, True)),
         ("shell reusable config", {".github/workflows/reusable-shell-ci.yml": "jobs: {}\n"}, (True, True, True)),
         ("line caller config", {".github/workflows/line-limit.yml": "jobs: {}\n"}, (False, True, True)),

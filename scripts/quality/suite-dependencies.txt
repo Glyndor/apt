@@ -113,6 +113,7 @@ tests/ci/suites/lint-job-scope.test.sh python3-yaml
 tests/ci/suites/shell-ci-scope.test.sh python3-yaml
 tests/publish/purge-cache/purge-cache-pruned.test.sh python3-yaml
 tests/quality/check-suites-wired.test.sh python3-yaml
+tests/ci/reusable/reusable-workflow-lint.test.sh python3-yaml
 tests/verify/verify-published/verify-published-build.test.sh python3-yaml
 
 # reprepro
@@ -125,10 +126,10 @@ tests/ci/docs/documented-test-command.test.sh shellcheck
 tests/quality/lint-workflow-shell.test.sh shellcheck
 
 # python3-yaml, shellcheck
-tests/ci/reusable/reusable-workflow-lint.test.sh python3-yaml shellcheck
+tests/quality/check-test-job-not-switchable.test.sh python3-yaml shellcheck
 
 # python3-cryptography, python3-yaml, reprepro
-tests/ci/reusable/reusable-workflow-lint-install.test.sh python3-cryptography python3-yaml reprepro
+tests/quality/check-tooling-isolation.test.sh python3-cryptography python3-yaml reprepro
 
 # python3-cryptography, python3-yaml, reprepro, shellcheck
 tests/ci/reusable/reusable-shell-ci.test.sh python3-cryptography python3-yaml reprepro shellcheck

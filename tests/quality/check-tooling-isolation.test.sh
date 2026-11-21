@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Behaviour tests for the install rule, the assertion "A job
-# holding a secret must not install third-party tooling" in
-# .github/workflows/reusable-workflow-lint.yml.
+# Behaviour tests for scripts/quality/check-tooling-isolation.sh, the check
+# reusable-workflow-lint.yml runs so that a job holding a secret does not also
+# install third-party tooling.
 #
 # The rule used to see only the language installers (pip, cargo, npm...). It
 # did not see `apt-get install` or `brew`, which install just as much while the
 # job holds a secret (apt#361). Each case plants a workflow in a throwaway tree
-# and runs the assertion exactly as it ships; the verdict is its exit status.
+# and runs the check exactly as it ships; the verdict is its exit status.
 #
-# The control: the same cases run against a copy of the assertion with the apt
+# The control: the same cases run against a copy of the check with the apt
 # and brew detection switched off. Every case that expects a refusal on those
 # shapes must then pass, otherwise the refusal was never the new rule's.
 #
@@ -17,7 +17,8 @@
 # shellcheck disable=SC2016
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SCRIPT="$HERE/scripts/quality/check-tooling-isolation.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0
@@ -31,32 +32,16 @@ check() { # <description> <expected> <actual>
 	fi
 }
 
-step_script() { # $1=workflow $2=step name substring
-	python3 -I - "$1" "$2" <<'PY'
-import sys
-lines = open(sys.argv[1]).read().splitlines()
-start = next(i for i, l in enumerate(lines) if "name: " + sys.argv[2] in l)
-run = next(i for i, l in enumerate(lines) if i > start and l.strip() == "run: |")
-body = []
-for line in lines[run + 1:]:
-    if line.strip() and not line.startswith(" " * 10):
-        break
-    body.append(line[10:] if line.strip() else "")
-print("\n".join(body))
-PY
-}
-
-STEP="A job holding a secret must not install"
-step_script "$HERE/.github/workflows/reusable-workflow-lint.yml" "$STEP" > "$WORK/real.sh"
+cp "$SCRIPT" "$WORK/real.sh"
 # The control: no apt or brew detection. The patterns that match nothing keep
 # the script intact in every other respect.
 sed -e 's/^\( *APT_INSTALL_RE = re.compile(\)r"[^"]*"/\1r"(?!)"/' \
 	-e 's/^\( *BREW_INSTALL_RE = re.compile(\)r"[^"]*"/\1r"(?!)"/' \
 	-e 's/^\( *BREW_TOOL_RE = re.compile(\)r"[^"]*"/\1r"(?!)"/' \
 	"$WORK/real.sh" > "$WORK/blind.sh"
-check "the assertion was extracted from the workflow" "1" \
+check "the copy carries the install rules" "1" \
 	"$(grep -c 'INSTALL_PATTERNS' "$WORK/real.sh" | awk '{print ($1>0)}')"
-check "the control differs from the shipped assertion" "1" \
+check "the control differs from the shipped check" "1" \
 	"$(cmp -s "$WORK/real.sh" "$WORK/blind.sh" && echo 0 || echo 1)"
 # The second control: the secret reaches the job only the way it used to be
 # recognised, as secrets.<id> written in the job itself (issue #369).
@@ -69,7 +54,7 @@ s, n2 = re.subn(r"SECRET_RE\.search\(job_text\) or env_carries_secret\(workflow_
 assert n1 == 1 and n2 == 1, (n1, n2)
 open(sys.argv[2], "w").write(s)
 PY
-check "the second control differs from the shipped assertion" "1" \
+check "the second control differs from the shipped check" "1" \
 	"$(cmp -s "$WORK/real.sh" "$WORK/oldsecret.sh" && echo 0 || echo 1)"
 
 # plant <secret: job|later|none> <run> [job-env] [step-env] [workflow-env]
@@ -154,6 +139,129 @@ case_ "brew install, secret indexed with double quotes in the job env" flag sec 
 case_ "apt-get install, secret in the workflow env" flag sec none "$APT" '' '' 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}'
 case_ "apt-get install, secret indexed in the workflow env" flag sec none "$APT" '' '' "TOKEN: \${{ secrets['DEPLOY_TOKEN'] }}"
 case_ "apt-get install, workflow env holding no secret" pass none none "$APT" '' '' 'LANG: C'
+
+
+new() { rm -rf "$WORK/t"; mkdir -p "$WORK/t/.github/workflows"; printf '%s' "$WORK/t"; }
+run_in() { # $1=dir $2=script -> stdout+stderr, status in $?
+	( cd "$1" && bash "$2" 2>&1 )
+}
+said() { printf '%s' "$1" | grep -q -- "$2" && echo 1 || echo 0; }
+
+# ===========================================================================
+# A job holding a secret must not install third-party tooling
+# ===========================================================================
+
+tooling_case() { # $1=dir $2=env line (or empty) $3=run line
+	cat > "$1/.github/workflows/job.yml" <<EOF
+name: Job
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      $2
+    steps:
+      - run: |
+          $3
+EOF
+}
+
+# --- a secret plus a pip install is refused, and named --------------------
+d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'pip install requests'
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "a job holding a secret that pip installs is refused" "1" "$rc"
+check "and the message names the job and the line" "1" \
+	"$(said "$out" 'job `build` installs third-party tooling while holding a secret: `pip install requests`')"
+
+# --- the same install pinned by hash is the documented exemption ----------
+d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'pip install --require-hashes -r req.txt'
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "pip install --require-hashes while holding a secret is allowed" "0" "$rc"
+check "and the step says nothing was found" "1" "$(said "$out" 'no job holding a secret installs')"
+
+# --- cargo install has no hash exemption ---------------------------------
+d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'cargo install --locked cargo-cyclonedx'
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "cargo install --locked while holding a secret is still refused" "1" "$rc"
+
+# --- the same install without a secret is fine ---------------------------
+d="$(new)"; tooling_case "$d" 'PLAIN: value' 'cargo install --locked cargo-cyclonedx'
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "the same install in a job holding no secret passes" "0" "$rc"
+
+# --- a third-party action in a secret-holding job is refused ---------------
+action_case() { # $1=dir $2=env line  $3=uses value
+	cat > "$1/.github/workflows/job.yml" <<EOF
+name: Job
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      $2
+    steps:
+      - uses: $3
+EOF
+}
+d="$(new)"; action_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'someone/tool@0123456789abcdef0123456789abcdef01234567'
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "an action from outside actions/ and github/ in a job holding a secret is refused" "1" "$rc"
+check "and the message names the job and the action" "1" \
+	"$(said "$out" 'job `build` installs third-party tooling while holding a secret: `uses: someone/tool@')"
+d="$(new)"; action_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'actions/checkout@0123456789abcdef0123456789abcdef01234567'
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "a GitHub-owned action in a job holding a secret passes" "0" "$rc"
+d="$(new)"; action_case "$d" 'PLAIN: value' 'someone/tool@0123456789abcdef0123456789abcdef01234567'
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "a third-party action in a job holding no secret passes" "0" "$rc"
+d="$(new)"; action_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' './.github/workflows/reusable-x.yml'
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "a local reusable in a job holding a secret passes" "0" "$rc"
+
+# --- a commented-out install is not an install ---------------------------
+d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' '# pip install requests'
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "an install that only appears in a comment is not reported" "0" "$rc"
+
+# --- a secret referenced in a step, not the job env, still counts --------
+d="$(new)"
+cat > "$d/.github/workflows/job.yml" <<'EOF'
+name: Job
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: go install example.com/tool@v1
+      - run: echo "$KEY"
+        env:
+          KEY: ${{ secrets.SIGNING_KEY }}
+EOF
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "a secret held by a later step of the same job still counts" "1" "$rc"
+
+# --- a `secrets:` declaration is not a reference -------------------------
+d="$(new)"
+cat > "$d/.github/workflows/job.yml" <<'EOF'
+name: Job
+on: push
+jobs:
+  call:
+    uses: ./.github/workflows/reusable-x.yml
+    secrets: inherit
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: go install example.com/tool@v1
+EOF
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "secrets: inherit on a reusable call is not a secret reference" "0" "$rc"
+
+# --- an unparseable workflow is a warning, not a silent skip -------------
+d="$(new)"; printf 'name: [\n' > "$d/.github/workflows/broken.yml"
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "a workflow that does not parse does not fail the step" "0" "$rc"
+check "but is reported as skipped, so the silence is visible" "1" "$(said "$out" '::warning')"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

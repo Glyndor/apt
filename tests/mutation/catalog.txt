@@ -151,7 +151,14 @@ quality-test-coverage	scripts/quality/check-test-coverage.sh	[ -f "$root/tests/$
 suites-wired-watcher-dropped	.github/workflows/tests.yml	./tests/ci/suites/ci-runs-every-test.test.sh	./tests/quality/check-test-coverage.test.sh	tests/quality/check-suites-wired.test.sh
 suites-wired-unwired	scripts/quality/check-suites-wired.sh	for path in sorted(suites - wired - set(exempt)):	for path in []:	tests/quality/check-suites-wired.test.sh
 suites-wired-needs	scripts/quality/check-suites-wired.sh	                    if "needs" in job else "") \	                    if False else "") \	tests/quality/check-suites-wired.test.sh
-lint-caller-needs	.github/workflows/reusable-workflow-lint.yml	                      if "needs" in job:	                      if False:	tests/ci/reusable/reusable-workflow-lint.test.sh
+lint-caller-needs	scripts/quality/check-test-job-not-switchable.sh	            if "needs" in job:	            if False:	tests/quality/check-test-job-not-switchable.test.sh
+lint-callers-none	scripts/quality/check-test-job-not-switchable.sh	    if callers == 0:	    if False:	tests/quality/check-test-job-not-switchable.test.sh
+lint-callers-verdict	scripts/quality/check-test-job-not-switchable.sh	    if violations:	    if False:	tests/quality/check-test-job-not-switchable.test.sh
+lint-tooling-verdict	scripts/quality/check-tooling-isolation.sh	    if violations:	    if False:	tests/quality/check-tooling-isolation.test.sh
+lint-callers-wired	.github/workflows/reusable-workflow-lint.yml	run: bash "$RUNNER_TEMP/lint-rules/check-test-job-not-switchable.sh"	run: "true"	tests/ci/reusable/reusable-workflow-lint.test.sh
+lint-tooling-wired	.github/workflows/reusable-workflow-lint.yml	run: bash "$RUNNER_TEMP/lint-rules/check-tooling-isolation.sh"	run: "true"	tests/ci/reusable/reusable-workflow-lint.test.sh
+lint-rules-from-base	.github/workflows/reusable-workflow-lint.yml	              && git show "HEAD^1:scripts/quality/$rule" > "$dir/$rule" 2>/dev/null; then	              && cp "scripts/quality/$rule" "$dir/$rule" 2>/dev/null; then	tests/ci/reusable/reusable-workflow-lint.test.sh
+scope-lint-rule-scripts	scripts/quality/ci-job-scope.sh	    "scripts/quality/check-tooling-isolation.sh",	    "scripts/quality/unused.sh",	tests/quality/ci-job-scope.test.sh
 suites-wired-base-exemptions	scripts/quality/check-suites-wired.sh	    return {path: why for path, why in exempt.items() if path in base}	    return exempt	tests/quality/check-suites-wired.test.sh
 lint-base-exemptions	.github/workflows/reusable-workflow-lint.yml	            && git show "HEAD^1:$exemptions" > "$script.exempt" 2>/dev/null; then	            && cp "$exemptions" "$script.exempt" 2>/dev/null; then	tests/quality/check-suites-wired.test.sh
 suites-wired-operators	scripts/quality/check-suites-wired.sh	OPERATOR_RE = re.compile(r"[|&;<>`]|\$\(")	OPERATOR_RE = re.compile(r"(?!)")	tests/quality/check-suites-wired.test.sh

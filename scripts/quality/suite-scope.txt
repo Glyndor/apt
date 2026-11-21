@@ -535,14 +535,22 @@ tests/ci/reusable/reusable-dependabot-freshness.test.sh
 tests/ci/reusable/reusable-schedule-freshness.test.sh
 	.github/workflows/reusable-schedule-freshness.yml
 
+# The workflow-lint reusable runs two scripts of its own, and its suite runs
+# each step over a tree that carries them. The test-job check also reads the
+# real caller and the reusable it calls.
+
 tests/ci/reusable/reusable-workflow-lint.test.sh
 	.github/workflows/reusable-workflow-lint.yml
+	scripts/quality/check-test-job-not-switchable.sh
+	scripts/quality/check-tooling-isolation.sh
+
+tests/quality/check-test-job-not-switchable.test.sh
+	scripts/quality/check-test-job-not-switchable.sh
 	.github/workflows/reusable-shell-ci.yml
 	.github/workflows/tests.yml
 
-tests/ci/reusable/reusable-workflow-lint-install.test.sh
-	.github/workflows/reusable-workflow-lint.yml
-	.github/workflows/tests.yml
+tests/quality/check-tooling-isolation.test.sh
+	scripts/quality/check-tooling-isolation.sh
 
 # The suites that check the wiring itself. ci-runs-every-test walks tests/
 # and every workflow, so a new test file or a new workflow is an input of its
