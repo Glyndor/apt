@@ -358,9 +358,11 @@ good_sha="$(sha256sum "$WORK/release/actionlint.tar.gz" | cut -d' ' -f1)"
 cat > "$WORK/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 out=""
+printf '%s\n' "$*" > "$CURL_LOG.args"
 while [ $# -gt 0 ]; do
 	case "$1" in
 	-o) out="$2"; shift 2 ;;
+	--proto | --proto-redir | --connect-timeout | --max-time | --max-filesize) shift 2 ;;
 	-*) shift ;;
 	*) printf '%s\n' "$1" >> "$CURL_LOG"; shift ;;
 	esac
@@ -382,6 +384,8 @@ check "the install with the matching sha256 succeeds" "0" "$rc"
 check "and it asked for that version's linux_amd64 release asset" \
 	"https://github.com/rhysd/actionlint/releases/download/v9.8.7/actionlint_9.8.7_linux_amd64.tar.gz" \
 	"$(cat "$WORK/curl.log")"
+check "and the download is bounded: https only, a connect timeout, a deadline and a size cap" "5" \
+	"$(grep -oE -e '--proto =https|--proto-redir =https|--connect-timeout [0-9]+|--max-time [0-9]+|--max-filesize [0-9]+' "$WORK/curl.log.args" | wc -l)"
 check "and the extracted binary is the one put on PATH" "fixture actionlint" \
 	"$("$(cat "$WORK/path")/actionlint")"
 

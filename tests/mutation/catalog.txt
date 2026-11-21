@@ -470,3 +470,10 @@ group-per-run-empty-diff	.github/workflows/reusable-empty-diff.yml	empty-diff-${
 group-rule-push	tests/ci/policy/cancel-policy.test.sh	grep -qE '^  (push|workflow_call):' "$f" || continue	grep -qE '^  (workflow_call):' "$f" || continue	tests/ci/policy/cancel-policy.test.sh
 group-rule-reusable	tests/ci/policy/cancel-policy.test.sh	grep -qE '^  (push|workflow_call):' "$f" || continue	grep -qE '^  (push):' "$f" || continue	tests/ci/policy/cancel-policy.test.sh
 group-rule-form	tests/ci/policy/cancel-policy.test.sh	*"$PER_RUN"*) continue ;;	*"github.run_id"*) continue ;;	tests/ci/policy/cancel-policy.test.sh
+netflags-proto	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	(?:^|\s)--proto\s+=https(?:\s|$)	(?:^|\s)--proto\s+(?:\s|$)	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
+netflags-proto-redir	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	(?:^|\s)--proto-redir\s+=https(?:\s|$)	(?:^|\s)--proto-redir\s+(?:\s|$)	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
+netflags-connect-timeout	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	(?:^|\s)--connect-timeout\s+[0-9$]	(?:^|\s)--connect-timeout\s*	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
+netflags-max-time	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	(?:^|\s)--max-time\s+[0-9$]	(?:^|\s)--max-time\s*	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
+netflags-max-filesize	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	(?:^|\s)--max-filesize\s+[0-9$]	(?:^|\s)--max-filesize\s*	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
+netflags-comment-skipped	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	if line.lstrip().startswith("#") or not CURL.search(line):	if not CURL.search(line):	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
+netflags-empty-scan	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	if curls == 0:	if False:	tests/ci/policy/workflow-network-calls-are-bounded.test.sh

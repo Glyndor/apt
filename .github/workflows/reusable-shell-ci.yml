@@ -141,7 +141,7 @@ jobs:
           dir="$RUNNER_TEMP/shellcheck-bin"
           tarball="$RUNNER_TEMP/shellcheck.tar.xz"
           mkdir -p "$dir"
-          curl -sSfL -o "$tarball" \
+          curl -sSfL --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 --max-filesize 16777216 -o "$tarball" \
             "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
           printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -
           tar -xJ -f "$tarball" -C "$dir" --strip-components=1 "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
@@ -365,7 +365,7 @@ jobs:
             dir="$RUNNER_TEMP/shellcheck-bin"
             tarball="$RUNNER_TEMP/shellcheck.tar.xz"
             mkdir -p "$dir"
-            curl -sSfL -o "$tarball" \
+            curl -sSfL --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 --max-filesize 16777216 -o "$tarball" \
               "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
             printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -
             tar -xJ -f "$tarball" -C "$dir" --strip-components=1 "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
