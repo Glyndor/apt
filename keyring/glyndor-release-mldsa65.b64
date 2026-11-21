@@ -1,0 +1,11 @@
+# ML-DSA-65 (FIPS 204) public half of the Glyndor release key, read by
+# scripts/verify/verify-debs.sh to check <deb>.mldsa65.sig beside <deb>.sig.
+#
+# One base64 key per line, the raw 1952-byte public key, the same shape as
+# glyndor-release-ed25519.b64. Two lines during a rotation overlap; a signature
+# made by either is accepted. Lines starting with '#' and blank lines are
+# ignored.
+#
+# No key is configured yet, so no product signs with one. While this file holds
+# no key, a release that does attach a .mldsa65.sig is refused: a signature the
+# archive cannot check is not treated as one that passed.

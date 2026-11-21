@@ -67,6 +67,20 @@ git ls-files -z | xargs -0 grep -lIE '^#!.*(ba)?sh' | xargs shellcheck || fail=1
 [ "$fail" -eq 0 ]
 ```
 
+`tests/verify/verify-debs-mldsa.test.sh` also needs `cryptography` 50.0.2 or later, for
+ML-DSA-65, which no Ubuntu release packages yet. Without it that suite fails and says so,
+and the command above goes red. Install the pinned wheel into a virtual environment that
+still sees the system packages, and put it first on `PATH` before running the command:
+
+```bash
+python3 -m venv --system-site-packages ~/.cache/apt-mldsa
+~/.cache/apt-mldsa/bin/python -m pip install --require-hashes --only-binary=:all: \
+  -r scripts/verify/verify-debs-requirements.txt
+export PATH="$HOME/.cache/apt-mldsa/bin:$PATH"
+```
+
+CI runs that suite in its own job, `ML-DSA-65 verifier` in `tests.yml`.
+
 The tests live in folders that mirror `scripts/` (`tests/verify/`, `tests/build/`
 and so on), so the loop finds them recursively, and the shellcheck line picks up
 every tracked file that starts with a shell shebang, including the scripts under

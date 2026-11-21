@@ -186,9 +186,17 @@ tests/verify/published-roster.test.sh
 	.github/workflows/health-check.yml
 	.github/workflows/publish.yml
 
+# Both run the verifier with its default ML-DSA-65 key and required files, the
+# committed ones under keyring/, so a change there can change either verdict.
 tests/verify/verify-debs.test.sh
 	scripts/verify/**
 	tests/verify/**
+	keyring/**
+
+tests/verify/verify-debs-hybrid.test.sh
+	scripts/verify/**
+	tests/verify/**
+	keyring/**
 
 # The distro floor reads the table README.md carries and the workflow that
 # enforces it.
@@ -394,6 +402,17 @@ tests/publication/publish/publish-workflow-sync.test.sh
 	.github/workflows/publish.yml
 
 tests/publication/publish/publish-workflow-assets.test.sh
+	tests/publication/publish/**
+	.github/workflows/publish.yml
+
+tests/publication/publish/publish-workflow-pq-sidecar.test.sh
+	tests/publication/publish/**
+	.github/workflows/publish.yml
+
+# It runs the verifier as shipped and reads the committed ML-DSA-65 key file.
+tests/publication/publish/publish-workflow-mldsa-venv.test.sh
+	scripts/verify/verify-debs.sh
+	keyring/glyndor-release-mldsa65.b64
 	tests/publication/publish/**
 	.github/workflows/publish.yml
 

@@ -61,6 +61,18 @@
 #       Nothing goes red when it is removed, because the signature check over
 #       the copy refuses the same substitution. It is redundancy, not a gap.
 #
+# THE ML-DSA-65 GUARDS ONLY A REAL SIGNATURE REACHES
+#
+# The verify-debs-pq-* entries name tests/verify/verify-debs-hybrid.test.sh,
+# which needs no ML-DSA library. Three guards of the same check are reached only
+# by a real ML-DSA-65 signature: the cryptographic verification itself, the walk
+# over every configured key, and the refusal of a signature that does not
+# verify. tests/verify/verify-debs-mldsa.test.sh kills them, and it needs
+# cryptography 50.0.2, which CI installs only in that suite's own job. This
+# sweep runs on the runner's python3-cryptography, where that suite fails
+# without any mutation, so an entry naming it could not be run here. Each of
+# the three was deleted by hand and that suite went red for it.
+#
 # Run: tests/mutation/run-mutations.sh [--list] [<id>]
 verify-debs-reserved-filename	scripts/verify/verify-debs.sh	if [[ "$(basename "$deb")" == glyndor-archive-keyring* ]]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-reserved-control	scripts/verify/verify-debs.sh	if [ "$pkg" = "glyndor-archive-keyring" ]; then	if false; then	tests/verify/verify-debs.test.sh
@@ -76,6 +88,20 @@ verify-debs-signature-size	scripts/verify/verify-debs.sh	if len(sig) > MAX_SIG_B
 verify-debs-key-file-missing	scripts/verify/verify-debs.sh	[ -f "$KEY_FILE" ] || { echo "::error::release public key $KEY_FILE not found" >&2; exit 1; }	[ -f "$KEY_FILE" ] || true	tests/verify/verify-debs.test.sh
 verify-debs-no-keys	scripts/verify/verify-debs.sh	[ "${#KEYS[@]}" -ge 1 ] || { echo "::error::release public key $KEY_FILE has no keys" >&2; exit 1; }	[ "${#KEYS[@]}" -ge 1 ] || true	tests/verify/verify-debs.test.sh
 verify-debs-no-debs	scripts/verify/verify-debs.sh	[ "${#debs[@]}" -ge 1 ] || { echo "::error::no .deb files to verify in $DEBS_DIR" >&2; exit 1; }	[ "${#debs[@]}" -ge 1 ] || true	tests/verify/verify-debs.test.sh
+verify-debs-pq-required	scripts/verify/verify-debs.sh	if [ "$required" -eq 1 ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-required-match	scripts/verify/verify-debs.sh	[ "$name" = "$pkg" ] && required=1	true	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-sidecar-present	scripts/verify/verify-debs.sh	if [ ! -e "$pq_sig" ] && [ ! -L "$pq_sig" ]; then	if true; then	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-no-key	scripts/verify/verify-debs.sh	if [ "${#MLDSA_KEYS[@]}" -eq 0 ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-key-file-check	scripts/verify/verify-debs.sh	if [ "${#MLDSA_KEYS[@]}" -ge 1 ] && ! mldsa check-keys "${MLDSA_KEYS[@]}"; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-key-length	scripts/verify/verify-debs.sh	if len(raw) != PUBLIC_KEY_BYTES:	if False:	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-key-base64	scripts/verify/verify-debs.sh	raw = base64.b64decode(b64, validate=True)	raw = base64.b64decode(b64, validate=False)	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-signature-length	scripts/verify/verify-debs.sh	if len(pq_sig) != SIGNATURE_BYTES:	if False:	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-signature-size	scripts/verify/verify-debs.sh	if len(pq_sig) > MAX_SIG_BYTES:	if False:	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-no-library	scripts/verify/verify-debs.sh	sys.exit(3)	sys.exit(0)	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-unreadable-list	scripts/verify/verify-debs.sh	|| { echo "::error::cannot read the required-products file $PQ_REQUIRED_FILE" >&2; exit 1; }	|| true	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-required-grammar	scripts/verify/verify-debs.sh	if ! [[ "$name" =~ ^[a-z0-9][a-z0-9+.-]+$ ]]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-required-trim	scripts/verify/verify-debs.sh	pq_required="$(read_list "$PQ_REQUIRED_FILE" trim)" \	pq_required="$(read_list "$PQ_REQUIRED_FILE")" \	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-expected-package	scripts/verify/verify-debs.sh	if [ "${#PQ_REQUIRED[@]}" -ge 1 ] && [ -z "$EXPECTED_PACKAGE" ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
 purge-cache-missing-release	scripts/publish/purge-cache.sh	|| { echo "::error::no signed Release at $release; nothing to derive a purge list from"; exit 1; }	|| true	tests/publish/purge-cache.test.sh
 purge-cache-no-index-files	scripts/publish/purge-cache.sh	|| { echo "::error::the built Release declares no index files to purge"; exit 1; }	|| true	tests/publish/purge-cache/purge-cache-guards.test.sh
 purge-cache-index-dotdot	scripts/publish/purge-cache.sh	*..*) echo "::error::the built Release names an index path containing '..'"; exit 1 ;;	*..*) : ;;	tests/publish/purge-cache.test.sh

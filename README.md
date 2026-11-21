@@ -90,6 +90,16 @@ flowchart LR
 product published; the *archive* key proves the index is the one this
 repository built. You check the second, this repository checks the first.
 
+**A second, post-quantum release signature.** The verifier also reads a file
+named after the `.deb` with `.mldsa65.sig` appended, so
+`podup_1.0.0_amd64.deb.mldsa65.sig` beside `podup_1.0.0_amd64.deb.sig`. It holds
+an ML-DSA-65 (FIPS 204) signature over the same bytes, and when it is present
+both signatures must verify. It is an addition,
+never a replacement for Ed25519. No product produces it yet and no ML-DSA-65 key
+is configured, so today every package is admitted on its Ed25519 signature, as
+before. The index apt checks stays Ed25519: the verifiers apt uses do not accept
+a post-quantum signature.
+
 Rebuilt from scratch every run, so the failure mode is *an archive that does not update*, never *one that serves something
 unverified*.
 

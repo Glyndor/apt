@@ -1,0 +1,9 @@
+# Products whose ML-DSA-65 release signature (<deb>.mldsa65.sig) is required,
+# one Debian package name per line. Read by scripts/verify/verify-debs.sh.
+#
+# A second signature that may be left out protects nothing: whoever can forge
+# the Ed25519 signature simply does not attach it. For a product listed here a
+# missing .mldsa65.sig refuses the package. A product is added only after one
+# of its releases has been verified with both signatures.
+#
+# Empty: no product is required yet.
