@@ -135,6 +135,14 @@ tests/verify/verify-published/verify-published-collision.test.sh
 	scripts/verify/**
 	tests/verify/**
 
+# The by-hash leg of the read-back, over an archive offered by hash with the
+# script the build uses.
+tests/verify/verify-published/verify-published-by-hash.test.sh
+	tests/fixtures/verify/**
+	scripts/verify/**
+	scripts/build/add-by-hash.sh
+	tests/verify/**
+
 # The by-hash step of the build, over a distribution of the shape reprepro
 # exports, and an apt client reading what it signs.
 tests/build/add-by-hash.test.sh

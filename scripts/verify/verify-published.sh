@@ -499,6 +499,34 @@ reject_unsafe_paths "signed index" "$WORK/index-entries"
 echo "the signed index declares $index_count index file(s)"
 verify_set "index file(s)" "$WORK/index-entries" "$DIST_PATH" "$MAX_INDEX_BYTES" "$WORK/indices"
 
+# --- The same files by hash --------------------------------------------------
+
+# An index that says `Acquire-By-Hash: yes` makes apt ask for every file it
+# declares as <its directory>/by-hash/SHA256/<sha256>, not by its name, so those
+# are the objects a client fetches: a copy that is missing or holds other bytes
+# fails `apt update` the way a missing Packages does. Each one is read back
+# like the files above, with no saved copy, since the files above are the ones
+# the pool leg parses. An index without the field is fetched by name only, and
+# that is what the check above read. apt also takes other spellings of yes, and
+# this archive writes only `yes`, so another value is refused rather than read
+# as either.
+by_hash="$(awk '/^[^[:space:]]+:/ && $1 == "Acquire-By-Hash:" { sub(/^Acquire-By-Hash:[[:space:]]*/, ""); print; exit }' "$WORK/InRelease.body")"
+case "$by_hash" in
+	yes)
+		awk '{ dir = $3; sub(/[^\/]*$/, "", dir); print $1, $2, dir "by-hash/SHA256/" $1 }' \
+			"$WORK/index-entries" > "$WORK/by-hash-entries"
+		echo "the signed index offers its $index_count index file(s) by hash"
+		verify_set "by-hash index file(s)" "$WORK/by-hash-entries" "$DIST_PATH" "$MAX_INDEX_BYTES" ""
+		;;
+	'')
+		echo "the signed index does not offer Acquire-By-Hash, so no by-hash copy is read back"
+		;;
+	*)
+		echo "::error::the signed index says 'Acquire-By-Hash: $by_hash', and this archive writes only 'yes'" >&2
+		exit 1
+		;;
+esac
+
 # --- What the verified indices declare ---------------------------------------
 
 # The chain does not end at the indices. Each Packages file declares the .deb an

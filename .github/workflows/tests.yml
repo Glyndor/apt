@@ -62,6 +62,7 @@ jobs:
         ./tests/verify/verify-published/verify-published-packages.test.sh
         ./tests/verify/verify-published/verify-published-build.test.sh
         ./tests/verify/verify-published/verify-published-collision.test.sh
+        ./tests/verify/verify-published/verify-published-by-hash.test.sh
         ./tests/verify/check-release-order.test.sh
         ./tests/verify/verify-installers.test.sh
         ./tests/verify/reference-installers.test.sh
