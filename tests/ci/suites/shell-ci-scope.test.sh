@@ -146,7 +146,7 @@ PY
 # check-editorconfig lists the repository with git ls-files, so every tracked
 # file is an input of its verdict and no path can be skipped. A literal search
 # for the file name cannot see that, which is how CONTRIBUTING.md stayed listed.
-if grep -q 'git ls-files' "$HERE/scripts/quality/check-editorconfig.sh"; then
+if grep -q 'git ls-files' "$HERE/scripts/quality/hygiene/check-editorconfig.sh"; then
 	check "the caller skips nothing while check-editorconfig walks every tracked file" "" \
 		"$(printf '%s' "$caller_list" | tr -s ' \n' ' ' | sed 's/^ //; s/ $//')"
 fi
@@ -154,7 +154,7 @@ fi
 for pattern in $caller_list; do
 	prefix="${pattern%%[*?[]*}"
 	hits="$(grep -rlF -- "$prefix" "$HERE/tests" "$HERE/scripts" 2>/dev/null \
-		| grep -v -e '/shell-ci-scope.test.sh$' -e '/quality/ci-job-scope.test.sh$' | tr '\n' ' ')"
+		| grep -v -e '/shell-ci-scope.test.sh$' -e '/quality/scope/ci-job-scope.test.sh$' | tr '\n' ' ')"
 	check "the suite does not read ${pattern} (found in: ${hits:-nowhere})" "" "$hits"
 done
 

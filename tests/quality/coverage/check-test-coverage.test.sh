@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/quality/check-test-coverage.sh -- the gate that fails when a script
+# Tests for scripts/quality/coverage/check-test-coverage.sh -- the gate that fails when a script
 # in scripts/ has no test in tests/.
 #
 # The gate lives in scripts/, so it appears in its own input set. That is the
@@ -12,8 +12,8 @@
 # Requires: nothing beyond coreutils.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
-GATE="$HERE/scripts/quality/check-test-coverage.sh"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
+GATE="$HERE/scripts/quality/coverage/check-test-coverage.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0
@@ -121,12 +121,12 @@ assert_error 1 "keyring/upgrade/maintainer-prerm" \
 
 # --- the gate is inside its own input set -----------------------------------
 #
-# This is the case the design exists for. Delete tests/quality/check-test-coverage.test.sh
-# and the gate names scripts/quality/check-test-coverage.sh as uncovered, which turns
+# This is the case the design exists for. Delete tests/quality/coverage/check-test-coverage.test.sh
+# and the gate names scripts/quality/coverage/check-test-coverage.sh as uncovered, which turns
 # the run below red. The gate cannot pass while being the only unchecked thing
 # in the repository.
 assert 0 "the gate has a test of its own here" \
-	-- test -f "$HERE/tests/quality/check-test-coverage.test.sh"
+	-- test -f "$HERE/tests/quality/coverage/check-test-coverage.test.sh"
 
 assert 0 "the gate passes against this repository, itself included" \
 	-- "$GATE" "$HERE"
@@ -137,9 +137,9 @@ assert 0 "the gate passes against this repository, itself included" \
 # file exists. So put a copy of the gate in a tree where it has no test and
 # require it to name itself. That is the property -- the gate is inside its own
 # input set -- rather than the symptom.
-mkdir -p "$WORK/self/scripts/quality" "$WORK/self/tests/quality"
-cp "$GATE" "$WORK/self/scripts/quality/check-test-coverage.sh"
-assert_error 1 "scripts/quality/check-test-coverage.sh" \
+mkdir -p "$WORK/self/scripts/quality/coverage" "$WORK/self/tests/quality/coverage"
+cp "$GATE" "$WORK/self/scripts/quality/coverage/check-test-coverage.sh"
+assert_error 1 "scripts/quality/coverage/check-test-coverage.sh" \
 	"the gate reports itself when it is the uncovered script" \
 	-- "$GATE" "$WORK/self"
 
@@ -165,6 +165,22 @@ rm "$WORK/deep/tests/leaf.test.sh"
 assert_error 1 "scripts/area/sub/leaf.sh" \
 	"a test one folder up does not cover it either" \
 	-- "$GATE" "$WORK/deep"
+
+# scripts/quality/ is split by responsibility, so its scripts sit one folder
+# deeper than they used to. A test left where the script was, or a test of the
+# same name in a sibling folder, covers nothing.
+mkscript "$WORK/split/scripts/quality/lint/alpha.sh"
+mkscript "$WORK/split/tests/quality/alpha.test.sh"
+assert_error 1 "scripts/quality/lint/alpha.sh" \
+	"a test left at the old depth does not cover a script that moved into a folder" \
+	-- "$GATE" "$WORK/split"
+mkscript "$WORK/split/tests/quality/scope/alpha.test.sh"
+assert_error 1 "scripts/quality/lint/alpha.sh" \
+	"nor does a test of the same name in a sibling folder" \
+	-- "$GATE" "$WORK/split"
+mkscript "$WORK/split/tests/quality/lint/alpha.test.sh"
+assert 0 "and the script passes once its test sits in its folder" \
+	-- "$GATE" "$WORK/split"
 
 echo
 echo "passed $pass, failed $fail"

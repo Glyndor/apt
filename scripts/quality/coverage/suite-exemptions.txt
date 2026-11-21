@@ -1,6 +1,6 @@
 # Suites under tests/ that no workflow runs on a pull request, and why.
 #
-# scripts/quality/check-suites-wired.sh, run by the workflow-lint check, fails
+# scripts/quality/coverage/check-suites-wired.sh, run by the workflow-lint check, fails
 # when a tests/**/*.test.sh is not run by a workflow on every pull request.
 # A suite that cannot run there is listed here instead, one per line:
 #

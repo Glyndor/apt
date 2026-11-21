@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The map in scripts/quality/suite-scope.txt is a claim: "a change outside these
+# The map in scripts/quality/scope/suite-scope.txt is a claim: "a change outside these
 # paths cannot change this suite's verdict". A claim nobody checks rots in three
 # ways, and each one is a way to skip a suite that should have run:
 #
@@ -9,7 +9,12 @@
 #     names a suite the workflow no longer runs;
 #   * an entry cites a path that does not exist, so a rename left a pattern that
 #     matches nothing and the suite is silently skipped for the files that moved;
-#   * an entry has no pattern at all.
+#   * an entry has no pattern at all;
+#   * a suite that only a job of its own runs, such as the ML-DSA-65 verifier,
+#     is named in no test-command, so the first rule cannot see it. That job
+#     decides from this map whether to run, and a suite with no entry always
+#     runs: safe, but the map has stopped saying what it was written to say.
+#     A suite a step hands to the suite runner is held to the same two rules.
 #
 # This reads the workflow's suite list and the map from the working tree and
 # requires them to agree, with planted copies of each defect so the checker can
@@ -18,7 +23,7 @@
 # Requires: bash, python3.
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0
@@ -40,8 +45,12 @@ root = sys.argv[1]
 wf = open(os.path.join(root, ".github/workflows/tests.yml")).read()
 block = re.search(r"test-command: >-\n(.*?)(\n      #|\n\n|\Z)", wf, re.S).group(1)
 suites = [l.strip()[2:] for l in block.splitlines() if l.strip().startswith("./tests/")]
+# The suites a step of any job hands to the runner, outside the test-command.
+alone = re.findall(r"check-suite-completeness\.test\.sh((?:[ \t]+\./tests/[A-Za-z0-9_./-]+\.test\.sh)+)", wf)
+for chunk in alone:
+    suites += [token[2:] for token in chunk.split() if token[2:] not in suites]
 scope, current = {}, None
-for raw in open(os.path.join(root, "scripts/quality/suite-scope.txt")):
+for raw in open(os.path.join(root, "scripts/quality/scope/suite-scope.txt")):
     line = raw.rstrip()
     if not line.strip() or line.lstrip().startswith("#"):
         continue
@@ -73,17 +82,17 @@ PY
 
 # A tiny repository that has the workflow and the map, so a defect can be planted.
 tree() {
-	local d="$WORK/$1"; rm -rf "$d"; mkdir -p "$d/.github/workflows" "$d/scripts/quality" "$d/scripts/a" "$d/tests/a"
+	local d="$WORK/$1"; rm -rf "$d"; mkdir -p "$d/.github/workflows" "$d/scripts/quality/scope" "$d/scripts/a" "$d/tests/a"
 	printf 'jobs:\n  s:\n    with:\n      test-command: >-\n        ./tests/ci/suites/check-suite-completeness.test.sh\n        ./tests/a/one.test.sh\n        ./tests/a/two.test.sh\n' > "$d/.github/workflows/tests.yml"
 	printf 'x\n' > "$d/scripts/a/x.sh"
-	printf 'tests/ci/suites/check-suite-completeness.test.sh\n\ttests/ci/**\n\ntests/a/one.test.sh\n\tscripts/a/**\n\ntests/a/two.test.sh\n\ttests/a/two.test.sh\n' > "$d/scripts/quality/suite-scope.txt"
+	printf 'tests/ci/suites/check-suite-completeness.test.sh\n\ttests/ci/**\n\ntests/a/one.test.sh\n\tscripts/a/**\n\ntests/a/two.test.sh\n\ttests/a/two.test.sh\n' > "$d/scripts/quality/scope/suite-scope.txt"
 	mkdir -p "$d/tests/ci"; : > "$d/tests/a/two.test.sh"
 	echo "$d"
 }
 
 D="$(tree sound)"; check "control: a sound map reports nothing" "" "$(problems "$D")"
 
-D="$(tree missing)"; printf '\ntests/a/three.test.sh\n\tscripts/a/**\n' >> "$D/scripts/quality/suite-scope.txt"
+D="$(tree missing)"; printf '\ntests/a/three.test.sh\n\tscripts/a/**\n' >> "$D/scripts/quality/scope/suite-scope.txt"
 check "an entry for a suite the workflow does not run is reported" "not run by the workflow: tests/a/three.test.sh" "$(problems "$D")"
 
 D="$(tree noentry)"; sed -i 's|^        ./tests/a/two.test.sh|&\n        ./tests/a/four.test.sh|' "$D/.github/workflows/tests.yml"
@@ -95,11 +104,19 @@ check "a pattern whose directory was renamed away is reported" "cites a path tha
 D="$(tree file)"; rm "$D/tests/a/two.test.sh"
 check "an exact file entry whose file is gone is reported" "cites a path that does not exist: tests/a/two.test.sh (tests/a/two.test.sh)" "$(problems "$D")"
 
-D="$(tree empty)"; printf 'tests/a/one.test.sh\n' > "$D/scripts/quality/suite-scope.txt"
+D="$(tree empty)"; printf 'tests/a/one.test.sh\n' > "$D/scripts/quality/scope/suite-scope.txt"
 check "an entry with no pattern is reported" "no pattern: tests/a/one.test.sh" "$(problems "$D" | grep '^no pattern')"
 
-D="$(tree twice)"; printf '\ntests/a/one.test.sh\n\tscripts/a/**\n' >> "$D/scripts/quality/suite-scope.txt"
+D="$(tree twice)"; printf '\ntests/a/one.test.sh\n\tscripts/a/**\n' >> "$D/scripts/quality/scope/suite-scope.txt"
 check "a suite listed twice is reported" "listed twice: tests/a/one.test.sh" "$(problems "$D")"
+
+D="$(tree alone)"; printf '  m:\n    steps:\n      - run: ./tests/ci/suites/check-suite-completeness.test.sh ./tests/a/five.test.sh\n' >> "$D/.github/workflows/tests.yml"
+: > "$D/tests/a/five.test.sh"
+check "a suite only a job of its own runs, with no entry, is reported" "no entry: tests/a/five.test.sh" "$(problems "$D")"
+printf '\ntests/a/five.test.sh\n\ttests/a/five.test.sh\n' >> "$D/scripts/quality/scope/suite-scope.txt"
+check "and is not once it has an entry" "" "$(problems "$D")"
+sed -i 's|^      - run: .*five.test.sh|      - run: true|' "$D/.github/workflows/tests.yml"
+check "an entry for a suite no job runs any more is reported" "not run by the workflow: tests/a/five.test.sh" "$(problems "$D")"
 
 check "the real map agrees with the real workflow and the real tree" "" "$(problems "$HERE")"
 
@@ -113,7 +130,7 @@ root = Path(sys.argv[1])
 wf = (root / '.github/workflows/tests.yml').read_text()
 allowed = set(wf.split('apt-packages: ', 1)[1].splitlines()[0].split())
 seen = set()
-for line in (root / 'scripts/quality/suite-dependencies.txt').read_text().splitlines():
+for line in (root / 'scripts/quality/scope/suite-dependencies.txt').read_text().splitlines():
     fields = line.split()
     if not fields or fields[0].startswith('#'):
         continue

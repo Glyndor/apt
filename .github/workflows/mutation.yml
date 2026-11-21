@@ -9,10 +9,10 @@ name: Mutation
 # change can affect, and none when it can affect none: the whole sweep takes about
 # half an hour, and a change that touches no mutated script, no suite an entry
 # names, nothing those suites read and not the catalogue cannot change whether a
-# catalogued guard is still noticed. scripts/quality/mutation-scope.sh decides,
+# catalogued guard is still noticed. scripts/quality/scope/mutation-scope.sh decides,
 # from the copy in the base commit, and fails open to every entry. That a guard
 # has an entry at all is checked on every pull request by
-# tests/quality/check-mutation-coverage.test.sh, in the suite job, where it costs
+# tests/quality/coverage/check-mutation-coverage.test.sh, in the suite job, where it costs
 # a second.
 #
 # The sweep copies the tree with `git archive HEAD` and runs the suites against
@@ -71,7 +71,7 @@ jobs:
           script="$(mktemp "$RUNNER_TEMP/mutation-scope.XXXXXX")"
           trap 'rm -f "$script"' EXIT
           if [ "$EVENT" = pull_request ] \
-            && git show HEAD^1:scripts/quality/mutation-scope.sh > "$script" 2>/dev/null; then
+            && git show HEAD^1:scripts/quality/scope/mutation-scope.sh > "$script" 2>/dev/null; then
             if out="$(EVENT="$EVENT" bash "$script")"; then
               decision="$out"
             fi

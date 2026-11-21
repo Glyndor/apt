@@ -241,25 +241,25 @@ STUB
 chmod +x "$WORK/bin/sudo" "$WORK/bin/curl"
 FULL_PACKAGES='python3-cryptography reprepro shellcheck python3-yaml'
 RUNNER=tests/ci/suites/check-suite-completeness.test.sh
-EDITOR=tests/quality/check-editorconfig.test.sh
+EDITOR=tests/quality/hygiene/check-editorconfig.test.sh
 BUILD=tests/build/build-repo.test.sh
-OTHER=tests/quality/check-action-pins.test.sh
+OTHER=tests/quality/lint/check-action-pins.test.sh
 COMMAND="./$RUNNER ./$EDITOR ./$BUILD ./$OTHER"
 package_repo() {
 	R="$WORK/packages"
-	rm -rf "$R"; mkdir -p "$R/scripts/quality" "$R/tests/ci/suites"
+	rm -rf "$R"; mkdir -p "$R/scripts/quality/scope" "$R/tests/ci/suites"
 	git -C "$R" init -q -b main
 	git -C "$R" config user.name t; git -C "$R" config user.email t@example.invalid
 	git -C "$R" config commit.gpgsign false
-	cp "$HERE/scripts/quality/ci-job-scope.sh" "$R/scripts/quality/"
+	cp "$HERE/scripts/quality/scope/ci-job-scope.sh" "$R/scripts/quality/scope/"
 	cp "$HERE/$RUNNER" "$R/$RUNNER"
 	printf '%s\n\t**\n%s\n\tarchive.txt\n%s\n\tother.txt\n' \
-		"$EDITOR" "$BUILD" "$OTHER" > "$R/scripts/quality/suite-scope.txt"
+		"$EDITOR" "$BUILD" "$OTHER" > "$R/scripts/quality/scope/suite-scope.txt"
 	printf '%s -\n%s reprepro\n%s shellcheck\n' "$EDITOR" "$BUILD" "$OTHER" \
-		> "$R/scripts/quality/suite-dependencies.txt"
+		> "$R/scripts/quality/scope/suite-dependencies.txt"
 	if [ "${1:-}" = real ]; then
-		cp "$HERE/scripts/quality/suite-scope.txt" "$R/scripts/quality/"
-		cp "$HERE/scripts/quality/suite-dependencies.txt" "$R/scripts/quality/"
+		cp "$HERE/scripts/quality/scope/suite-scope.txt" "$R/scripts/quality/scope/"
+		cp "$HERE/scripts/quality/scope/suite-dependencies.txt" "$R/scripts/quality/scope/"
 	fi
 	printf 'base\n' > "$R/docs.md"; printf 'archive\n' > "$R/archive.txt"; printf 'other\n' > "$R/other.txt"
 	git -C "$R" add -A; git -C "$R" commit -qm base
@@ -321,7 +321,7 @@ check "and the verifier's package is nowhere in what it installs" "0" \
 # The real maps again: a change to the workflow shell linter selects its
 # suite, which needs shellcheck, and nothing that needs ruby.
 package_repo real
-mkdir -p "$R/scripts/quality"; echo '# changed' >> "$R/scripts/quality/lint-workflow-shell.sh"
+mkdir -p "$R/scripts/quality/lint"; echo '# changed' >> "$R/scripts/quality/lint/lint-workflow-shell.sh"
 package_merge
 real_lint="$(install_packages pull_request "$REAL_COMMAND")"
 check "a change to the workflow shell linter installs the pinned shellcheck first" "pinned shellcheck" \
@@ -337,9 +337,9 @@ check "unsupported command installs everything" "$FULL_INSTALL" "$(install_packa
 check "compound command installs everything" "$FULL_INSTALL" "$(install_packages pull_request "$COMMAND && true")"
 check "multiline command installs everything" "$FULL_INSTALL" "$(install_packages pull_request "$COMMAND"$'\ntrue')"
 # A PR cannot use its checkout's dependency map to override BASE.
-printf '%s reprepro\n' "$EDITOR" > "$R/scripts/quality/suite-dependencies.txt"
+printf '%s reprepro\n' "$EDITOR" > "$R/scripts/quality/scope/suite-dependencies.txt"
 check "checkout dependency map is ignored" "" "$(install_packages)"
-git -C "$R" checkout -- scripts/quality/suite-dependencies.txt
+git -C "$R" checkout -- scripts/quality/scope/suite-dependencies.txt
 echo '# changed' >> "$R/$RUNNER"
 check "changed runner installs everything as it would run every suite" "$FULL_INSTALL" "$(install_packages)"
 
@@ -358,7 +358,7 @@ check "a shellcheck tarball whose sha256 does not match fails the step" "1" \
 	"$(install_packages pull_request "$COMMAND" "$(printf '%064d' 0)" | grep -c 'install step failed')"
 check "and nothing is put on PATH" "" "$(cat "$WORK/path")"
 
-package_repo; echo '# changed in PR' >> "$R/scripts/quality/suite-dependencies.txt"; package_merge
+package_repo; echo '# changed in PR' >> "$R/scripts/quality/scope/suite-dependencies.txt"; package_merge
 check "committed dependency-policy change installs everything" "$FULL_INSTALL" "$(install_packages)"
 
 # Each defect is in BASE: the workflow must keep the full list when the
@@ -366,19 +366,19 @@ check "committed dependency-policy change installs everything" "$FULL_INSTALL" "
 for defect in failed empty unknown old empty-suites unknown-suites missing-map malformed-map duplicate-map unknown-package unmapped-suite missing-scope bad-scope; do
 	package_repo
 	case "$defect" in
-		failed) printf '#!/bin/bash\nexit 1\n' > "$R/scripts/quality/ci-job-scope.sh" ;;
-		empty) printf '#!/bin/bash\nexit 0\n' > "$R/scripts/quality/ci-job-scope.sh" ;;
-		unknown) printf '#!/bin/bash\necho garbage\n' > "$R/scripts/quality/ci-job-scope.sh" ;;
-		old) printf '#!/bin/bash\necho true\n' > "$R/scripts/quality/ci-job-scope.sh" ;;
-		empty-suites) sed -i 's/for name in suites(.*):/for name in []:/' "$R/scripts/quality/ci-job-scope.sh" ;;
-		unknown-suites) sed -i 's/for name in suites(.*):/for name in ["tests\/unknown.test.sh"]:/' "$R/scripts/quality/ci-job-scope.sh" ;;
-		missing-map) rm "$R/scripts/quality/suite-dependencies.txt" ;;
-		malformed-map) printf '%s\n' "$EDITOR" > "$R/scripts/quality/suite-dependencies.txt" ;;
-		duplicate-map) printf '%s -\n' "$EDITOR" >> "$R/scripts/quality/suite-dependencies.txt" ;;
-		unknown-package) printf '%s imaginary-package\n' "$EDITOR" > "$R/scripts/quality/suite-dependencies.txt" ;;
-		unmapped-suite) sed -i "\|^$EDITOR |d" "$R/scripts/quality/suite-dependencies.txt" ;;
-		missing-scope) rm "$R/scripts/quality/suite-scope.txt" ;;
-		bad-scope) printf '%s\n' "$EDITOR" > "$R/scripts/quality/suite-scope.txt" ;;
+		failed) printf '#!/bin/bash\nexit 1\n' > "$R/scripts/quality/scope/ci-job-scope.sh" ;;
+		empty) printf '#!/bin/bash\nexit 0\n' > "$R/scripts/quality/scope/ci-job-scope.sh" ;;
+		unknown) printf '#!/bin/bash\necho garbage\n' > "$R/scripts/quality/scope/ci-job-scope.sh" ;;
+		old) printf '#!/bin/bash\necho true\n' > "$R/scripts/quality/scope/ci-job-scope.sh" ;;
+		empty-suites) sed -i 's/for name in suites(.*):/for name in []:/' "$R/scripts/quality/scope/ci-job-scope.sh" ;;
+		unknown-suites) sed -i 's/for name in suites(.*):/for name in ["tests\/unknown.test.sh"]:/' "$R/scripts/quality/scope/ci-job-scope.sh" ;;
+		missing-map) rm "$R/scripts/quality/scope/suite-dependencies.txt" ;;
+		malformed-map) printf '%s\n' "$EDITOR" > "$R/scripts/quality/scope/suite-dependencies.txt" ;;
+		duplicate-map) printf '%s -\n' "$EDITOR" >> "$R/scripts/quality/scope/suite-dependencies.txt" ;;
+		unknown-package) printf '%s imaginary-package\n' "$EDITOR" > "$R/scripts/quality/scope/suite-dependencies.txt" ;;
+		unmapped-suite) sed -i "\|^$EDITOR |d" "$R/scripts/quality/scope/suite-dependencies.txt" ;;
+		missing-scope) rm "$R/scripts/quality/scope/suite-scope.txt" ;;
+		bad-scope) printf '%s\n' "$EDITOR" > "$R/scripts/quality/scope/suite-scope.txt" ;;
 	esac
 	git -C "$R" add -A; git -C "$R" commit -qm "$defect"
 	git -C "$R" checkout -q main; git -C "$R" merge -q --ff-only pr
@@ -401,7 +401,7 @@ tree=$(git -C "$R" rev-parse "HEAD^1^{tree}")
 rm -f "$R/.git/objects/${parent:0:2}/${parent:2}" "$R/.git/objects/${tree:0:2}/${tree:2}"
 rm -rf "$R/.git/objects/info/commit-graph" "$R/.git/objects/info/commit-graphs"
 check "the fixture's base really cannot be read" "1" \
-	"$(git -C "$R" show HEAD^1:scripts/quality/ci-job-scope.sh >/dev/null 2>&1 && echo 0 || echo 1)"
+	"$(git -C "$R" show HEAD^1:scripts/quality/scope/ci-job-scope.sh >/dev/null 2>&1 && echo 0 || echo 1)"
 check "unreadable base installs everything" "$FULL_INSTALL" "$(install_packages)"
 
 # The real dependency map names suites the workflow runs, packages the caller
@@ -414,7 +414,7 @@ root = Path(sys.argv[1])
 wf = (root / '.github/workflows/tests.yml').read_text()
 allowed = set(wf.split('apt-packages: ', 1)[1].splitlines()[0].split())
 seen = set()
-for line in (root / 'scripts/quality/suite-dependencies.txt').read_text().splitlines():
+for line in (root / 'scripts/quality/scope/suite-dependencies.txt').read_text().splitlines():
     fields = line.split()
     if not fields or fields[0].startswith('#'):
         continue

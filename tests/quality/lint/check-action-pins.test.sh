@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/quality/check-action-pins.sh: a remote `uses:` must be
+# Tests for scripts/quality/lint/check-action-pins.sh: a remote `uses:` must be
 # pinned by a 40-character commit SHA. Each fixture is a small repository root
 # with one workflow, so a refusal is for the reference the fixture plants and no
 # other. The reading of a workflow is not a YAML parser, so the cases that could
@@ -10,8 +10,8 @@
 # Requires: nothing beyond bash, awk and coreutils.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
-CHECK="$HERE/scripts/quality/check-action-pins.sh"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
+CHECK="$HERE/scripts/quality/lint/check-action-pins.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0

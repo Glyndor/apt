@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Behaviour tests for scripts/quality/check-tooling-isolation.sh, the check
+# Behaviour tests for scripts/quality/lint/check-tooling-isolation.sh, the check
 # reusable-workflow-lint.yml runs so that a job holding a secret does not also
 # install third-party tooling.
 #
@@ -17,8 +17,8 @@
 # shellcheck disable=SC2016
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SCRIPT="$HERE/scripts/quality/check-tooling-isolation.sh"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+SCRIPT="$HERE/scripts/quality/lint/check-tooling-isolation.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0

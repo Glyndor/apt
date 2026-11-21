@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Print true (run) or false (skip) for one lint job, or the list of suites a
 # pull request can affect. The packages mode derives an APT subset from that
-# same suite decision, without changing the test command. Call from BASE on PRs; never trust a
+# same suite decision, without changing the test command. The suite-needed mode
+# answers true or false for one suite that has a job of its own, on a pull
+# request and on a push to main. Call from BASE on PRs; never trust a
 # changed classifier to decide whether to lint itself, or which suites it may
 # skip. No network or extra Python packages. Unknown inputs deliberately cost a
 # run.
@@ -22,7 +24,7 @@ import sys
 # request: a pull request that narrows the map or rewrites this script to
 # narrow its own scope gets the full set instead, because the base copy is
 # what decides. This is the rule for a gate script.
-MAP = "scripts/quality/suite-scope.txt"
+MAP = "scripts/quality/scope/suite-scope.txt"
 
 # The map, this script and the runner are an input of every suite, by rule
 # rather than by an entry per suite: a change to any of the three changes
@@ -30,7 +32,7 @@ MAP = "scripts/quality/suite-scope.txt"
 # Keeping the rule here means a suite added to the map later cannot forget
 # it.
 GLOBAL_INPUTS = (
-    "scripts/quality/ci-job-scope.sh",
+    "scripts/quality/scope/ci-job-scope.sh",
     MAP,
     "tests/ci/suites/check-suite-completeness.test.sh",
 )
@@ -71,7 +73,15 @@ def changed_paths():
         # The checkout is not the merge commit, so HEAD^1..HEAD is not the
         # pull request and the scope cannot be established from it.
         return None
-    raw = git("diff", "--name-status", "-z", "--find-renames", "HEAD^1", "HEAD", "--")
+    return name_status_paths(
+        git("diff", "--name-status", "-z", "--find-renames", "HEAD^1", "HEAD", "--"))
+
+
+def name_status_paths(raw):
+    """The paths of a `git diff --name-status -z` listing, or None when it is
+    empty, malformed, or holds a record that is not a plain add, modify or
+    delete: renames/copies, type changes and unknown records are not a safe
+    skip."""
     if not raw or not raw.endswith(b"\0"):
         return None
     fields = raw[:-1].split(b"\0")
@@ -79,11 +89,32 @@ def changed_paths():
         return None
     paths = []
     for status, path_bytes in zip(fields[::2], fields[1::2]):
-        # Renames/copies, type changes and unknown records are not a safe skip.
         if status not in {b"A", b"M", b"D"} or not path_bytes:
             return None
         paths.append(os.fsdecode(path_bytes))
     return paths
+
+
+def pushed_paths():
+    """The paths a push to main changed, or None when that cannot be said.
+
+    The checkout is the pushed commit, and the commit the push replaced is
+    named by BEFORE_SHA (github.event.before). The two are one change only
+    when that commit is the first parent of HEAD. A push of several commits, a
+    new branch (all zeros), a checkout too shallow to hold the parent or a
+    value that is not a commit name is not one change, and answers None: the
+    value is only ever used once it equals a parent that git itself printed."""
+    before = os.environ.get("BEFORE_SHA", "").encode()
+    try:
+        body = git("cat-file", "-p", "HEAD")
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    parents = [line.split()[1] for line in body.splitlines() if line.startswith(b"parent ")]
+    if not parents or parents[0] != before:
+        return None
+    before = before.decode()
+    return name_status_paths(
+        git("diff", "--name-status", "-z", "--find-renames", before, "HEAD", "--"))
 
 
 def parse_map(text):
@@ -175,6 +206,38 @@ def suites(candidates):
     return keep
 
 
+def suite_needed(candidate):
+    """True when this change can alter the verdict of one suite that has a job
+    of its own, so the job can skip its installs and its run when it cannot.
+
+    The same map and the same rule as `suites`, with two differences. It also
+    answers a push to main, from the commit the push replaced: the map is read
+    from there, the parent of what was pushed. And a suite the map does not
+    know runs, as everywhere. A schedule, a dispatch, an unreadable diff or
+    map, a rename and every other doubt answer true."""
+    event = os.environ.get("EVENT")
+    if event == "pull_request":
+        paths, base = changed_paths(), "HEAD^1"
+    elif event == "push":
+        paths, base = pushed_paths(), os.environ.get("BEFORE_SHA", "")
+    else:
+        return True
+    if paths is None:
+        return True
+    try:
+        body = git("show", base + ":" + MAP)
+    except (OSError, subprocess.CalledProcessError):
+        return True
+    scope = parse_map(body.decode("utf-8", "replace"))
+    if scope is None:
+        return True
+    name = normalise(candidate)
+    patterns = scope.get(name)
+    if patterns is None:
+        return True
+    return name in paths or affects(patterns, paths) or affects(GLOBAL_INPUTS, paths)
+
+
 # What the workflow-lint job reads besides the workflows: the actionlint
 # configuration, and the two scripts that hold the rules its steps run. Those
 # rules used to be written inside reusable-workflow-lint.yml, where a change to
@@ -182,8 +245,8 @@ def suites(candidates):
 WORKFLOW_LINT_INPUTS = {
     ".github/actionlint.yml",
     ".github/actionlint.yaml",
-    "scripts/quality/check-test-job-not-switchable.sh",
-    "scripts/quality/check-tooling-isolation.sh",
+    "scripts/quality/lint/check-test-job-not-switchable.sh",
+    "scripts/quality/lint/check-tooling-isolation.sh",
 }
 
 
@@ -206,7 +269,7 @@ def needed(job):
         if status not in {b"A", b"M", b"D"} or not path_bytes:
             return True
         path = os.fsdecode(path_bytes)
-        if path == "scripts/quality/ci-job-scope.sh":
+        if path == "scripts/quality/scope/ci-job-scope.sh":
             return True
         name = PurePosixPath(path).name
         workflow = path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml"))
@@ -250,7 +313,7 @@ def packages():
     The runner still makes its own suite decision and checks every sentinel.
     """
     runner = "tests/ci/suites/check-suite-completeness.test.sh"
-    depmap = "scripts/quality/suite-dependencies.txt"
+    depmap = "scripts/quality/scope/suite-dependencies.txt"
     raw_command = os.environ.get("TEST_COMMAND", "")
     command = raw_command.split()
     if (os.environ.get("EVENT") != "pull_request"
@@ -275,7 +338,7 @@ def packages():
     # Exercise the same BASE resolver in its suites mode as the runner does.
     decision = subprocess.run(
         ["bash", "/dev/stdin", "suites", *command[1:]],
-        input=git("show", "HEAD^1:scripts/quality/ci-job-scope.sh"),
+        input=git("show", "HEAD^1:scripts/quality/scope/ci-job-scope.sh"),
         check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     selected = [normalise(s) for s in decision.stdout.decode("utf-8").splitlines() if s]
     if (decision.stderr or not selected or not set(selected) <= set(candidates)
@@ -304,6 +367,13 @@ def main():
     os.chdir(os.fsdecode(git("rev-parse", "--show-toplevel")).strip())
     if argv == ["packages"]:
         packages()
+        return
+    if argv and argv[0] == "suite-needed":
+        # One suite with a job of its own: true when the change can alter its
+        # verdict. Exactly one name, or the answer is the fail-open one.
+        if len(argv) != 2:
+            raise ValueError("suite-needed takes exactly one suite")
+        print(str(suite_needed(argv[1])).lower())
         return
     if argv and argv[0] == "suites":
         # The list of suites to run, one per line. The caller is

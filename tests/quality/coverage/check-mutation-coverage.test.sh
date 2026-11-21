@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# scripts/quality/check-mutation-coverage.sh fails when a refusal in a script
+# scripts/quality/coverage/check-mutation-coverage.sh fails when a refusal in a script
 # has neither an entry in the mutation catalogue nor a written exemption. A
 # checker that always agrees looks as good as one that reads the scripts, so the
 # fixture carries every shape of refusal the scripts here use and each case
@@ -12,8 +12,8 @@
 # shellcheck disable=SC2016,SC1003 # the fixtures are literal shell code, quotes and $ included
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CHECK="$HERE/scripts/quality/check-mutation-coverage.sh"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+CHECK="$HERE/scripts/quality/coverage/check-mutation-coverage.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0

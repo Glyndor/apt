@@ -3,7 +3,7 @@
 # Every file in tests/ must actually be invoked by a workflow, and every test a
 # workflow invokes must exist.
 #
-# scripts/quality/check-test-coverage.sh watches that each script has a test. Nothing
+# scripts/quality/coverage/check-test-coverage.sh watches that each script has a test. Nothing
 # watched that the test RUNS. That gap was live when this was written:
 # tests/ci/policy/locale-pinned.test.sh had been added, passed locally, and no workflow
 # called it -- a guard against unpinned collation that CI never executed.
@@ -76,7 +76,7 @@ check "every test a workflow invokes exists" "" "${absent% }"
 # That holds only while something runs this file. Dropped from the test job's
 # list, it does not run and reports nothing, so the same question is also asked
 # outside that job: reusable-workflow-lint.yml runs
-# scripts/quality/check-suites-wired.sh, and that check goes red instead.
+# scripts/quality/coverage/check-suites-wired.sh, and that check goes red instead.
 check "this watcher is itself invoked by a workflow" "1" \
 	"$(invoked | grep -cx 'tests/ci/suites/ci-runs-every-test.test.sh')"
 

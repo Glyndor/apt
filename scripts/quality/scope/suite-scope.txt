@@ -14,7 +14,7 @@
 # This file says, per suite, the paths whose change can alter what that suite
 # concludes. A pull request that touches none of them cannot change that
 # suite's verdict, so the suite does not need to run to learn something it
-# already knows. The decision is made by scripts/quality/ci-job-scope.sh, in
+# already knows. The decision is made by scripts/quality/scope/ci-job-scope.sh, in
 # its `suites` mode, and the job and its required check `shell / test` still
 # report exactly as before.
 #
@@ -32,7 +32,7 @@
 #     rewrites the map or the resolver to narrow its own scope gets the full
 #     suite instead, because the base copy is what decides. This is the same
 #     rule the shellcheck job of the reusable already follows for
-#     scripts/quality/ci-job-scope.sh, and the rule for a gate script:
+#     scripts/quality/scope/ci-job-scope.sh, and the rule for a gate script:
 #     a gate script is read from the base commit, never from the checkout of
 #     the pull request it is judging.
 #
@@ -40,7 +40,7 @@
 #     change to any of the three runs the whole suite set, so the thing that
 #     decides what runs cannot be changed in order to decide less, and the
 #     thing that runs the suites cannot be changed in order to run fewer.
-#     The rule is in scripts/quality/ci-job-scope.sh rather than in an entry
+#     The rule is in scripts/quality/scope/ci-job-scope.sh rather than in an entry
 #     per suite here, so a suite added below later cannot forget it.
 #
 #   * The names of the suites here are the paths the workflow passes to
@@ -201,6 +201,22 @@ tests/verify/verify-debs-hybrid.test.sh
 tests/verify/verify-debs-control-fields.test.sh
 	scripts/verify/**
 	tests/verify/**
+
+# The same check with the ML-DSA-65 library, which only the `ML-DSA-65 verifier`
+# job of tests.yml runs, in a virtual environment built from
+# scripts/verify/verify-debs-requirements.txt. It has an entry so that job can
+# skip the wheel install and the suite when nothing here changed
+# (`ci-job-scope.sh suite-needed`, on a pull request and on a push to main). It
+# reads the verifier and everything beside it, the committed keys and the list of
+# products that require the second signature, the requirements file with its
+# hashes, the vector under tests/fixtures/verify-debs, and the job that runs it.
+# The suite and the runner are inputs of every decision by rule.
+tests/verify/verify-debs-mldsa.test.sh
+	scripts/verify/**
+	tests/verify/**
+	tests/fixtures/verify-debs/**
+	keyring/**
+	.github/workflows/tests.yml
 
 # The distro floor reads the table README.md carries and the workflow that
 # enforces it.
@@ -537,7 +553,7 @@ tests/ci/reusable/reusable-line-limit.test.sh
 tests/ci/reusable/reusable-shell-ci.test.sh
 	.github/workflows/reusable-shell-ci.yml
 	.github/workflows/tests.yml
-	scripts/quality/suite-dependencies.txt
+	scripts/quality/scope/suite-dependencies.txt
 
 tests/ci/reusable/reusable-dependabot-freshness.test.sh
 	.github/workflows/reusable-dependabot-freshness.yml
@@ -554,16 +570,16 @@ tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.
 
 tests/ci/reusable/reusable-workflow-lint.test.sh
 	.github/workflows/reusable-workflow-lint.yml
-	scripts/quality/check-test-job-not-switchable.sh
-	scripts/quality/check-tooling-isolation.sh
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/check-tooling-isolation.sh
 
-tests/quality/check-test-job-not-switchable.test.sh
-	scripts/quality/check-test-job-not-switchable.sh
+tests/quality/lint/check-test-job-not-switchable.test.sh
+	scripts/quality/lint/check-test-job-not-switchable.sh
 	.github/workflows/reusable-shell-ci.yml
 	.github/workflows/tests.yml
 
-tests/quality/check-tooling-isolation.test.sh
-	scripts/quality/check-tooling-isolation.sh
+tests/quality/lint/check-tooling-isolation.test.sh
+	scripts/quality/lint/check-tooling-isolation.sh
 
 # The tool-version watcher reads the pins from the two reusables that carry
 # them, and every workflow for a caller that would override them.
@@ -583,9 +599,9 @@ tests/ci/suites/ci-runs-every-test.test.sh
 
 # check-suites-wired walks tests/ and parses every workflow, as the watcher
 # above does, and runs the checker and the workflow-lint step that calls it.
-tests/quality/check-suites-wired.test.sh
-	scripts/quality/check-suites-wired.sh
-	scripts/quality/suite-exemptions.txt
+tests/quality/coverage/check-suites-wired.test.sh
+	scripts/quality/coverage/check-suites-wired.sh
+	scripts/quality/coverage/suite-exemptions.txt
 	tests/**
 	.github/workflows/**
 
@@ -605,8 +621,20 @@ tests/ci/suites/shell-ci-scope.test.sh
 	.github/workflows/**
 
 tests/ci/suites/lint-job-scope.test.sh
-	scripts/quality/ci-job-scope.sh
+	scripts/quality/scope/ci-job-scope.sh
 	.github/workflows/**
+
+# The ML-DSA-65 job reads the classifier and the map the way the scope step of
+# the reusables does, and runs its own decision step: the workflow, the map entry
+# of the suite it decides for, the requirements file and that suite.
+
+tests/ci/suites/mldsa-job-scope.test.sh
+	scripts/quality/scope/ci-job-scope.sh
+	scripts/quality/scope/suite-scope.txt
+	scripts/verify/**
+	.github/workflows/tests.yml
+	tests/ci/suites/mldsa-job-scope.test.sh
+	tests/verify/verify-debs-mldsa.test.sh
 
 # The drift check compares the seven reusables of this repository against the
 # copies the two sibling repositories carry.
@@ -635,7 +663,7 @@ tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh
 # tracked file, so every tracked file is an input of its verdict and it runs
 # on every pull request.
 
-tests/quality/check-editorconfig.test.sh
+tests/quality/hygiene/check-editorconfig.test.sh
 	**
 
 # The coverage gate walks EVERY script under scripts/ and requires a test of
@@ -644,41 +672,48 @@ tests/quality/check-editorconfig.test.sh
 # its script stays, changes what it concludes. Naming only the gate itself
 # and the quality folder would let exactly that pull request through.
 
-tests/quality/check-test-coverage.test.sh
+tests/quality/coverage/check-test-coverage.test.sh
 	scripts/**
 	keyring/**
 	tests/**
 
-tests/quality/check-action-pins.test.sh
+tests/quality/lint/check-action-pins.test.sh
 	.github/**
 	scripts/quality/**
 	tests/quality/**
 
-tests/quality/check-commit-identity.test.sh
-	scripts/quality/check-commit-identity.sh
+tests/quality/hygiene/check-commit-identity.test.sh
+	scripts/quality/hygiene/check-commit-identity.sh
 	tests/quality/**
 
-tests/quality/check-secrets.test.sh
-	scripts/quality/check-secrets.sh
+tests/quality/hygiene/check-secrets.test.sh
+	scripts/quality/hygiene/check-secrets.sh
 	tests/quality/**
 
-tests/quality/ci-job-scope.test.sh
-	scripts/quality/ci-job-scope.sh
+tests/quality/scope/ci-job-scope.test.sh
+	scripts/quality/scope/ci-job-scope.sh
 	tests/quality/**
 
-tests/quality/ci-job-scope-suites.test.sh
-	scripts/quality/ci-job-scope.sh
-	scripts/quality/suite-scope.txt
+tests/quality/scope/ci-job-scope-suites.test.sh
+	scripts/quality/scope/ci-job-scope.sh
+	scripts/quality/scope/suite-scope.txt
 	tests/quality/**
 
-tests/quality/suite-scope-map.test.sh
-	scripts/quality/suite-scope.txt
+# The suite-needed mode of the same classifier. It builds its own repositories
+# and reads the classifier only.
+
+tests/quality/scope/ci-job-scope-suite-needed.test.sh
+	scripts/quality/scope/ci-job-scope.sh
+	tests/quality/**
+
+tests/quality/scope/suite-scope-map.test.sh
+	scripts/quality/scope/suite-scope.txt
 	.github/workflows/tests.yml
 	tests/**
 	scripts/**
 
-tests/quality/lint-workflow-shell.test.sh
-	scripts/quality/lint-workflow-shell.sh
+tests/quality/lint/lint-workflow-shell.test.sh
+	scripts/quality/lint/lint-workflow-shell.sh
 	.github/workflows/**
 
 # The committed release key is read by this suite alone: every other suite that
@@ -700,19 +735,19 @@ tests/mutation/run-mutations.test.sh
 
 # The coverage check reads every script it watches, the production workflow,
 # the catalogue and the exemptions, and runs itself over this repository.
-tests/quality/check-mutation-coverage.test.sh
+tests/quality/coverage/check-mutation-coverage.test.sh
 	scripts/**
 	keyring/upgrade/**
 	tests/mutation/catalog.txt
 	tests/mutation/exemptions.txt
-	tests/quality/check-mutation-coverage.test.sh
+	tests/quality/coverage/check-mutation-coverage.test.sh
 	.github/workflows/publish.yml
 
 # The decider calls the suite resolver, so a change to either can change it.
-tests/quality/mutation-scope.test.sh
-	scripts/quality/mutation-scope.sh
-	scripts/quality/ci-job-scope.sh
-	tests/quality/mutation-scope.test.sh
+tests/quality/scope/mutation-scope.test.sh
+	scripts/quality/scope/mutation-scope.sh
+	scripts/quality/scope/ci-job-scope.sh
+	tests/quality/scope/mutation-scope.test.sh
 
 tests/ci/policy/mutation-workflow.test.sh
 	.github/workflows/mutation.yml

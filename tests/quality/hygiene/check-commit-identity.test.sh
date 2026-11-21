@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/quality/check-commit-identity.sh: only GitHub noreply addresses
+# Tests for scripts/quality/hygiene/check-commit-identity.sh: only GitHub noreply addresses
 # pass, in the author, the Signed-off-by and the Co-authored-by, and the address of
 # a rejected commit is never printed.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
-SCRIPT="$HERE/scripts/quality/check-commit-identity.sh"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
+SCRIPT="$HERE/scripts/quality/hygiene/check-commit-identity.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0

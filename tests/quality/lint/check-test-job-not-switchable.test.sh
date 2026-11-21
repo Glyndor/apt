@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Behaviour tests for scripts/quality/check-test-job-not-switchable.sh, the
+# Behaviour tests for scripts/quality/lint/check-test-job-not-switchable.sh, the
 # check reusable-workflow-lint.yml runs so that the required `shell / test`
 # check cannot be switched off without failing.
 #
@@ -19,8 +19,8 @@
 # shellcheck disable=SC2016
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SCRIPT="$HERE/scripts/quality/check-test-job-not-switchable.sh"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+SCRIPT="$HERE/scripts/quality/lint/check-test-job-not-switchable.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 

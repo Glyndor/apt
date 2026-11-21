@@ -6,7 +6,7 @@
 # workflow:
 #
 #   - the decide step takes the decision from the copy of
-#     scripts/quality/mutation-scope.sh in the BASE commit, and runs every entry
+#     scripts/quality/scope/mutation-scope.sh in the BASE commit, and runs every entry
 #     when there is no such copy, when it fails or when it prints something that
 #     is not an id;
 #   - the gate passes only for "not needed and skipped" and "needed and
@@ -71,10 +71,10 @@ step "$WF" decide "$DECIDE" > "$WORK/decide.sh"
 # repo <decider body or ->: a base commit that carries the decider (or none), and
 # a second commit on top, so HEAD^1 is the base.
 repo() {
-	R="$WORK/repo-$RANDOM"; mkdir -p "$R/scripts/quality"
+	R="$WORK/repo-$RANDOM"; mkdir -p "$R/scripts/quality/scope"
 	git -C "$R" init -q -b main
 	git -C "$R" config user.name t; git -C "$R" config user.email t@example.invalid; git -C "$R" config commit.gpgsign false
-	if [ "$1" != - ]; then printf '%s\n' "$1" > "$R/scripts/quality/mutation-scope.sh"; fi
+	if [ "$1" != - ]; then printf '%s\n' "$1" > "$R/scripts/quality/scope/mutation-scope.sh"; fi
 	printf 'x\n' > "$R/README.md"; git -C "$R" add -A; git -C "$R" commit -qm base
 	printf 'y\n' >> "$R/README.md"; git -C "$R" commit -qam change
 }

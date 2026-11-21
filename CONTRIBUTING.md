@@ -79,7 +79,11 @@ python3 -m venv --system-site-packages ~/.cache/apt-mldsa
 export PATH="$HOME/.cache/apt-mldsa/bin:$PATH"
 ```
 
-CI runs that suite in its own job, `ML-DSA-65 verifier` in `tests.yml`.
+CI runs that suite in its own job, `ML-DSA-65 verifier` in `tests.yml`. The job
+always starts and reports under that name, and decides in its first step whether
+anything the suite reads changed: when nothing did, the wheel install and the
+suite are skipped and the job says so in its summary. It asks the same question
+on a pull request and on a push to main, and any doubt runs the suite.
 
 The tests live in folders that mirror `scripts/` (`tests/verify/`, `tests/build/`
 and so on), so the loop finds them recursively, and the shellcheck line picks up
@@ -98,9 +102,20 @@ list does not run.
 
 Two rules matter more than coverage:
 
-**Every script in `scripts/` needs a test.** `scripts/quality/check-test-coverage.sh`
+**Every script in `scripts/` needs a test.** `scripts/quality/coverage/check-test-coverage.sh`
 fails when one does not, itself included: it lives in `scripts/`, so deleting
 its test makes it report itself.
+
+**Where a script of `scripts/quality/` goes.** The folder is split by what the
+script decides, and `tests/quality/` mirrors it with the test at the same depth
+as its script, which the coverage check above enforces:
+
+| Folder | What its scripts decide |
+|---|---|
+| `hygiene/` | that the tree and its commits agree with the rules the repository states: `.editorconfig`, commit identities, secrets |
+| `lint/` | static rules over workflows and shell: action pins, the shell inside `run:` blocks, a test job that cannot be switched off, tooling next to a secret |
+| `scope/` | which jobs, suites and mutation entries a change can affect, with the maps they read |
+| `coverage/` | that every script has a test, every suite is run by a workflow and every refusal has a mutation entry or an exemption, with the list of suites that cannot be |
 
 **A test you have not watched fail is not a test.** Before claiming a check
 works, delete or invert the control it covers, run it, and confirm it goes red
@@ -115,19 +130,22 @@ non-zero assertion is satisfied by the failure you did not mean.
 New test files must be added to `test-command` in `.github/workflows/tests.yml`.
 `tests/ci/suites/ci-runs-every-test.test.sh` fails when one is not. An unregistered test
 sits in `tests/`, passes by hand, and reads as coverage while CI never runs it.
-So does the `workflow-lint` check, which runs `scripts/quality/check-suites-wired.sh`
+So does the `workflow-lint` check, which runs `scripts/quality/coverage/check-suites-wired.sh`
 outside the test job: a pull request that drops the watcher from the list along
 with other suites leaves the test job green, and turns that check red.
-A suite that cannot run on a pull request goes in `scripts/quality/suite-exemptions.txt`
+A suite that cannot run on a pull request goes in `scripts/quality/coverage/suite-exemptions.txt`
 with its reason. That list is read from the base commit too, so an entry takes
 effect from the pull request after the one that adds it.
 
-**A new suite needs an entry in `scripts/quality/suite-scope.txt`.**
+**A new suite needs an entry in `scripts/quality/scope/suite-scope.txt`.**
 On a pull request the runner skips the suites whose paths the change does not touch;
-`tests/quality/suite-scope-map.test.sh` reports a suite with no entry, which would
+`tests/quality/scope/suite-scope-map.test.sh` reports a suite with no entry, which would
 run every time. List every path the suite reads: a missing path lets a change merge
 without the suite that should have judged it, while an extra one only costs a run. A
-change to the map, to `scripts/quality/ci-job-scope.sh` or to the runner runs everything.
+change to the map, to `scripts/quality/scope/ci-job-scope.sh` or to the runner runs everything.
+A suite that only a job of its own runs, such as the ML-DSA-65 one, has its entry here
+too, and the same test checks it: that job asks `ci-job-scope.sh suite-needed` before it
+installs anything.
 
 Two traps a local run cannot see:
 

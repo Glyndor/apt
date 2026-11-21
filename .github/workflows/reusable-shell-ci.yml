@@ -90,7 +90,7 @@ jobs:
           script="$(mktemp "$RUNNER_TEMP/lint-scope.XXXXXX")"
           trap 'rm -f "$script"' EXIT
           if [ "$EVENT" = pull_request ] \
-            && git show HEAD^1:scripts/quality/ci-job-scope.sh > "$script" 2>/dev/null; then
+            && git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then
             if decision="$(bash "$script" "$SCOPE_JOB")" \
               && [[ "$decision" == true || "$decision" == false ]]; then
               needed="$decision"
@@ -179,11 +179,11 @@ jobs:
         if: steps.scope.outputs.needed != 'false'
         run: |
           set -euo pipefail
-          script=./scripts/quality/lint-workflow-shell.sh
+          script=./scripts/quality/lint/lint-workflow-shell.sh
           if [ ! -e "$script" ]; then
             echo "no $script in this repository; skipping"
           elif [ ! -x "$script" ]; then
-            echo "::error file=scripts/quality/lint-workflow-shell.sh::$script exists but git records it non-executable, so it would be silently skipped. Fix with: git update-index --chmod=+x scripts/quality/lint-workflow-shell.sh" >&2
+            echo "::error file=scripts/quality/lint/lint-workflow-shell.sh::$script exists but git records it non-executable, so it would be silently skipped. Fix with: git update-index --chmod=+x scripts/quality/lint/lint-workflow-shell.sh" >&2
             exit 1
           else
             "$script" "$SEVERITY"
@@ -310,7 +310,7 @@ jobs:
           fi
 
       # Which suites run is decided before anything is installed: the base
-      # commit's resolver reads the suite map and scripts/quality/
+      # commit's resolver reads the suite map and scripts/quality/scope/
       # suite-dependencies.txt and answers with the packages the selected
       # suites use, so a pull request that selects no suite needing a package
       # does not pay for it. A repository without the map, or any answer the
@@ -332,7 +332,7 @@ jobs:
           script="$(mktemp "$RUNNER_TEMP/package-scope.XXXXXX")" || script=""
           trap 'rm -f "$script"' EXIT
           if [ "$EVENT" = pull_request ] && [ -n "$script" ] \
-            && git show HEAD^1:scripts/quality/ci-job-scope.sh > "$script" 2>/dev/null; then
+            && git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then
             if decision="$(bash "$script" packages)" \
               && [[ "$decision" == packages=* && "$decision" != *$'\n'* ]]; then
               packages="${decision#packages=}"

@@ -41,6 +41,14 @@ name: Dependabot freshness (reusable)
 #    not a skip, and an unannotated pin is a failure for the same reason,
 #    not a silent current.
 #
+#    The actions are not the only ecosystem a caller can hand to Dependabot.
+#    Every `package-ecosystem: pip` entry of the caller's dependabot.yml names
+#    a directory, and the `name==version` pins of the requirement files in it
+#    get the same treatment against the newest release PyPI lists: a library
+#    pinned by hash moves only when something proposes the move, so a silent
+#    Dependabot and an old pin there is the alert too. A pip entry whose
+#    directory holds no pin, or a pin PyPI cannot answer for, is a failure.
+#
 # The caller is responsible for granting `contents: read`; a called workflow
 # cannot elevate beyond the permissions of the workflow that calls it, and
 # reading public PR history through the API needs that scope.
@@ -104,6 +112,7 @@ jobs:
           REPO: ${{ github.repository }}
           MAX_AGE_DAYS: ${{ inputs.max-age-days }}
           WORKFLOWS_DIR: .github/workflows
+          DEPENDABOT_CONFIG: .github/dependabot.yml
         run: |
           set -euo pipefail
           # Every third-party pin in the caller's workflows, as
@@ -138,6 +147,59 @@ jobs:
                     echo "$action pinned as $tag, upstream has $newest"
                   fi
                 done
+          }
+
+          # The pins of the requirement files the caller's dependabot.yml hands
+          # to the pip ecosystem, one per line as "pin <name> <version>", and
+          # "empty <directory>" for an entry whose directory holds no pin.
+          # Prints nothing when there is no pip entry or no dependabot.yml.
+          pip_pins() {
+            [ -f "${DEPENDABOT_CONFIG:-.github/dependabot.yml}" ] || return 0
+            python3 -I - "${DEPENDABOT_CONFIG:-.github/dependabot.yml}" <<'PY'
+          import glob
+          import os
+          import re
+          import sys
+
+          import yaml
+
+          config = yaml.safe_load(open(sys.argv[1])) or {}
+          for update in config.get("updates") or []:
+              if update.get("package-ecosystem") != "pip":
+                  continue
+              for directory in update.get("directories") or [update.get("directory") or "/"]:
+                  pins = 0
+                  for path in sorted(glob.glob(os.path.join("." + directory, "*requirements*.txt"))):
+                      for line in open(path):
+                          match = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([0-9]+(?:\.[0-9]+)*)(?![A-Za-z0-9.])", line)
+                          if match:
+                              print("pin", match.group(1), match.group(2))
+                              pins += 1
+                  if not pins:
+                      print("empty", directory)
+          PY
+          }
+
+          # The pip pins that are behind PyPI, whose newest release cannot be
+          # read, or that the entry does not hold; nothing when every one is
+          # at the newest release. Plain `curl` against the JSON API, bounded,
+          # and the answer is read with the standard library.
+          pip_pins_behind_upstream() {
+            pip_pins | while read -r kind name version; do
+              if [ "$kind" = empty ]; then
+                echo "pip: dependabot.yml hands $name to the pip ecosystem but no pinned requirement was found there"
+                continue
+              fi
+              newest="$(curl -fsSL --proto =https --proto-redir =https --connect-timeout 10 --max-time 30 --max-filesize 20971520 "https://pypi.org/pypi/$name/json" 2>/dev/null \
+                | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["info"]["version"])' 2>/dev/null || true)"
+              if ! [[ "$newest" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+                echo "pip: $name pinned as $version: could not read the newest release from PyPI"
+                continue
+              fi
+              if [ "$(printf '%s\n%s\n' "$version" "$newest" | sort -V | tail -n 1)" != "$version" ]; then
+                echo "pip: $name pinned as $version, PyPI has $newest"
+              fi
+            done
           }
 
           # List recent PRs (any state), filter client-side for
@@ -184,10 +246,15 @@ jobs:
 
           if [ "$age_days" -gt "$MAX_AGE_DAYS" ]; then
             # Silence is only an alarm when there was something to say.
-            behind="$(pins_behind_upstream)"
+            behind="$(pins_behind_upstream; pip_pins_behind_upstream)"
             pins="$(grep -rhoE 'uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+            pip_count="$(pip_pins | grep -c '^pin ' || true)"
+            pip_note=""
+            if [ "$pip_count" -gt 0 ]; then
+              pip_note=" and so is every one of the ${pip_count} pinned pip requirement(s) at its newest PyPI release"
+            fi
             if [ -z "$behind" ]; then
-              echo "::notice::Dependabot last opened a pull request ${age_days} days ago in ${REPO}, over the ${MAX_AGE_DAYS}-day limit, and every one of the ${pins} pinned action(s) is at its newest upstream tag; the silence has nothing to say."
+              echo "::notice::Dependabot last opened a pull request ${age_days} days ago in ${REPO}, over the ${MAX_AGE_DAYS}-day limit, and every one of the ${pins} pinned action(s) is at its newest upstream tag${pip_note}; the silence has nothing to say."
               echo "Passing: silent because there is nothing to bump."
               exit 0
             fi
