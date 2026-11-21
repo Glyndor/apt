@@ -13,17 +13,34 @@ done
 # ordering keeps the live archive consistent for clients mid-publish:
 # new packages land before the metadata that references them, and old
 # packages are removed only after the metadata stopped referencing
-# them, so the signed index never points at a package that 404s. The
-# signed index (InRelease, and the Release / Release.gpg pair) lands
-# after every file it declares, and the by-hash copies of those files
-# land before anything else under dists/. A client that read the
-# previous InRelease asks for the copies that one declares, which are
-# still there, and one that read the new InRelease finds every copy it
-# declares already uploaded; neither sees a Packages whose hash its
-# InRelease does not declare. The ordering is necessary and not
-# sufficient: it says nothing about an index file being removed after
-# it is written, which is what #47/#53 were, hence the read-back
-# verification that closes this job.
+# them, so the signed index never points at a package that 404s.
+#
+# Under dists/ the order is: the by-hash copies, then the signed index
+# (InRelease, and the Release / Release.gpg pair), then the index files
+# under their fixed names. A client that offers by hash asks for the
+# copies the InRelease it read declares; the old ones are never deleted
+# and the new ones land before the InRelease that names them, so it
+# never sees a mismatch, whichever InRelease it read. A client that
+# asks by the fixed name (one holding an InRelease from before
+# Acquire-By-Hash, which is every client during the first publish that
+# carries it) finds the fixed names unchanged for as long as the old
+# InRelease is the one served, and only a client that read the old
+# InRelease and then asks for Packages after pass 4 has replaced it can
+# see a mismatch: the window every publish had before, and no longer.
+# Putting the signed index after the fixed names instead would leave
+# the old InRelease served over new Packages for the whole of that pass,
+# and for as long as a publish cut between the two stays cut.
+#
+# A publish cut before the new InRelease lands leaves the previous index
+# served with everything it declares. Cut after it and before pass 4
+# ends, it leaves the new InRelease over some old fixed-name files: a
+# client that offers by hash is not affected, and the read-back at the
+# end of the job fails on those files, as the six-hourly health check
+# does until the next publish.
+#
+# The ordering is necessary and not sufficient: it says nothing about an
+# index file being removed after it is written, which is what #47/#53
+# were, hence the read-back verification that closes this job.
 #   - pool/ .debs are immutable (the filename carries the version), so
 #     cache them for a year; they never change once published.
 #   - the by-hash copies under dists/ are named for the SHA256 of their
@@ -109,19 +126,20 @@ aws s3 sync public/ s3://glyndor-apt/ \
   --no-progress --size-only \
   --exclude "*" --include "dists/*/by-hash/*" \
   --cache-control "public, max-age=31536000, immutable"
-# 3. Publish the new metadata, all but the signed index. Deliberately NOT
-#    --delete: see above.
+# 3. Publish the signed index, after the copies it declares and before
+#    the fixed-name index files.
+aws s3 sync public/ s3://glyndor-apt/ \
+  --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
+  --no-progress \
+  --exclude "*" --include "dists/stable/InRelease" --include "dists/stable/Release" --include "dists/stable/Release.gpg" \
+  --cache-control "public, max-age=86400"
+# 4. Publish the rest of the metadata, the index files under their fixed
+#    names among it. Deliberately NOT --delete: see above.
 aws s3 sync public/ s3://glyndor-apt/ \
   --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
   --no-progress \
   --exclude "pool/*" --exclude "dists/*/by-hash/*" \
   --exclude "dists/stable/InRelease" --exclude "dists/stable/Release" --exclude "dists/stable/Release.gpg" \
-  --cache-control "public, max-age=86400"
-# 4. Publish the signed index, last of the metadata.
-aws s3 sync public/ s3://glyndor-apt/ \
-  --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
-  --no-progress \
-  --exclude "*" --include "dists/stable/InRelease" --include "dists/stable/Release" --include "dists/stable/Release.gpg" \
   --cache-control "public, max-age=86400"
 # 5. Remove pool/ packages the new metadata no longer references.
 aws s3 sync public/ s3://glyndor-apt/ \

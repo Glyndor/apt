@@ -4,13 +4,15 @@
 # them is allowed to write and what each of them is allowed to delete.
 #
 # Pass 1 uploads pool/ without deleting, pass 2 uploads the by-hash copies of
-# the index files, pass 3 publishes the rest of the metadata, pass 4 the signed
-# index, and pass 5 removes the pool entries the new metadata stopped
-# referencing. The order is the invariant: deleting before the metadata is
-# published leaves apt fetching a .deb that is already gone, publishing metadata
-# before the packages leaves it referencing files that have not arrived, and an
-# InRelease that lands before the copies it declares sends a client that asks
-# by hash to a 404. tests/publish/sync-archive.test.sh runs the passes against a
+# the index files, pass 3 the signed index, pass 4 the rest of the metadata,
+# fixed-name index files included, and pass 5 removes the pool entries the new
+# metadata stopped referencing. The order is the invariant: deleting before the
+# metadata is published leaves apt fetching a .deb that is already gone,
+# publishing metadata before the packages leaves it referencing files that have
+# not arrived, an InRelease that lands before the copies it declares sends a
+# client that asks by hash to a 404, and fixed-name files that land before the
+# InRelease that declares them send a client of the previous one, which asks by
+# name, bytes it does not expect. tests/publish/sync-archive.test.sh runs the passes against a
 # model of the bucket and checks each point a pass can fail at.
 #
 # The cases read the commands, never the prose. The comments in this workflow
@@ -61,13 +63,13 @@ check "pass 1 uploads pool/" "1" "$(has 1 '--exclude "*" --include "pool/*"')"
 check "and deletes nothing" "0" "$(has 1 '--delete')"
 check "pass 2 uploads the by-hash copies, and only them" "1" "$(has 2 '--exclude "*" --include "dists/*/by-hash/*"')"
 check "and deletes nothing" "0" "$(has 2 '--delete')"
-check "pass 3 publishes the metadata but the pool" "1" "$(has 3 '--exclude "pool/*"')"
-check "and but the copies" "1" "$(has 3 '--exclude "dists/*/by-hash/*"')"
-check "and but the signed index" "1" \
-	"$(has 3 '--exclude "dists/stable/InRelease" --exclude "dists/stable/Release" --exclude "dists/stable/Release.gpg"')"
+check "pass 3 publishes the signed index, and only it" "1" \
+	"$(has 3 '--exclude "*" --include "dists/stable/InRelease" --include "dists/stable/Release" --include "dists/stable/Release.gpg"')"
 check "and deletes nothing" "0" "$(has 3 '--delete')"
-check "pass 4 publishes the signed index, and only it" "1" \
-	"$(has 4 '--exclude "*" --include "dists/stable/InRelease" --include "dists/stable/Release" --include "dists/stable/Release.gpg"')"
+check "pass 4 publishes the metadata but the pool" "1" "$(has 4 '--exclude "pool/*"')"
+check "and but the copies" "1" "$(has 4 '--exclude "dists/*/by-hash/*"')"
+check "and but the signed index" "1" \
+	"$(has 4 '--exclude "dists/stable/InRelease" --exclude "dists/stable/Release" --exclude "dists/stable/Release.gpg"')"
 check "and deletes nothing" "0" "$(has 4 '--delete')"
 check "pass 5 is the one that deletes, and only in pool/" "11" "$(has 5 '--delete')$(has 5 '--exclude "*" --include "pool/*"')"
 

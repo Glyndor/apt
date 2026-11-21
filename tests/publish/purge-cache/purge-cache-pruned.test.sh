@@ -120,7 +120,7 @@ with tempfile.TemporaryDirectory() as temp:
           'failed prune stops the job before any purge')
     covered(job(), 'retry after partial prune')
     reset()
-    # Pass 3 is the metadata pass; pass 2 uploads the by-hash copies, which this tree has none of.
+    # Pass 3 publishes the signed index; pass 2 uploads the by-hash copies, which this tree has none of.
     result = job(FAIL_PASS='3', FAIL_AFTER='1')
     check(result.returncode == 42 and not any(c[1] == 'delete-object' for c in records('calls')),
           'metadata failure prevents installer pruning')
