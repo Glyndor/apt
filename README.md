@@ -80,7 +80,7 @@ if it is missing.
 ```mermaid
 flowchart LR
   P["Product release<br/>.deb + .sig"] -->|daily pull| V["verify-debs.sh<br/>release key"]
-  V -->|admitted| R["reprepro<br/>signs the index<br/>archive key"]
+  V -->|admitted| R["reprepro builds the index<br/>offered by hash, signed<br/>archive key"]
   R --> S["apt.glyndor.net<br/>R2 + Cloudflare"]
   S -->|apt update| C["Client<br/>glyndor-archive-keyring"]
   V -.->|bad signature| X["publish fails, nothing served"]
@@ -102,6 +102,14 @@ a post-quantum signature.
 
 Rebuilt from scratch every run, so the failure mode is *an archive that does not update*, never *one that serves something
 unverified*.
+
+**An update during a publish does not fail.** The signed index says
+`Acquire-By-Hash: yes`, so apt asks for each index file under the SHA-256 the
+index declares for it (`dists/stable/main/binary-amd64/by-hash/SHA256/<hash>`)
+rather than under its fixed name. A publish uploads those copies before the new
+index, and keeps the old ones, so an `apt update` that read the index of one
+publish while the next one lands still gets the bytes it was told to expect,
+instead of `Hash Sum mismatch`.
 
 ## Verify the signing key
 
