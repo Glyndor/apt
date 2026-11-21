@@ -415,6 +415,12 @@ jobs:
   #
   # It asks GitHub for the releases of two public repositories with the job's
   # own token, and `contents: read` is all that needs.
+  #
+  # The script imports yaml and this job installs nothing for it, by the same
+  # criterion as the workflow-lint job: the image ships python3-yaml, as the
+  # lint steps that imported yaml on ubuntu-latest showed, and ubuntu-latest
+  # resolved to ubuntu-26.04 on 2026-11-21. An image without it is an
+  # ImportError and a red job, not a green one.
   tool-versions:
     needs: scope
     if: ${{ !cancelled() && needs.scope.outputs.tools != 'false' }}

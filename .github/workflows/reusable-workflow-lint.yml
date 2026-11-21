@@ -47,6 +47,12 @@ jobs:
     # ubuntu-latest resolved to ubuntu-26.04 in apt's publish runs on
     # 2026-11-20. The image is named because this job's verdict depends on the
     # tools it ships, so a new image arrives as a commit and not overnight.
+    #
+    # The rule scripts import yaml and this job installs nothing for it: the
+    # image ships python3-yaml. That is not new: the same steps imported yaml
+    # inline on main before they moved to scripts, on ubuntu-latest, which
+    # resolved to ubuntu-26.04 on 2026-11-21. An image without it fails both
+    # rule steps with an ImportError, which is red, not a skip.
     runs-on: ubuntu-26.04
     # Bound: 15 to 28s measured, and it installs actionlint and shellcheck.
     # Ten times that, rounded up, never under ten minutes; the six-hour
