@@ -198,6 +198,10 @@ tests/verify/verify-debs-hybrid.test.sh
 	tests/verify/**
 	keyring/**
 
+tests/verify/verify-debs-control-fields.test.sh
+	scripts/verify/**
+	tests/verify/**
+
 # The distro floor reads the table README.md carries and the workflow that
 # enforces it.
 
