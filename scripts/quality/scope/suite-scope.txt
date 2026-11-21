@@ -799,3 +799,9 @@ tests/quality/scope/mutation-scope.test.sh
 tests/ci/policy/mutation-workflow.test.sh
 	.github/workflows/mutation.yml
 	tests/ci/policy/mutation-workflow.test.sh
+
+# The suite reads the workflows whose calls it pins.
+
+tests/ci/policy/workflow-calls-are-exact.test.sh
+	.github/workflows/freshness.yml
+	tests/ci/policy/workflow-calls-are-exact.test.sh

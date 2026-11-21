@@ -439,3 +439,6 @@ verify-debs-anchor-checked	scripts/verify/verify-debs.sh	ascii_only "$anchor" ||
 verify-debs-anchor-three-files	scripts/verify/verify-debs.sh	for anchor in "$KEY_FILE" "$MLDSA_KEY_FILE" "$PQ_REQUIRED_FILE"; do	for anchor in "$KEY_FILE"; do	tests/verify/verify-debs-anchor-bytes.test.sh
 verify-debs-anchor-cr-counted	scripts/verify/verify-debs.sh	tr -d ' -~\n' < 	tr -d ' -~\n\r' < 	tests/verify/verify-debs-anchor-bytes.test.sh
 publish-checkout-keeps-no-token	.github/workflows/publish.yml	persist-credentials: false	persist-credentials: true	tests/ci/policy/persist-credentials.test.sh
+freshness-reads-tests	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" tests.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
+freshness-reads-line-limit	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" line-limit.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
+freshness-reads-workflow-lint	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" workflow-lint.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh

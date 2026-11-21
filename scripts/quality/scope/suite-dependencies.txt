@@ -149,3 +149,5 @@ tests/quality/lint/check-tooling-isolation.test.sh python3-cryptography python3-
 
 # python3-cryptography, python3-yaml, reprepro, shellcheck
 tests/ci/reusable/reusable-shell-ci.test.sh python3-cryptography python3-yaml reprepro shellcheck
+
+tests/ci/policy/workflow-calls-are-exact.test.sh -
