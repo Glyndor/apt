@@ -41,6 +41,8 @@ done
 # The ordering is necessary and not sufficient: it says nothing about an
 # index file being removed after it is written, which is what #47/#53
 # were, hence the read-back verification that closes this job.
+#
+# The Cache-Control of each class of file:
 #   - pool/ .debs are immutable (the filename carries the version), so
 #     cache them for a year; they never change once published.
 #   - the by-hash copies under dists/ are named for the SHA256 of their
