@@ -670,6 +670,16 @@ tests/keyring/release-key.test.sh
 tests/mutation/run-mutations.test.sh
 	tests/mutation/**
 
+# The coverage check reads every script it watches, the production workflow,
+# the catalogue and the exemptions, and runs itself over this repository.
+tests/quality/check-mutation-coverage.test.sh
+	scripts/**
+	keyring/upgrade/**
+	tests/mutation/catalog.txt
+	tests/mutation/exemptions.txt
+	tests/quality/check-mutation-coverage.test.sh
+	.github/workflows/publish.yml
+
 # The decider calls the suite resolver, so a change to either can change it.
 tests/quality/mutation-scope.test.sh
 	scripts/quality/mutation-scope.sh
