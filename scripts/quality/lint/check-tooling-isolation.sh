@@ -38,6 +38,25 @@
 # version and not the bytes. What verifies an apt package is the archive's
 # signature, so the exemption is decided by where the package comes from.
 #
+# THE JOB TOKEN IS JUDGED BY THE SAME RULE, NOT A STRICTER ONE. A job whose
+# effective permissions let the token write (any `write`, `write-all`, or none
+# declared at either level) is refused when it installs what this check calls
+# third-party tooling: every form above, with a case of its own in
+# tests/quality/lint/check-tooling-isolation.test.sh. The two exemptions are
+# not lifted because the token is quiet. They hold with a write token exactly
+# as they hold with a secret, because each rests on something the token does
+# not change: an apt install from the distribution's own archive on where the
+# package comes from, and `pip install --require-hashes` on the artifacts
+# being fixed. So a job with a write token may install from the distribution's
+# archive and may install by hash, and this check says nothing about either.
+# What it does refuse in that job is the token handed to the install step: a
+# step that installs from the archive and names `github.token` in its own
+# environment while the token can write is refused, as a step naming a secret
+# is. The residual is the one the standard already accepts for a secret held
+# by a later step: a hostile package can alter the workspace a later step then
+# runs. This check does not claim more than that, and neither does
+# docs/threat-model.md.
+#
 # reusable-workflow-lint.yml runs this when its `tooling-isolation` input is
 # on, which is the default. python3 runs isolated (-I): the pull request
 # controls the working directory, and a module planted there must not be what
@@ -78,9 +97,18 @@ SECRET_RE = re.compile(
 # effective permissions (the job's, or the workflow's when the job declares
 # none) grant any `write`, or `write-all`, or are declared at neither level,
 # which leaves the repository default, is refused with a message of its own.
+# "Installs third-party tooling" means here what it means for a secret: the
+# two exemptions below (an apt install from the distribution's archive and a
+# pip install pinned by hash) are not third-party with a write token either.
+# The one place the token is judged on its own is a step that names
+# `github.token` in its environment, which hands it to the installer.
 # Measured 2026-11-21 in apt, homebrew-tap and scoop-bucket: every job that
 # installs anything runs with `contents: read` and no other grant, and on a
 # public repository that reads nothing an anonymous client cannot.
+
+# The job token named in an expression, which hands it to the step that
+# names it. `secrets.GITHUB_TOKEN` is already a secret reference above.
+TOKEN_RE = re.compile(r"(?<!\w)github\.token(?!\w)")
 
 # (`pattern`, `opt-out marker on the same line`). The marker, when
 # present on the line, exempts that install: the only case where
@@ -205,6 +233,13 @@ def env_carries_secret(env):
     return bool(SECRET_RE.search(yaml.safe_dump(env)))
 
 
+def env_carries_token(env):
+    # Whether the environment a step runs in names the job token.
+    if not env:
+        return False
+    return bool(TOKEN_RE.search(yaml.safe_dump(env)))
+
+
 def apt_source_added(lines):
     # Whether the job adds an apt source that is not the
     # distribution's own. A comment adds nothing.
@@ -234,7 +269,7 @@ def apt_from_archive(line):
     return True
 
 
-def classify(line, env, apt_tainted):
+def classify(line, env, apt_tainted, writes=None):
     # Why this line installs third-party tooling in a job that holds
     # a secret, or None when it installs nothing third-party. The
     # empty string is the case the rules already had, which says
@@ -263,6 +298,13 @@ def classify(line, env, apt_tainted):
                 "The environment of the step that installs carries a "
                 "secret, so the package's maintainer scripts run as "
                 "root with it in reach; keep the secret out of that "
+                "step's environment."
+            )
+        if writes and env_carries_token(env):
+            return (
+                "The environment of the step that installs names the "
+                "job token, so the package's maintainer scripts run as "
+                "root with it in reach; keep the token out of that "
                 "step's environment."
             )
         return None
@@ -362,7 +404,7 @@ def find_violations(spec_path):
                 stripped = line.lstrip()
                 if not stripped or stripped.startswith("#"):
                     continue
-                why = classify(line, env, apt_tainted)
+                why = classify(line, env, apt_tainted, writes)
                 if why is None:
                     continue
                 violations.append((spec_path, job_id, line, why, token))

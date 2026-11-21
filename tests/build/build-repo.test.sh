@@ -229,6 +229,65 @@ check "a package under the keyring's name that is another package is refused" "1
 	"$(said 'is not the glyndor-archive-keyring package')"
 check "and nothing is served for it" "0" "$([ -e "$WORK/out5g/glyndor-archive-keyring.deb.asc" ] && echo 1 || echo 0)"
 
+# --- Case 5e: no process started after the import can read the private key ---
+#
+# `unset GLYNDOR_APT_GPG_PRIVATE_KEY` is not a refusal, so no case above notices
+# it going: reprepro is third-party code installed in the job that holds the
+# key, and with the line gone it runs with the key in its environment while
+# every output stays the same. Each program build-repo.sh starts here is a
+# probe that records whether the variable is in its environment: reprepro
+# (which dumps all of it), the landing page script, gpg and gpgconf, and the
+# add-by-hash.sh that signs. The import is the one call that must see it, which
+# is what shows the probes can see the variable at all.
+PROBEBIN="$WORK/probebin"; LEAKS="$WORK/leaks"
+mkdir -p "$PROBEBIN"
+REAL_GPG="$(command -v gpg)"; REAL_GPGCONF="$(command -v gpgconf)"
+export LEAKS REAL_GPG REAL_GPGCONF
+cat > "$PROBEBIN/reprepro" <<'PROBE'
+#!/usr/bin/env bash
+env > "$LEAKS.reprepro-env"
+if grep -q '^GLYNDOR_APT_GPG_PRIVATE_KEY=' "$LEAKS.reprepro-env"; then echo "reprepro" >> "$LEAKS"; fi
+exec "$STUBBIN_REPREPRO" "$@"
+PROBE
+for tool in gpg gpgconf; do
+	cat > "$PROBEBIN/$tool" <<PROBE
+#!/usr/bin/env bash
+if env | grep -q '^GLYNDOR_APT_GPG_PRIVATE_KEY='; then echo "$tool \$*" >> "\$LEAKS"; fi
+exec "\$REAL_${tool^^}" "\$@"
+PROBE
+done
+chmod +x "$PROBEBIN/reprepro" "$PROBEBIN/gpg" "$PROBEBIN/gpgconf"
+export STUBBIN_REPREPRO="$WORK/stubbin/reprepro"
+# The probe scripts are written with single quotes on purpose: what they expand
+# is theirs to expand, when they run.
+# shellcheck disable=SC2016
+probe_root() { # $1=name: stub_root whose landing page and signer record their environment
+	local root
+	root="$(stub_root "$1" alpha)"
+	printf '#!/usr/bin/env bash\nenv | grep -q "^GLYNDOR_APT_GPG_PRIVATE_KEY=" && echo build-index-page >> "$LEAKS"\nexit 0\n' \
+		> "$root/scripts/build/build-index-page.sh"
+	mv "$root/scripts/build/add-by-hash.sh" "$root/scripts/build/add-by-hash-real.sh"
+	printf '#!/usr/bin/env bash\nenv | grep -q "^GLYNDOR_APT_GPG_PRIVATE_KEY=" && echo add-by-hash >> "$LEAKS"\nexec "$(dirname "$0")/add-by-hash-real.sh" "$@"\n' \
+		> "$root/scripts/build/add-by-hash.sh"
+	chmod +x "$root/scripts/build/build-index-page.sh" "$root/scripts/build/add-by-hash.sh"
+	echo "$root"
+}
+R_LEAK="$(probe_root r5e)"
+: > "$LEAKS"
+rc=0; PATH="$PROBEBIN:$PATH" run "$R_LEAK" "$KEY_A" --bootstrap "$KEYRING_DEB" "$WORK/out5e2" "$DEB" || rc=$?
+check "with every program probed, the build still succeeds" "0" "$rc"
+[ "$rc" -eq 0 ] || { echo "        --- build-repo.sh said ---"; sed 's/^/        /' "$WORK/out"; }
+check "the import is a probed call that sees the key, so the probes can see the variable" "1" \
+	"$(grep -c '^gpg --batch --quiet --import$' "$LEAKS")"
+check "and it is the only call that sees it" "1" "$(grep -c . "$LEAKS")"
+check "reprepro does not have the key in its environment" "0" "$(grep -c '^reprepro$' "$LEAKS")"
+check "the environment reprepro dumped is a real one, not an empty file" "1" \
+	"$(grep -c '^GNUPGHOME=' "$LEAKS.reprepro-env")"
+check "add-by-hash.sh does not have it" "0" "$(grep -c '^add-by-hash$' "$LEAKS")"
+check "the landing page script does not have it" "0" "$(grep -c '^build-index-page$' "$LEAKS")"
+check "no gpg call after the import has it" "0" "$(grep '^gpg ' "$LEAKS" | grep -vc -- '--import$')"
+check "gpgconf does not have it at cleanup" "0" "$(grep -c '^gpgconf' "$LEAKS")"
+
 # --- Case 6: the whole path, when the machine can run it --------------------
 #
 # Everything above stops before reprepro. This case is the only one that proves

@@ -109,6 +109,7 @@ tests/publication/publish/publish-workflow-verify-debs.test.sh python3-cryptogra
 tests/publication/publish/publish-workflow-mldsa-venv.test.sh python3-cryptography
 tests/verify/verify-debs.test.sh python3-cryptography
 tests/verify/verify-debs-hybrid.test.sh python3-cryptography
+tests/verify/verify-debs-anchor-bytes.test.sh python3-cryptography
 tests/verify/verify-debs-control-fields.test.sh python3-cryptography
 
 # python3-yaml
@@ -119,6 +120,7 @@ tests/ci/policy/jobs-are-bounded.test.sh python3-yaml
 tests/ci/policy/mutation-workflow.test.sh python3-yaml
 tests/ci/policy/publish-workflow-triggers.test.sh python3-yaml
 tests/ci/policy/workflow-shape.test.sh python3-yaml
+tests/ci/policy/persist-credentials.test.sh python3-yaml
 tests/publication/publish/publish-workflow.test.sh python3-yaml
 tests/ci/suites/lint-job-scope.test.sh python3-yaml
 tests/ci/suites/mldsa-job-scope.test.sh python3-yaml

@@ -70,6 +70,24 @@ check "a file with no keys is refused" "bad: no keys" "$(audit "$WORK/empty")"
 check "the committed file is not empty" "1" "$([ -s "$KEY" ] && echo 1 || echo 0)"
 check "every key in the committed file is a 32-byte Ed25519 public key" "1 keys" "$(audit "$KEY")"
 
+# The three files verify-debs.sh reads hold only printable ASCII and line feeds,
+# counted by bytes with tr (GNU grep takes a file with a NUL byte for binary and
+# does not see it): the rule the script refuses a trust anchor by, so a
+# committed file that broke it would fail every publish. The count is run over
+# broken copies first, because a count that is always zero proves nothing.
+stray() { LC_ALL=C tr -d ' -~\n' < "$1" | wc -c; }
+printf '# key\r\nAAAA\r\n' > "$WORK/crlf"
+printf '# a\0b\n' > "$WORK/nul"
+printf '\xef\xbb\xbf# bom\n' > "$WORK/bom"
+printf '# a\tb\n' > "$WORK/tab"
+check "the count sees the two bytes of a CRLF line end" "2" "$(stray "$WORK/crlf" | tr -d ' ')"
+check "and the byte of a NUL" "1" "$(stray "$WORK/nul" | tr -d ' ')"
+check "and the three bytes of a byte order mark" "3" "$(stray "$WORK/bom" | tr -d ' ')"
+check "and a tab" "1" "$(stray "$WORK/tab" | tr -d ' ')"
+for f in glyndor-release-ed25519.b64 glyndor-release-mldsa65.b64 pq-required-products; do
+	check "keyring/$f holds no byte but printable ASCII and line feeds" "0" "$(stray "$HERE/keyring/$f" | tr -d ' ')"
+done
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

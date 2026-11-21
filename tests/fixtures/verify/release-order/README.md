@@ -48,3 +48,7 @@ red. The outer suite succeeds only when every control is detected. For the
 size guard, the remaining SHA256 guard rejects the modified bytes, but the
 size-specific assertion must fail. The same-size case separately proves that
 neutralizing SHA256 admits changed bytes.
+
+As in `../published-build`, the signatures here are RSA with SHA-256, and the live archive
+signs its index with an Ed25519 key and SHA-512 (`scripts/build/add-by-hash.sh`, asserted in
+`tests/build/add-by-hash.test.sh`). The read-back does not read the digest algorithm.

@@ -54,6 +54,7 @@ jobs:
         ./tests/ci/policy/mutation-workflow.test.sh
         ./tests/verify/verify-debs.test.sh
         ./tests/verify/verify-debs-hybrid.test.sh
+        ./tests/verify/verify-debs-anchor-bytes.test.sh
         ./tests/verify/verify-debs-control-fields.test.sh
         ./tests/verify/verify-published.test.sh
         ./tests/verify/verify-published/verify-published-bootstrap.test.sh
@@ -149,6 +150,7 @@ jobs:
         ./tests/monitoring/check-reusable-drift.test.sh
         ./tests/ci/policy/jobs-are-bounded.test.sh
         ./tests/ci/policy/workflow-shape.test.sh
+        ./tests/ci/policy/persist-credentials.test.sh
         ./tests/ci/policy/freshness-pr-scope.test.sh
         ./tests/ci/policy/scheduled-workflows-are-watched.test.sh
         ./tests/ci/policy/network-calls-are-bounded.test.sh
@@ -195,7 +197,10 @@ jobs:
   # named in scripts/quality/scope/suite-scope.txt. Any other event runs it,
   # and so does any doubt.
   #
-  # It is a required check, so it is never skipped as a job: no `paths:` on the
+  # It is not a required check yet: adding it to the ruleset is the owner's
+  # decision, and nothing waits on it today. It is built so that it can be one
+  # the day it is added. A job skipped as a job reports success, which would
+  # read "did not apply" as "passed", so it is never skipped: no `paths:` on the
   # workflow, no `if:` or `needs:` on the job. It always starts, decides in its
   # first step and reports under its own name, and only the wheel install and
   # the suite are conditional. Its own `concurrency` lets a newer push supersede
