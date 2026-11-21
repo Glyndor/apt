@@ -102,11 +102,22 @@ check "and is reported by the age of its newest run" "1" "$(said "$out" 'last su
 
 repo 3; git clone -q --depth 1 "file://$WORK/r" "$WORK/shallow"; run "$WORK/shallow" 0 ""
 check "a shallow history, which cannot date the file, fails" "1" "$rc"
-check "and says the date could not be read" "1" "$(said "$out" 'could not be read, so no grace period applies')"
+check "and says the date could not be read" "1" "$(said "$out" 'could not be read, or lies in the future, so no grace period applies')"
 
 repo -; run "$WORK/r" 0 ""
 check "a workflow whose file was never added fails" "1" "$rc"
-check "for the same reason" "1" "$(said "$out" 'could not be read, so no grace period applies')"
+check "for the same reason" "1" "$(said "$out" 'could not be read, or lies in the future, so no grace period applies')"
+
+# A commit dated in the future, which its committer can do, is no date.
+repo -
+when="$(date -u -d "400 days" +%Y-%m-%dT%H:%M:%SZ)"
+echo 'on: {schedule: [{cron: "23 5 * * 1"}]}' > "$WORK/r/.github/workflows/new.yml"
+gitt_future() { GIT_AUTHOR_DATE="$when" GIT_COMMITTER_DATE="$when" \
+	git -C "$WORK/r" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "$@"; }
+gitt_future add -A; gitt_future commit -qm 'add, dated ahead'
+run "$WORK/r" 0 ""
+check "a workflow whose file was added at a date in the future gets no grace" "1" "$rc"
+check "and is told the date is unreadable or ahead" "1" "$(said "$out" 'could not be read, or lies in the future, so no grace period applies')"
 
 mkdir -p "$WORK/nogit"; run "$WORK/nogit" 0 ""
 check "a checkout with no history at all fails" "1" "$rc"

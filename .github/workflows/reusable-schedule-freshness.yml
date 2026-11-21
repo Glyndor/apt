@@ -22,15 +22,16 @@ name: Schedule freshness (reusable)
 # and reading run history needs that scope. Without it the run does not start.
 #
 # A workflow whose cron has not fired yet has nothing on record to measure.
-# That is a failure for an established workflow and expected for a new one,
-# so a workflow with NO scheduled run on record at all gets a grace period as
+# That is a failure for an established workflow and expected for a new one, so
+# a workflow with NO scheduled run on record at all gets a grace period as
 # long as the limit, counted from the commit that added its file to the
 # branch, and passes with a notice that says when the grace ends. After that,
 # or as soon as any scheduled run exists, the usual rule applies: a workflow
-# with only old runs is a dead cron and gets no grace. If the date the file was
-# added cannot be read (a shallow history, a file that is not there), the job
-# fails; there is no grace by default. Without this, a watcher added with its
-# cron is born red, and a gate born red is a gate somebody switches off.
+# with only old runs is a dead cron and gets no grace. If the date the file
+# was added cannot be read (a shallow history, a file that is not there, a
+# date in the future), the job fails; there is no grace by default. Without
+# this, a watcher added with its cron is born red, and a gate born red is a
+# gate somebody switches off.
 
 on:
   workflow_call:
@@ -229,14 +230,20 @@ jobs:
               && [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = false ]; then
               added=$(git log -1 --diff-filter=A --format=%ct -- ".github/workflows/${WORKFLOW}" 2>/dev/null) || added=""
             fi
+            # A commit date is the committer's to set. One in the future would
+            # keep a dead cron in its grace period for as long as it says, so
+            # it counts as a date that could not be read.
+            if [[ "$added" =~ ^[0-9]+$ ]] && [ "$added" -gt "$now_s" ]; then
+              added="in the future"
+            fi
             if [[ "$added" =~ ^[0-9]+$ ]] && [ $(( (now_s - added) / unit_seconds )) -lt "$limit" ]; then
               ends=$(date -u -d "@$(( added + limit * unit_seconds ))" +%Y-%m-%dT%H:%M:%SZ)
               echo "::notice::${WORKFLOW} has no scheduled run on record yet. Its file was added to the branch on $(date -u -d "@${added}" +%Y-%m-%dT%H:%M:%SZ), so it is in its grace period until ${ends}; after that it must have ${what} scheduled runs within the ${limit_name} limit."
               exit 0
             fi
             echo "::error::No ${what} scheduled run on record for ${WORKFLOW}."
-            if [ "$any_runs" = 0 ] && [ -z "$added" ]; then
-              echo "The date its file was added to the branch could not be read, so no grace period applies." >&2
+            if [ "$any_runs" = 0 ] && ! [[ "$added" =~ ^[0-9]+$ ]]; then
+              echo "The date its file was added to the branch could not be read, or lies in the future, so no grace period applies." >&2
             fi
             echo "Either its cron has never fired, or the schedule was dropped." >&2
             echo "Check that the workflow still exists on the default branch, then" >&2
