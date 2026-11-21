@@ -149,7 +149,9 @@ sandbox() { # $1=name -> prints a tree laid out as the step sees it
 	printf '#!/bin/sh\nexit 0\n' > "$d/scripts/build/build-index-page.sh"
 	chmod +x "$d/scripts/build/build-index-page.sh"
 	pubof alpha > "$d/keyring/glyndor-apt-key.asc"
-	printf 'keyring package body\n' > "$d/debs/glyndor-archive-keyring.deb"
+	mkdir -p "$d/pkg/DEBIAN"
+	printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' > "$d/pkg/DEBIAN/control"
+	dpkg-deb --root-owner-group --build "$d/pkg" "$d/debs/glyndor-archive-keyring.deb" >/dev/null 2>&1
 	printf 'product package body\n' > "$d/debs/podup_1.0.0_amd64.deb"
 	echo "$d"
 }

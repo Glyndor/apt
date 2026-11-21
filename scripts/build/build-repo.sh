@@ -5,7 +5,7 @@
 # the current release of each product, so it always carries exactly the latest
 # version of every package; Glyndor ships no old-version support.
 #
-# Requires: reprepro, gpg.
+# Requires: reprepro, gpg, and dpkg-deb with --bootstrap.
 # Reads the armored private signing key from $GLYNDOR_APT_GPG_PRIVATE_KEY.
 #
 # Usage:
@@ -29,6 +29,14 @@ if [ "${1:-}" = "--bootstrap" ]; then
 	BOOTSTRAP="${2:?--bootstrap needs the keyring package to serve}"
 	shift 2
 	[ -f "$BOOTSTRAP" ] || { echo "no such keyring package: $BOOTSTRAP" >&2; exit 1; }
+	# Whatever is given is served under the keyring's name and signed with the
+	# archive key, so it has to be the keyring package: by its file name, the
+	# one build-keyring.sh writes, and by its control field. The package is
+	# built locally a step earlier, so reading it is not reading a download.
+	[ "$(basename "$BOOTSTRAP")" = glyndor-archive-keyring.deb ] \
+		|| { echo "::error::--bootstrap takes glyndor-archive-keyring.deb, not $(basename "$BOOTSTRAP")" >&2; exit 1; }
+	[ "$(dpkg-deb -f "$BOOTSTRAP" Package 2>/dev/null)" = glyndor-archive-keyring ] \
+		|| { echo "::error::$BOOTSTRAP is not the glyndor-archive-keyring package" >&2; exit 1; }
 	BOOTSTRAP="$(cd "$(dirname "$BOOTSTRAP")" && pwd)/$(basename "$BOOTSTRAP")"
 fi
 

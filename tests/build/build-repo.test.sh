@@ -162,8 +162,15 @@ verifies_with() { # $1=uid $2=asc $3=data -> 1 when the signature verifies again
 	pubof "$1" | GNUPGHOME="$home" gpg --batch --quiet --import 2>/dev/null
 	GNUPGHOME="$home" gpg --batch --verify "$2" "$3" >/dev/null 2>&1 && echo 1 || echo 0
 }
-KEYRING_DEB="$WORK/keyring-fixture.deb"
-printf 'keyring package body\n' > "$KEYRING_DEB"
+mkpkg() { # $1=Package $2=output path: a minimal real package
+	local root="$WORK/pkg-$RANDOM"
+	mkdir -p "$root/DEBIAN"
+	printf 'Package: %s\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' "$1" > "$root/DEBIAN/control"
+	mkdir -p "$(dirname "$2")"
+	dpkg-deb --root-owner-group --build "$root" "$2" >/dev/null 2>&1
+}
+KEYRING_DEB="$WORK/keyring/glyndor-archive-keyring.deb"
+mkpkg glyndor-archive-keyring "$KEYRING_DEB"
 
 R_BOOT="$(stub_root r5c alpha)"
 rc=0; run_stubbed "$R_BOOT" "$KEY_A" --bootstrap "$KEYRING_DEB" "$WORK/out5c" "$DEB" || rc=$?
@@ -175,8 +182,8 @@ check "and its detached signature verifies against the archive key" "1" \
 	"$(verifies_with alpha "$WORK/out5c/glyndor-archive-keyring.deb.asc" "$WORK/out5c/glyndor-archive-keyring.deb")"
 check "and not against another key" "0" \
 	"$(verifies_with bravo "$WORK/out5c/glyndor-archive-keyring.deb.asc" "$WORK/out5c/glyndor-archive-keyring.deb")"
-check "and the signature is detached, not the data with it" "0" \
-	"$(grep -c 'keyring package body' "$WORK/out5c/glyndor-archive-keyring.deb.asc" || true)"
+check "and the signature is a detached one, not the data with it" "1" \
+	"$(head -1 "$WORK/out5c/glyndor-archive-keyring.deb.asc" | grep -c -- '-----BEGIN PGP SIGNATURE-----')"
 printf 'tampered\n' >> "$WORK/out5c/glyndor-archive-keyring.deb"
 check "and a tampered package no longer verifies against it" "0" \
 	"$(verifies_with alpha "$WORK/out5c/glyndor-archive-keyring.deb.asc" "$WORK/out5c/glyndor-archive-keyring.deb")"
@@ -195,6 +202,19 @@ check "and no bootstrap signature is written" "0" \
 rc=0; run_stubbed "$R_BOOT" "$KEY_A" --bootstrap "$WORK/absent-keyring.deb" "$WORK/out5e" "$DEB" || rc=$?
 check "a --bootstrap package that does not exist is refused" "1" \
 	"$(said 'no such keyring package')"
+
+# Whatever --bootstrap is given is served as the keyring and signed, so it has
+# to be the keyring package, by name and by control field. Each refusal is
+# paired with the other half right, so it is that half that refuses.
+mkpkg glyndor-archive-keyring "$WORK/misnamed/keyring.deb"
+rc=0; run_stubbed "$R_BOOT" "$KEY_A" --bootstrap "$WORK/misnamed/keyring.deb" "$WORK/out5f" "$DEB" || rc=$?
+check "a --bootstrap file not named glyndor-archive-keyring.deb is refused" "1" \
+	"$(said 'takes glyndor-archive-keyring.deb, not keyring.deb')"
+mkpkg podup "$WORK/impostor/glyndor-archive-keyring.deb"
+rc=0; run_stubbed "$R_BOOT" "$KEY_A" --bootstrap "$WORK/impostor/glyndor-archive-keyring.deb" "$WORK/out5g" "$DEB" || rc=$?
+check "a package under the keyring's name that is another package is refused" "1" \
+	"$(said 'is not the glyndor-archive-keyring package')"
+check "and nothing is served for it" "0" "$([ -e "$WORK/out5g/glyndor-archive-keyring.deb.asc" ] && echo 1 || echo 0)"
 
 # --- Case 6: the whole path, when the machine can run it --------------------
 #
