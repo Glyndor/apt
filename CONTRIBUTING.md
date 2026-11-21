@@ -118,6 +118,9 @@ sits in `tests/`, passes by hand, and reads as coverage while CI never runs it.
 So does the `workflow-lint` check, which runs `scripts/quality/check-suites-wired.sh`
 outside the test job: a pull request that drops the watcher from the list along
 with other suites leaves the test job green, and turns that check red.
+A suite that cannot run on a pull request goes in `scripts/quality/suite-exemptions.txt`
+with its reason. That list is read from the base commit too, so an entry takes
+effect from the pull request after the one that adds it.
 
 **A new suite needs an entry in `scripts/quality/suite-scope.txt`.**
 On a pull request the runner skips the suites whose paths the change does not touch;

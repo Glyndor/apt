@@ -26,11 +26,20 @@
 # Anything else is a place a pull request can skip, so a suite named only
 # there is reported, with the reason it did not count.
 #
-# A suite that is deliberately not run on pull requests is exempted by the
-# caller, in SUITE_EXEMPTIONS, one per line as `tests/<path>.test.sh: <why>`.
-# An exemption without a reason, for a file that no longer exists, or for a
-# suite that is run after all is a failure: an exemption that outlived its
-# premise is how a hole stays open after the reason for it has gone.
+# A suite that is deliberately not run on pull requests is exempted in
+# scripts/quality/suite-exemptions.txt, one per line as
+# `tests/<path>.test.sh: <why>`. An exemption without a reason, repeated, or
+# for a file that no longer exists is a failure: an exemption that outlived
+# its premise is how a hole stays open after the reason for it has gone. One
+# for a suite that is run after all has no effect and is reported as a warning,
+# because adding an exemption and unwiring its suite take two pull requests.
+#
+# The pull request does not decide its own exemptions. When
+# SUITE_EXEMPTIONS_BASE names the copy of the list taken from the base commit,
+# an exemption counts only if it is in both lists: the pull request can remove
+# one and the removal applies at once, and one it adds applies from the next
+# pull request on, once it is on the base branch. Without SUITE_EXEMPTIONS_BASE
+# (a push, or a base that predates the list) the checkout's list applies.
 #
 # Usage: check-suites-wired.sh [repo-root]   (default: the current directory)
 #
@@ -54,6 +63,7 @@ SUITE = r"tests/[A-Za-z0-9_./-]+\.test\.sh"
 WORD_RE = re.compile(r"^\./(" + SUITE + r")$")
 LINE_RE = re.compile(r"^(?:bash\s+)?\./(" + SUITE + r")(?:\s|$)")
 ENTRY_RE = re.compile(r"^(" + SUITE + r"):(.*)$")
+EXEMPTIONS = "scripts/quality/suite-exemptions.txt"
 errors = []
 
 
@@ -158,20 +168,42 @@ def wiring(specs):
     return wired, weak
 
 
-def exemptions():
+def read_exemptions(path, label):
     exempt = {}
-    for number, raw in enumerate(os.environ.get("SUITE_EXEMPTIONS", "").splitlines(), 1):
+    try:
+        with open(path) as fh:
+            text = fh.read()
+    except FileNotFoundError:
+        return exempt
+    except OSError as e:
+        errors.append(f"cannot read {label}: {e}")
+        return exempt
+    for number, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         match = ENTRY_RE.match(line)
         if not match or not match.group(2).strip():
-            errors.append(f"suite exemption {number} is not `tests/<path>.test.sh: <reason>`: {line}")
+            errors.append(f"{label} line {number} is not `tests/<path>.test.sh: <reason>`: {line}")
         elif match.group(1) in exempt:
-            errors.append(f"suite exemption {number} repeats {match.group(1)}")
+            errors.append(f"{label} line {number} repeats {match.group(1)}")
         else:
             exempt[match.group(1)] = match.group(2).strip()
     return exempt
+
+
+def exemptions():
+    exempt = read_exemptions(os.path.join(root, EXEMPTIONS), EXEMPTIONS)
+    base_path = os.environ.get("SUITE_EXEMPTIONS_BASE", "")
+    if not base_path:
+        return exempt
+    if not os.path.isfile(base_path):
+        errors.append(f"cannot read the base copy of {EXEMPTIONS} at {base_path}")
+        return {}
+    base = read_exemptions(base_path, f"{EXEMPTIONS} on the base commit")
+    for path in sorted(set(exempt) - set(base)):
+        print(f"pending: {path} is exempt once this list is on the base branch, not before")
+    return {path: why for path, why in exempt.items() if path in base}
 
 
 suites = present()
@@ -184,7 +216,7 @@ for path in sorted(exempt):
     if path not in suites:
         errors.append(f"the exemption for {path} names a file that does not exist; delete it")
     elif path in wired:
-        errors.append(f"{path} is exempt but a workflow runs it; delete the exemption")
+        print(f"::warning::{path} is exempt but a workflow runs it, so the exemption has no effect")
 for path in sorted(suites - wired - set(exempt)):
     why = "; ".join(weak.get(path, [])) or "it is named nowhere"
     errors.append(f"{path} is not run by any workflow on a pull request ({why})")

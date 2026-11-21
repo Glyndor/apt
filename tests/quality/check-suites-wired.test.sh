@@ -42,7 +42,16 @@ tree() {
 		"$2" "${3:-}" > "$dir/.github/workflows/tests.yml"
 	echo "$dir"
 }
-gate() { out="$(SUITE_EXEMPTIONS="${2:-}" bash "$GATE" "$1" 2>&1)"; rc=$?; }
+# gate <dir> [exemptions] [base exemptions]: the exemptions are written to the
+# tree's list, and a base list, when given, is handed over as the step does.
+gate() {
+	local base=""
+	if [ -n "${2:-}" ]; then
+		mkdir -p "$1/scripts/quality"; printf '%s\n' "$2" > "$1/scripts/quality/suite-exemptions.txt"
+	fi
+	if [ -n "${3+set}" ]; then base="$WORK/base-exemptions"; printf '%s\n' "$3" > "$base"; fi
+	out="$(SUITE_EXEMPTIONS_BASE="$base" bash "$GATE" "$1" 2>&1)"; rc=$?
+}
 
 # --- the green case, and a suite or the watcher dropped ---------------------
 
@@ -145,8 +154,21 @@ gate "$dir" "tests/area/b.test.sh:"
 check "an exemption without a reason fails" "1" "$(said 'is not `tests/<path>.test.sh: <reason>`')"
 
 gate "$(tree exempt-wired "$SUITES")" "tests/area/b.test.sh: once needed a device"
-check "an exemption for a suite that is run fails" "1" \
-	"$(said 'tests/area/b.test.sh is exempt but a workflow runs it')"
+check "an exemption for a suite that is run is not a failure" "0" "$rc"
+check "but is reported as having no effect" "1" \
+	"$(said '::warning::tests/area/b.test.sh is exempt but a workflow runs it')"
+
+# The list on the base commit decides what a pull request may exempt.
+dir="$(tree exempt-base "./tests/a.test.sh ./$WATCHER")"
+gate "$dir" "tests/area/b.test.sh: needs a device" "# nothing exempt on the base"
+check "an exemption the pull request adds does not count yet" "1" "$(said 'tests/area/b.test.sh is not run')"
+check "and is reported as pending" "1" "$(said 'pending: tests/area/b.test.sh is exempt once this list is on the base branch')"
+gate "$dir" "tests/area/b.test.sh: needs a device" "tests/area/b.test.sh: needs a device"
+check "control: the same exemption on the base commit counts" "0" "$rc"
+gate "$dir" "# the pull request removed it" "tests/area/b.test.sh: needs a device"
+check "an exemption the pull request removes stops counting at once" "1" "$(said 'tests/area/b.test.sh is not run')"
+out="$(SUITE_EXEMPTIONS_BASE="$WORK/no-such-list" bash "$GATE" "$dir" 2>&1)"
+check "a base list that cannot be read fails" "1" "$(said 'cannot read the base copy of scripts/quality/suite-exemptions.txt')"
 
 # --- nothing to read is a failure, not a pass --------------------------------
 
@@ -161,13 +183,8 @@ check "a workflow that cannot be parsed fails" "1" "$(said 'cannot read .github/
 
 # --- the real repository --------------------------------------------------------
 #
-# With the exemptions its own workflow-lint caller passes, so an exemption
-# added there is read here too.
-exemptions="$(python3 -I -c 'import sys, yaml
-jobs = yaml.safe_load(open(sys.argv[1]))["jobs"].values()
-print(next(j for j in jobs if "reusable-workflow-lint" in j.get("uses", "")).get("with", {}).get("suite-exemptions", ""))' \
-	"$HERE/.github/workflows/workflow-lint.yml")"
-gate "$HERE" "$exemptions"
+# With its own list of exemptions, which the checker reads from the tree.
+gate "$HERE"
 check "every suite of this repository is run by a workflow" "0" "$rc"
 
 # --- the workflow step reads the checker from the base commit -----------------
@@ -192,24 +209,24 @@ PY
 check "the step was extracted from the workflow" "1" "$(grep -c 'check-suites-wired.sh' "$WORK/step.sh")"
 
 # What the extracted body cannot show: the step runs on every event, whatever
-# the scope decision, and it is handed the event and the caller's exemptions.
+# the scope decision, it is handed the event, and no input of the caller, which
+# the pull request controls, reaches the checker.
 wiring="$(python3 -I - "$HERE/.github/workflows/reusable-workflow-lint.yml" <<'PY'
 import sys, yaml
 spec = yaml.safe_load(open(sys.argv[1]))
-inputs = spec[True]["workflow_call"]["inputs"]
 step = next(s for s in spec["jobs"]["workflow-lint"]["steps"]
             if s.get("name") == "Every suite is run by a workflow")
-print("if" in step, step.get("env", {}).get("EVENT"), step.get("env", {}).get("SUITE_EXEMPTIONS"),
-      repr(inputs["suite-exemptions"].get("default")))
+print("if" in step, sorted(step.get("env", {}).items()), "inputs." in step["run"])
 PY
 )"
-check "the step has no condition and gets the event and the exemptions" \
-	"False \${{ github.event_name }} \${{ inputs.suite-exemptions }} ''" "$wiring"
+check "the step has no condition, gets the event and reads no caller input" \
+	"False [('EVENT', '\${{ github.event_name }}')] False" "$wiring"
 
 repo="$(tree repo "$SUITES")"
 git() { command git -C "$repo" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "$@"; }
-merge_pr() { # <base> <tests.yml command> <checker body or empty to delete>
+merge_pr() { # <base> <tests.yml command> <checker body or empty to delete> [exemptions]
 	git checkout -q -B main "$1"; git checkout -q -B pr
+	[ -z "${4:-}" ] || printf '%s\n' "$4" > "$repo/scripts/quality/suite-exemptions.txt"
 	sed -i "s#^      test-command: .*#      test-command: \"$2\"#" "$repo/.github/workflows/tests.yml"
 	mkdir -p "$repo/scripts/quality"
 	if [ -n "$3" ]; then printf '%s\n' "$3" > "$repo/scripts/quality/check-suites-wired.sh"
@@ -217,17 +234,23 @@ merge_pr() { # <base> <tests.yml command> <checker body or empty to delete>
 	git add -A; git commit -qm pr; git checkout -q main
 	git merge -q --no-ff pr -m merge
 }
-run_step() { out="$(cd "$repo" && EVENT="$1" SUITE_EXEMPTIONS="${2:-}" RUNNER_TEMP="$WORK" bash "$WORK/step.sh" 2>&1)"; rc=$?; }
+run_step() { out="$(cd "$repo" && EVENT="$1" RUNNER_TEMP="$WORK" bash "$WORK/step.sh" 2>&1)"; rc=$?; }
 git init -q -b main
 mkdir -p "$repo/scripts/quality"; cp "$GATE" "$repo/scripts/quality/"
+printf '# nothing exempt\n' > "$repo/scripts/quality/suite-exemptions.txt"
 git add -A; git commit -qm base; base="$(git rev-parse HEAD)"
 
 merge_pr "$base" "./tests/a.test.sh ./$WATCHER" "exit 0"
 run_step pull_request
 check "a pull request that drops a suite and disarms the checker still fails" "1" "$rc"
 check "because the base checker names the suite" "1" "$(said 'tests/area/b.test.sh is not run')"
-run_step pull_request "tests/area/b.test.sh: needs a device"
-check "and the step hands the caller's exemptions to the checker" "0" "$rc"
+merge_pr "$base" "./tests/a.test.sh ./$WATCHER" "$(cat "$GATE")" "tests/area/b.test.sh: dropped on purpose"
+run_step pull_request
+check "a pull request that drops a suite and exempts it in the same change still fails" "1" "$rc"
+check "because the base list does not carry the exemption" "1" "$(said 'pending: tests/area/b.test.sh')"
+run_step push
+check "control: on a push the checkout's list decides" "0" "$rc"
+merge_pr "$base" "./tests/a.test.sh ./$WATCHER" "exit 0"
 run_step push
 check "control: on a push the checkout's copy decides, and that one was disarmed" "0" "$rc"
 
