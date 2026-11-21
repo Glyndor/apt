@@ -103,15 +103,16 @@ jobs:
     # 2026-11-20. The image is named because this job's verdict depends on the
     # tools it ships, so a new image arrives as a commit and not overnight.
     runs-on: ubuntu-26.04
-    # Bound: about 30 minutes measured locally for every entry on 2026-11-21
-    # (19.6 for the 145 entries added with the coverage check, about 10 for the
-    # 76 before them), each one a copy of the tree and the suite it names. A
-    # pull request runs a fraction: 2.5 seconds for the 7 entries a README
-    # change selects, 6.3 minutes for the 36 a change to build-repo.sh
-    # selects. Sixty leaves double the whole sweep for a slower runner
-    # and still bounds a hang; the six-hour default is what a hang would
-    # otherwise cost.
-    timeout-minutes: 60
+    # Bound, measured on 2026-11-21: every entry (242 then) took 31 minutes 35
+    # seconds on a loaded workstation, and 30 minutes 38 seconds on the first
+    # run of a GitHub runner, where the next one took about 15. Each entry is a
+    # copy of the tree and the suite it names. A pull request runs a fraction:
+    # 2.5 seconds for the 7 entries a README change selects, about 10 minutes
+    # for the 43 a change to build-repo.sh selects. Ninety is nearly three
+    # times the longest full sweep and still bounds a hang; the six-hour
+    # default is what a hang would otherwise cost. The catalogue grows with
+    # every refusal, so the sweep does too: raise this when a full sweep passes 45 minutes.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
