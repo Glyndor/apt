@@ -204,6 +204,14 @@ check "and the offending job is named" "1" "$(said "$out" '`shell`')"
 check "and no grammar message fires alongside" "0" \
 	"$(said "$out" 'first non-blank token')"
 
+# --- `needs:` on a caller is refused, for that reason ----------------------
+d="$(new)"; caller_if "$d" './tests/one.test.sh' 'false'
+sed -i 's/^    if: false$/    needs: noop/' "$d/.github/workflows/tests.yml"
+out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
+check "a caller with needs: is refused" "1" "$rc"
+check "and the message names the needs: defect" "1" "$(said "$out" 'carries `needs:`')"
+check "and not the if: one" "0" "$(said "$out" 'job-level `if:`')"
+
 # --- a test-command whose first token is not a suite is refused ------------
 d="$(new)"; caller "$d" 'echo tests are elsewhere'
 out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?

@@ -94,6 +94,23 @@ gate "$(tree job-if "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.
 ')")"
 check "a suite in a job with if: does not count" "1" "$(said "tests.yml#other: the job has an \`if:\`")"
 
+# The reviewed bypass: the test job needs a job that is switched off, so
+# GitHub skips both and the skipped check reports Success.
+gate "$(tree needs "$SUITES" '    needs: noop
+  noop:
+    if: false
+    runs-on: x
+    steps: [{run: echo hi}]
+')"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "the suites of a caller with needs: do not count" "3" \
+	"$(said 'tests.yml#shell: the job has `needs:`, and is skipped when a job it needs is')"
+
+gate "$(tree step-needs "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.sh' '' '    needs: shell
+')")"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a suite in a step of a job with needs: does not count" "1" "$(said 'tests.yml#other: the job has `needs:`')"
+
 gate "$(tree wd "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.sh' '        working-directory: sub')")"
 check "a suite run from another working directory is not the top-level one" "1" \
 	"$(said 'tests/area/b.test.sh is not run')"

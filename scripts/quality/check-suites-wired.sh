@@ -18,6 +18,11 @@
 #     suites the line hands it, in a job and a step that carry no `if:` and
 #     no `continue-on-error`. A comment line is prose, not wiring.
 #
+# In both places the job must carry no `needs:` either. A job whose
+# dependency is skipped is skipped too, so `needs:` on a job that GitHub skips
+# for an `if: false` switches the suites off one job away, and the skipped
+# job still reports Success.
+#
 # Anything else is a place a pull request can skip, so a suite named only
 # there is reported, with the reason it did not count.
 #
@@ -116,6 +121,8 @@ def wiring(specs):
                 continue
             where = f"{name}#{job_id}"
             job_gate = gate or ("the job has an `if:`" if "if" in job else "") \
+                or ("the job has `needs:`, and is skipped when a job it needs is"
+                    if "needs" in job else "") \
                 or ("the job may fail" if job.get("continue-on-error") else "")
             uses = job.get("uses")
             if isinstance(uses, str) and os.path.basename(uses.split("@")[0]) == REUSABLE:

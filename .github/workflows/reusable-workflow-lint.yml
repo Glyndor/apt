@@ -436,6 +436,17 @@ jobs:
                               "delete it."
                           ))
                           continue
+                      # Rule: `needs:` is the same switch one job away. A
+                      # caller that needs a skipped job is skipped too.
+                      if "needs" in job:
+                          violations.append((
+                              path, job_id,
+                              f"job `{job_id}` in {path} calls `{REUSABLE}` "
+                              "and carries `needs:`. A job whose dependency is "
+                              "skipped is skipped too, and a skipped required "
+                              "check reports Success. Delete it."
+                          ))
+                          continue
                       # Rule: the test-command must invoke at least one suite.
                       with_block = job.get("with")
                       tc = (
