@@ -71,6 +71,7 @@ snapshot no-packages-file
 check 1 'declares no per-architecture Packages file' 'a signed index whose SHA256 section lists no Packages file is refused'
 snapshot served-version-not-semver
 check 1 "the served version '1.0' of podup cannot be compared" 'a served version dpkg accepts and SemVer does not is refused'
+check 1 'could not compare podup 2.0.0 against the version the archive serves' 'and the script says which comparison it could not make'
 snapshot new
 check 0 'is not older' 'the same checks over an index with a SHA256 section and a SemVer version pass'
 
