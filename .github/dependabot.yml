@@ -6,9 +6,9 @@ updates:
   # file stops changing on the default branch. A change to the file on main
   # registers it again, so this note is that change; the watcher in
   # freshness.yml is what noticed.
-  # Keep the SHA-pinned actions in the workflows current. This repo has no
-  # language package manifest (it is POSIX shell + reprepro), so GitHub Actions
-  # is the only ecosystem to track.
+  # Keep the SHA-pinned actions in the workflows current. The other ecosystem
+  # here is the one requirements file further down; the rest is POSIX shell and
+  # reprepro, which have no manifest to track.
   # nosemgrep: dependabot-missing-cooldown -- deliberately no cooldown. The rule
   # assumes an open package ecosystem and a moving tag; here every action is
   # SHA-pinned and GitHub- or Glyndor-owned, no automation auto-merges anything
@@ -53,5 +53,22 @@ updates:
     # and the inference has been unstable across repositories (build(deps):
     # Bump ... in some, chore(deps): bump ... in others). Set it so the
     # generated title is predictable and matches homebrew-tap and scoop-bucket.
+    commit-message:
+      prefix: chore
+
+  # The library that checks the second, ML-DSA-65 half of a release signature
+  # (scripts/verify/verify-debs-requirements.txt). It is pinned by hash, so it
+  # moves only when something proposes the move, and a fix in a library that
+  # verifies signatures is not one to find out about by accident. Its own group
+  # and its own area, so a bump of it is never read as one more action bump.
+  - package-ecosystem: "pip"
+    directory: "/scripts/verify"
+    schedule:
+      interval: "daily"
+    labels: ["type:deps", "type:security", "area:verify"]
+    open-pull-requests-limit: 5
+    groups:
+      verifier:
+        patterns: ["*"]
     commit-message:
       prefix: chore
