@@ -322,6 +322,11 @@ tests/keyring/keyring-fingerprints.test.sh
 	tests/keyring/**
 	README.md
 
+tests/keyring/readme-fingerprint-form.test.sh
+	keyring/glyndor-apt-key.asc
+	tests/keyring/readme-fingerprint-form.test.sh
+	README.md
+
 # --- the installer ------------------------------------------------------------
 
 tests/installer/install-template.test.sh

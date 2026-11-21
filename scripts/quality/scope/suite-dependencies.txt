@@ -47,6 +47,7 @@ tests/installer/unattended-upgrades.test.sh -
 tests/keyring/glyndor-upgrade-errors.test.sh -
 tests/keyring/glyndor-upgrade.test.sh -
 tests/keyring/keyring-fingerprints.test.sh -
+tests/keyring/readme-fingerprint-form.test.sh -
 tests/keyring/maintainer-offer-guards.test.sh -
 tests/keyring/maintainer-postinst-trust.test.sh -
 tests/keyring/maintainer-postrm.test.sh -

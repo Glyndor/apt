@@ -108,6 +108,7 @@ jobs:
         ./tests/build/architectures-agree.test.sh
         ./tests/installer/readme-bootstrap.test.sh
         ./tests/keyring/keyring-fingerprints.test.sh
+        ./tests/keyring/readme-fingerprint-form.test.sh
         ./tests/publication/publish/publish-workflow.test.sh
         ./tests/publication/publish/publish-workflow-sync.test.sh
         ./tests/publication/publish/publish-workflow-assets.test.sh
