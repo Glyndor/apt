@@ -66,8 +66,11 @@ self="${BASH_SOURCE[0]##*/}"
 # them are integration suites whose verdict does not depend on the change:
 # measured on 2026-11-06, tests/verify/verify-published.test.sh,
 # tests/publish/purge-cache/purge-cache-budget.test.sh and
-# tests/publication/health-check/health-check-workflow.test.sh are 46 % of the 151 s the whole
-# suite takes on this repository.
+# tests/publication/health-check/health-check-workflow.test.sh were 46 % of the
+# 151 s the whole suite took then. Measured again on 2026-11-21 on another
+# workstation, one suite after the other: 519 s in all and 166 s for the three
+# (the health check alone 112 s, most of it generating its keys). Neither is a
+# measurement of the runner; the job time of a run is.
 #
 # scripts/quality/scope/ci-job-scope.sh, in its `suites` mode, says which suites
 # this change can affect, using the map in scripts/quality/scope/suite-scope.txt.

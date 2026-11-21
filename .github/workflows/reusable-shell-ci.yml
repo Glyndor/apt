@@ -247,9 +247,14 @@ jobs:
     # 2026-11-20. The image is named because this job's verdict depends on the
     # tools it ships, so a new image arrives as a commit and not overnight.
     runs-on: ubuntu-26.04
-    # Bound: worst measured run across the three channels is 83s in apt; the
-    # suite grows with the tree. Ten times that, rounded up, never under ten
-    # minutes; the six-hour default is what a hang would otherwise cost.
+    # Bound: a ceiling, not ten times a current measurement. It was set from
+    # the worst run of this job across the three channels, 83s in apt, when
+    # that was written (before 2026-11-08). The suite has grown since: every
+    # suite of apt run one after the other took 519s on a workstation on
+    # 2026-11-21, and 434s on another that day, so 15 minutes is under twice
+    # what this job may now cost. The runner was not re-measured then; read the
+    # job time of recent runs before changing the number. The six-hour default
+    # is what a hang would otherwise cost.
     timeout-minutes: 15
     defaults:
       run:
