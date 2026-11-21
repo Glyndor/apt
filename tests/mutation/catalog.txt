@@ -370,3 +370,11 @@ packages-suite-unknown	scripts/quality/scope/ci-job-scope.sh	    if any(s not in
 line-limit-scope-base	.github/workflows/reusable-line-limit.yml	            && git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then	            && cat scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then	tests/ci/suites/lint-job-scope.test.sh
 line-limit-txt-comments	.github/workflows/reusable-line-limit.yml	*.yml|*.yaml|*.toml|*.txt) hash_comment=1	*.yml|*.yaml|*.toml) hash_comment=1	tests/ci/reusable/reusable-line-limit.test.sh
 line-limit-caller-txt	.github/workflows/line-limit.yml	svelte yml yaml txt"	svelte yml yaml"	tests/ci/reusable/reusable-line-limit.test.sh
+
+# The refusals below became visible when the check started reading a literal
+# `return N` of a shell function. Each was measured the same way as the ones above.
+verify-published-entry-unreachable	scripts/verify/verify-published.sh	if ! fetch "$url" "$dest" "$max_bytes"; then	if false; then	tests/verify/verify-published.test.sh
+verify-published-entry-size	scripts/verify/verify-published.sh	if [ "$got_size" != "$want_size" ]; then	if false; then	tests/verify/verify-published.test.sh
+verify-published-entry-hash	scripts/verify/verify-published.sh	if [ "$got_hash" != "$want_hash" ]; then	if false; then	tests/verify/verify-published.test.sh
+mutation-coverage-return	scripts/quality/coverage/check-mutation-coverage.sh	            or (n not in python and RETURN.search(code))	            or False	tests/quality/coverage/check-mutation-coverage.test.sh
+mutation-coverage-return-python	scripts/quality/coverage/check-mutation-coverage.sh	n not in python and RETURN.search(code)	RETURN.search(code)	tests/quality/coverage/check-mutation-coverage.test.sh

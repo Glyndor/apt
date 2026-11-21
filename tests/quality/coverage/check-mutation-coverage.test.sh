@@ -59,6 +59,14 @@ mkdir -p "$F/scripts/area" "$F/keyring/upgrade" "$F/tests/mutation" "$F/.github/
 	printf '%s\n' '#!/bin/sh' 'fail() {' '	echo "$*" >&2' '	exit 1' '}'
 	printf '%s\n' '[ -f /etc/hostname ] || fail "no hostname"'
 } > "$F/keyring/upgrade/tool"
+# A function that refuses by returning 1 to its caller, the returns that are
+# not refusals, and a Python `return 1` that is a value.
+{
+	printf '%s\n' '#!/usr/bin/env bash' 'probe() {' '	if [ ! -r "$1" ]; then' '		echo "unreadable" >&2'
+	printf '%s\n' '		return 1' '	fi' '}'
+	printf '%s\n' 'fine() { return 0; }' 'quiet() { return; }' 'passthrough() { "$@"; local rc=$?; return "$rc"; }'
+	printf '%s\n' "python3 - <<'PY'" 'def check(value):' '    if value:' '        return 1' '    return 0' 'PY'
+} > "$F/scripts/area/funcs.sh"
 printf '%s\n' 'not a script, so its exit 1 is not read' > "$F/scripts/area/notes.txt"
 {
 	printf '%s\n' 'jobs:' '  publish:' '    steps:' '      - name: Step' '        run: |'
@@ -73,6 +81,7 @@ entry() { printf '%s\t%s\t%s\t%s\t%s\n' "$@"; }
 	entry guard-dots scripts/area/guard.sh '*..*)' '__never__)' tests/a.test.sh
 	entry guard-python scripts/area/guard.sh 'if len(sys.argv[1]) > 9:' 'if False:' tests/a.test.sh
 	entry publish-token .github/workflows/publish.yml 'if [ -z "$TOKEN" ]; then' 'if false; then' tests/b.test.sh
+	entry func-unreadable scripts/area/funcs.sh 'if [ ! -r "$1" ]; then' 'if false; then' tests/a.test.sh
 	for letter in a b c d e; do
 		entry "message-$letter" scripts/area/messages.sh "if sys.argv[1] == \"$letter\":" 'if False:' tests/a.test.sh
 	done
@@ -93,8 +102,8 @@ line_of() { grep -nF -- "$2" "$F/$1" | head -1 | cut -d: -f1; }
 # --- the control: everything covered ------------------------------------------
 rc=0; run || rc=$?
 check "a fixture whose every refusal is covered passes" "0" "$rc"
-check "and counts the twelve refusals, not the comment, the string, the text file, the undefined fail or the Python exits that end well" "1" \
-	"$(said '12 refusal(s) in 4 script(s): 11 catalogued, 1 exempt.')"
+check "and counts the thirteen refusals, not the comment, the string, the text file, the undefined fail, the Python exits that end well or the returns that are not refusals" "1" \
+	"$(said '13 refusal(s) in 5 script(s): 12 catalogued, 1 exempt.')"
 
 # --- each shape of refusal is found once its cover is gone ------------------------
 for case in "guard-argument:scripts/area/guard.sh:no argument" \
@@ -103,6 +112,7 @@ for case in "guard-argument:scripts/area/guard.sh:no argument" \
 	"guard-dots:scripts/area/guard.sh:*..*)" \
 	"guard-python:scripts/area/guard.sh:if len(sys.argv[1]) > 9:" \
 	"publish-token:.github/workflows/publish.yml:if [ -z" \
+	"func-unreadable:scripts/area/funcs.sh:if [ ! -r" \
 	"message-a:scripts/area/messages.sh:if sys.argv[1] == \"a\":" \
 	"message-b:scripts/area/messages.sh:if sys.argv[1] == \"b\":" \
 	"message-c:scripts/area/messages.sh:if sys.argv[1] == \"c\":" \
@@ -130,6 +140,24 @@ reset; awk '$0 == "    sys.exit(code)" { print "    sys.exit(\"now a message\")"
 	"$F/scripts/area/messages.sh" > "$WORK/messages" && mv "$WORK/messages" "$F/scripts/area/messages.sh"
 rc=0; run || rc=$?
 check "a status held in a variable is not read, and a message in its place is" "1" "$rc"
+
+# A literal non-zero return of a shell function is a refusal; `return 0`, a
+# bare `return` and a status held in a variable are not, and each becomes one
+# the moment its status is a literal 1. The Python `return 1` is a value, and
+# reads as a refusal once the heredoc that makes it Python is gone.
+for form in 'fine() { return 0; }' 'quiet() { return; }' 'passthrough() { "$@"; local rc=$?; return "$rc"; }'; do
+	reset; awk -v form="$form" '$0 == form { sub(/return( 0| "\$rc")?;/, "return 1;") } { print }' \
+		"$F/scripts/area/funcs.sh" > "$WORK/funcs" && mv "$WORK/funcs" "$F/scripts/area/funcs.sh"
+	now="$(grep -F "${form%%(*}()" "$F/scripts/area/funcs.sh")"
+	check "the fixture now returns 1 in ${form%%(*}" "1" "$(printf '%s\n' "$now" | grep -c 'return 1;')"
+	rc=0; run || rc=$?
+	check "${form} is not a refusal, and becomes one as return 1" "1" "$rc"
+	check "naming the line it is on" "1" "$(said ": $now")"
+done
+reset; sed -i "s/^python3 - <<'PY'\$/cat <<'PY'/" "$F/scripts/area/funcs.sh"
+rc=0; run || rc=$?
+check "a return 1 in the Python of a heredoc is not read, and is once the heredoc is not Python" "1" "$rc"
+check "naming the line" "1" "$(said "scripts/area/funcs.sh:$(line_of scripts/area/funcs.sh '    if value:')-")"
 
 reset; : > "$F/tests/mutation/exemptions.txt"
 rc=0; run || rc=$?

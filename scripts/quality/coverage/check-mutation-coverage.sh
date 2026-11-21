@@ -13,7 +13,9 @@
 # WHAT IS A REFUSAL
 #
 # A line of code, comments and quoted text aside, that exits with a non-zero
-# status: `exit N`, a call of `fail` where the file defines that helper, or, in
+# status: `exit N`, a call of `fail` where the file defines that helper,
+# `return N` in the shell of a function (`return 1` is one; `return 0`, a bare
+# `return` and `return "$rc"` are not), or, in
 # the Python a script carries, `sys.exit(...)` or `raise SystemExit(...)` whose
 # argument is a non-zero integer or starts with a string: `sys.exit(3)`,
 # `sys.exit("no index")`, `sys.exit(f"cannot read {path}")`,
@@ -45,10 +47,18 @@
 # is a failure: an exemption that outlived its premise keeps a hole open after
 # the reason for it is gone.
 #
-# Only a literal non-zero status or a string counts: `exit "$rc"`, `return 1`
-# and `sys.exit(message)`, whose value is not known without running the code (a
-# status that may be 0 as likely as a message), are not read, so a helper that
-# refuses that way is invisible here.
+# A function that returns 1 hands the refusal to its caller, which decides what
+# it means: `check_entry` returns 1 for an object that does not match its
+# signed size, and the caller retries it and then exits. The `return 1` is the
+# place a mutation removes that refusal, so it is read as one. A function that
+# returns 1 to say "no" to a question, and not to refuse, is read the same
+# way, and is exempted with that reason. A `return` inside the Python of a
+# heredoc is Python returning a value, and is not read.
+#
+# Only a literal non-zero status or a string counts: `exit "$rc"`,
+# `return "$rc"` and `sys.exit(message)`, whose value is not known without
+# running the code (a status that may be 0 as likely as a message), are not
+# read, so a helper that refuses that way is invisible here.
 #
 # WHAT IS READ
 #
@@ -71,6 +81,9 @@ WATCHED_DIRS = ("scripts", "keyring/upgrade")
 WATCHED_FILES = (".github/workflows/publish.yml",)
 SHEBANG = re.compile(r"^#!.*(/| )(sh|bash|dash)(\s|$)")
 EXIT = re.compile(r"(?<![\w$.-])exit\s+[1-9][0-9]*\b")
+RETURN = re.compile(r"(?<![\w$.-])return\s+[1-9][0-9]*\b")
+# A heredoc handed to python3, and the word that ends it.
+PY_HEREDOC = re.compile(r"\bpython3\b[^\n]*<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?")
 # A quote is read as STRING (see code_of) so a string argument can be told from
 # `sys.exit()`, whose parentheses hold nothing.
 STRING = "\x01"
@@ -122,6 +135,23 @@ def watched():
     return found
 
 
+def python_lines(lines):
+    """0-based numbers of the lines of a heredoc handed to python3."""
+    inside, n = set(), 0
+    while n < len(lines):
+        start = PY_HEREDOC.search(lines[n])
+        if not start or "python3" not in code_of(lines[n]):
+            n += 1
+            continue
+        tag = start.group(1)
+        n += 1
+        while n < len(lines) and lines[n].strip() != tag:
+            inside.add(n)
+            n += 1
+        n += 1
+    return inside
+
+
 def code_of(line, mark=" "):
     """The line with quoted text and a trailing comment removed; a quote leaves `mark`."""
     out, quote, i = [], None, 0
@@ -159,6 +189,7 @@ def blank(line):
 def refusals(rel, lines):
     """(first line, refusal line) of every refusal, 0-based."""
     defines_fail = any(FAIL_DEF.match(line) for line in lines)
+    python = python_lines(lines)
     found = []
     for n, line in enumerate(lines):
         if blank(line):
@@ -167,7 +198,8 @@ def refusals(rel, lines):
         if FAIL_DEF.match(line):
             continue
         hit = EXIT.search(code) or PY_EXIT.search(code_of(line, STRING)) \
-            or (defines_fail and FAIL_CALL.search(code))
+            or (defines_fail and FAIL_CALL.search(code)) \
+            or (n not in python and RETURN.search(code))
         if not hit:
             continue
         start = statement_start(lines, n)
