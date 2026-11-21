@@ -123,11 +123,14 @@ jobs:
           # Prints one line per pin that is behind, whose upstream could not
           # be read, or carries no version comment; prints nothing when every
           # pin is annotated and at its newest upstream tag. The enumeration
-          # matches every `uses: ...@<40 hex>` pin, the same shape the count
-          # below uses, so an unannotated pin cannot slip past as silent
-          # current while the success line claims it was inspected.
+          # matches every `uses: ...@<40 hex>` pin that is a key (at the start
+          # of a line, after a list dash), the same shape the count below uses, so
+          # an unannotated pin cannot slip past as silent current while the
+          # success line claims it was inspected, and the text of a run: block
+          # that mentions `uses:` is not read as a pin.
           pins_behind_upstream() {
-            grep -rhoE 'uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}.*' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null \
+            grep -rhE '^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null \
+              | sed -E 's/^[[:space:]]*(-[[:space:]]+)?//' \
               | LC_ALL=C sort -u \
               | while read -r line; do
                   action="$(printf '%s' "$line" | sed -E 's|uses:[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@[0-9a-f]{40}.*|\1|')"
@@ -250,7 +253,7 @@ jobs:
           if [ "$age_days" -gt "$MAX_AGE_DAYS" ]; then
             # Silence is only an alarm when there was something to say.
             behind="$(pins_behind_upstream; pip_pins_behind_upstream)"
-            pins="$(grep -rhoE 'uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null | LC_ALL=C sort -u | wc -l | tr -d ' ')"
+            pins="$(grep -rhoE '^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null | sed -E 's/^[[:space:]]*(-[[:space:]]+)?//' | LC_ALL=C sort -u | wc -l | tr -d ' ')"
             pip_count="$(pip_pins | grep -c '^pin ' || true)"
             pip_note=""
             if [ "$pip_count" -gt 0 ]; then

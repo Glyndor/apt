@@ -450,6 +450,28 @@ rc=0; PIP_ROOT="$WORK/pip-current" PIP_CONFIG="$WORK/pip-current/.github/dependa
 check "within the limit a pip pin that is behind is not asked about" "0" "$rc"
 check "and PyPI was not asked" "0" "$(pypi_calls | tr -d ' ')"
 
+# --- text that names a pin is not a pin ---------------------------------------------------
+# The enumeration used to take every `uses: owner/repo@<sha>` anywhere in a workflow, so
+# the text of a run: block that mentioned one (an echo, a message, a planted example) was
+# asked about upstream and reported as a pin that could not be read, a false red in the
+# job that is meant to say whether pins are behind. Only a key counts. The same silence,
+# with and without that text, has to say the same thing.
+fixture "$WORK/wf-prose" "actions/checkout v7.0.1"
+upstream actions/checkout v7.0.1
+{
+	echo "      - run: |"
+	echo "          echo \"uses: owner/prose@0000000000000000000000000000000000000000 # v1.0.0\""
+	echo "          echo uses: owner/other@0000000000000000000000000000000000000000"
+} >> "$WORK/wf-prose/ci.yml"
+fixture "$WORK/wf-bare" "actions/checkout v7.0.1"
+for dir in wf-bare wf-prose; do
+	out="$(run_step "$MAX_AGE_DAYS" "$WORK/old.resp" "$WORK/$dir")"; rc=$?
+	check "a silence over the limit with its one pin current passes ($dir)" "0" "$rc"
+	check "and counts the one pin, not the text that names two more ($dir)" "1" \
+		"$(printf '%s' "$out" | grep -c 'every one of the 1 pinned action(s) is at its newest upstream tag')"
+	check "and asked upstream about that pin only ($dir)" "1" "$(git_calls | tr -d ' ')"
+done
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

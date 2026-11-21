@@ -485,3 +485,5 @@ sort-pinned-dependabot-freshness-3	.github/workflows/reusable-dependabot-freshne
 sort-pinned-dependabot-freshness-4	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -V | tail -n 1)" != "$tag" ]; then	sort -V | tail -n 1)" != "$tag" ]; then	tests/ci/policy/locale-pinned.test.sh
 sort-pinned-dependabot-freshness-5	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -V | tail -n 1)" != "$version" ]; then	sort -V | tail -n 1)" != "$version" ]; then	tests/ci/policy/locale-pinned.test.sh
 sort-pinned-dependabot-freshness-6	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -u | wc -l | tr -d ' ')"	sort -u | wc -l | tr -d ' ')"	tests/ci/policy/locale-pinned.test.sh
+pins-enumerated-as-keys	.github/workflows/reusable-dependabot-freshness.yml	grep -rhE '^[[:space:]]*(-[[:space:]]+)?uses:	grep -rhE 'uses:	tests/ci/reusable/reusable-dependabot-freshness.test.sh
+pins-counted-as-keys	.github/workflows/reusable-dependabot-freshness.yml	grep -rhoE '^[[:space:]]*(-[[:space:]]+)?uses:	grep -rhoE 'uses:	tests/ci/reusable/reusable-dependabot-freshness.test.sh
