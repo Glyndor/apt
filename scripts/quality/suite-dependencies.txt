@@ -65,7 +65,6 @@ tests/publication/publish/publish-workflow-bootstrap.test.sh -
 tests/publication/publish/publish-workflow-release-order.test.sh -
 tests/publication/publish/publish-workflow-signing-key.test.sh -
 tests/publication/publish/publish-workflow-sync.test.sh -
-tests/publication/publish/publish-workflow.test.sh -
 tests/publish/prune-installers.test.sh -
 tests/publish/purge-cache.test.sh -
 tests/publish/purge-cache/purge-cache-budget.test.sh -
@@ -106,6 +105,7 @@ tests/ci/policy/freshness-pr-scope.test.sh python3-yaml
 tests/ci/policy/jobs-are-bounded.test.sh python3-yaml
 tests/ci/policy/publish-workflow-triggers.test.sh python3-yaml
 tests/ci/policy/workflow-shape.test.sh python3-yaml
+tests/publication/publish/publish-workflow.test.sh python3-yaml
 tests/ci/suites/lint-job-scope.test.sh python3-yaml
 tests/ci/suites/shell-ci-scope.test.sh python3-yaml
 tests/publish/purge-cache/purge-cache-pruned.test.sh python3-yaml

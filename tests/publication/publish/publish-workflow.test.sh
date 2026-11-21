@@ -171,6 +171,94 @@ check "the two budgets together leave room inside the job's timeout" "1" \
 	"$([ -n "$purge_budget" ] && [ -n "$budget" ] && [ -n "$timeout_min" ] && \
 	   [ $(( purge_budget + budget + 120 )) -le $(( timeout_min * 60 )) ] && echo 1 || echo 0)"
 
+# --- nothing opens a downloaded package before its signature is verified ----
+#
+# The release assets are chosen by whoever can publish a product release, and
+# this job later holds the archive signing key and the bucket credentials, so a
+# package parser must not see a downloaded .deb before a release key vouched
+# for its bytes. verify-debs.sh keeps that order inside itself; this keeps it
+# across the job. Every step before the one that runs verify-debs.sh is read,
+# with every script it runs and every script those name, and none may run
+# dpkg-deb or a dpkg mode that reads an archive. The steps and scripts are
+# found by reading them, not from a list, so a new step or a new script call
+# is checked the day it is added.
+#
+# Then the same check over two copies of the workflow: the release-order step
+# moved back before the verification, which is how this workflow was until
+# 2026-11-21 (check-release-order.sh reads each .deb's control fields), and a
+# dpkg-deb planted in the download step. Both must be reported, so the check is
+# shown to see a script call and a direct one.
+opens_before_verify() { # <workflow> -> what opens a package early, one per line
+	python3 -I - "$1" "$PWD" <<'PY'
+import os
+import re
+import sys
+
+import yaml
+
+workflow, root = sys.argv[1], sys.argv[2]
+OPENS = re.compile(r"\bdpkg-deb\b|\bdpkg\b[^\n]*\s(-[IcefxX]|--(info|contents|field|extract|fsys-tarfile|control|install))\b")
+SCRIPT = re.compile(r"(?:\./)?((?:scripts|keyring/upgrade)/[\w./-]+\.sh|[\w-]+\.sh)\b")
+scripts = {}
+for top in ("scripts", "keyring/upgrade"):
+    for dirpath, _, names in os.walk(os.path.join(root, top)):
+        for name in names:
+            rel = os.path.relpath(os.path.join(dirpath, name), root)
+            scripts.setdefault(name, rel)
+            scripts[rel] = rel
+
+
+def code(text):
+    return [l for l in text.splitlines() if not l.strip().startswith("#")]
+
+
+def reached(text, seen):
+    for line in code(text):
+        for match in SCRIPT.finditer(line):
+            rel = scripts.get(match.group(1)) or scripts.get(os.path.basename(match.group(1)))
+            if rel and rel not in seen:
+                seen.add(rel)
+                reached(open(os.path.join(root, rel), encoding="utf-8").read(), seen)
+    return seen
+
+
+steps = yaml.safe_load(open(workflow))["jobs"]["publish"]["steps"]
+gate = next(i for i, s in enumerate(steps)
+            if any("scripts/verify/verify-debs.sh" in l for l in code(s.get("run", ""))))
+for step in steps[:gate]:
+    body = step.get("run", "")
+    name = step.get("name", step.get("uses", "?"))
+    if any(OPENS.search(l) for l in code(body)):
+        print(f"{name}: the step itself")
+    for rel in sorted(reached(body, set())):
+        if any(OPENS.search(l) for l in code(open(os.path.join(root, rel), encoding="utf-8").read())):
+            print(f"{name}: {rel}")
+PY
+}
+
+check "no step before the signature check opens a package, itself or through a script" "" \
+	"$(opens_before_verify "$WF")"
+
+WORK_OB="$(mktemp -d)"
+python3 -I - "$WF" "$WORK_OB/order-first.yml" "$WORK_OB/planted.yml" <<'PY'
+import sys
+text = open(sys.argv[1]).read()
+order = text.index("      - name: Refuse a release older than the one served\n")
+end = text.index("      - name: Gather the verified packages for the build\n")
+verify = text.index("      - name: Verify product .deb release signatures\n")
+assert verify < order < end
+moved = text[:verify] + text[order:end] + text[verify:order] + text[end:]
+open(sys.argv[2], "w").write(moved)
+old = '          echo "collected $count product package(s)"\n'
+assert text.count(old) == 1
+open(sys.argv[3], "w").write(text.replace(old, '          dpkg-deb -f debs/podup/x.deb Package || true\n' + old))
+PY
+check "the control: the release-order step before the verification is reported, through its script" "1" \
+	"$(opens_before_verify "$WORK_OB/order-first.yml" | grep -c '^Refuse a release older than the one served: scripts/verify/check-release-order.sh$')"
+check "the control: a dpkg-deb in an earlier step is reported" "1" \
+	"$(opens_before_verify "$WORK_OB/planted.yml" | grep -c '^Download the latest .deb of each product: the step itself$')"
+rm -rf "$WORK_OB"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

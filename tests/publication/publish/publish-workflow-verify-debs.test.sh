@@ -102,17 +102,17 @@ check "the step was extracted from the workflow" "1" \
 
 D="$(sandbox good good)"; rc=0; run_step "$D" "$WORK/step.sh" || rc=$?
 check "a .deb with a valid signature is admitted" "0" "$rc"
-check "and it is moved into debs/ for the build" "1" "$([ -f "$D/debs/podup_1.0.0_amd64.deb" ] && echo 1 || echo 0)"
+# It stays in its product's directory: the release-order step reads it there,
+# and a later step gathers the verified files for the build.
+check "and it stays in debs/podup for the release-order check" "1" "$([ -f "$D/debs/podup/podup_1.0.0_amd64.deb" ] && echo 1 || echo 0)"
 
 D="$(sandbox bad bad)"; rc=0; run_step "$D" "$WORK/step.sh" || rc=$?
 check "a .deb with an invalid signature stops the step" "1" "$rc"
 check "and says the signature is invalid" "1" "$(grep -qi 'invalid signature' "$WORK/out" && echo 1 || echo 0)"
-check "and the .deb is not moved into debs/" "0" "$([ -f "$D/debs/podup_1.0.0_amd64.deb" ] && echo 1 || echo 0)"
 
 D="$(sandbox notag good)"; rm -f "$D/tags/podup"; rc=0; run_step "$D" "$WORK/step.sh" || rc=$?
 check "a product with no recorded tag stops the step" "1" "$rc"
 check "and the verifier says the tag is empty" "1" "$(grep -c 'but the expected tag is empty' "$WORK/out")"
-check "and the .deb is not moved into debs/" "0" "$([ -f "$D/debs/podup_1.0.0_amd64.deb" ] && echo 1 || echo 0)"
 
 # --- the control: without --require-tag, the missing tag passes ---------------
 sed 's|verify-debs\.sh --require-tag |verify-debs.sh |' "$WF" > "$WORK/publish-noflag.yml"

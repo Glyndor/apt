@@ -379,9 +379,12 @@ PYEOF
 	# control fields, and every byte of it comes from whoever can attach a
 	# release asset: a parser bug reached by those bytes would run in the
 	# publish job, which later holds the archive signing key and the bucket
-	# credentials. So nothing reads inside the package before a release key has
-	# vouched for exactly these bytes, and everything above looks only at the
-	# file names and at the bytes as bytes.
+	# credentials. So within this script nothing reads inside the package
+	# before a release key has vouched for these bytes, and everything above
+	# looks only at the file names and at the bytes as bytes. Across the job
+	# the same holds because publish.yml runs this before any other step that
+	# opens a package, which tests/publication/publish/publish-workflow.test.sh
+	# asserts.
 
 	# Reject the reserved keyring package name on the *control* field, not just
 	# the filename: a product could ship a normally-named, validly-signed .deb

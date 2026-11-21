@@ -81,6 +81,7 @@ verify-debs-package-mismatch	scripts/verify/verify-debs.sh	if [ "$pkg" != "$EXPE
 verify-debs-filename-prefix	scripts/verify/verify-debs.sh	if [[ "$(basename "$deb")" != "${EXPECTED_PACKAGE}_"* ]]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-version-mismatch	scripts/verify/verify-debs.sh	if [ "$upstream" != "$want" ] && [ "${ver#*:}" != "$want" ]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-require-tag	scripts/verify/verify-debs.sh	if [ "$REQUIRE_TAG" -eq 1 ] && [ -z "$EXPECTED_TAG" ]; then	if false; then	tests/verify/verify-debs.test.sh,tests/publication/publish/publish-workflow-verify-debs.test.sh
+publish-opened-before-signature	.github/workflows/publish.yml	echo "collected $count product package(s)"	dpkg-deb -f /dev/null Package >/dev/null 2>&1 || true; echo "collected $count product package(s)"	tests/publication/publish/publish-workflow.test.sh
 publish-verify-debs-require-tag	.github/workflows/publish.yml	./scripts/verify/verify-debs.sh --require-tag "debs/$p"	./scripts/verify/verify-debs.sh "debs/$p"	tests/publication/publish/publish-workflow-verify-debs.test.sh
 verify-debs-revision-strip	scripts/verify/verify-debs.sh	if [ "$revision" != "$upstream" ] && [[ "$revision" =~ ^[0-9][0-9A-Za-z.+~]*$ ]]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-architecture	scripts/verify/verify-debs.sh	if [ -n "$claimed_arch" ] && [ "$claimed_arch" != "$ctrl_arch" ]; then	if false; then	tests/verify/verify-debs.test.sh

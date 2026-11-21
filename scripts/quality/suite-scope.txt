@@ -391,8 +391,10 @@ tests/publish/purge-cache/purge-cache-pruned.test.sh
 	tests/publish/**
 	.github/workflows/publish.yml
 
+# It reads every script the steps before the signature check run, at any depth.
 tests/publication/publish/publish-workflow.test.sh
-	scripts/publish/**
+	scripts/**
+	keyring/upgrade/**
 	tests/publication/publish/**
 	.github/workflows/publish.yml
 
