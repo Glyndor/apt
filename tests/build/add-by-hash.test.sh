@@ -91,6 +91,27 @@ check "every file of the SHA256 list has its by-hash copy" "6" "$copies"
 check "holding the bytes of the file it is named for" "6" "$same"
 check "and nothing else is under by-hash" "6" "$(find "$D/dists/stable" -path '*/by-hash/SHA256/*' -type f | wc -l)"
 
+# --- the digest of both signatures is the script's choice, not gpg's default ---
+#
+# `--digest-algo SHA512` is not a refusal, and gpg's own default is SHA512 on the
+# gpg this was measured with (2.4) and SHA256 on the one before it (2.2), so a
+# plain run proves nothing: with the option gone the default writes the same
+# bytes. The case moves the default away, with a preference in the home gpg runs
+# in, and reads what add-by-hash.sh wrote. Its first check is that the
+# preference does move the default, which is what lets the case tell the option
+# from the default.
+printf 'personal-digest-preferences SHA256\n' > "$GNUPGHOME/gpg.conf"
+printf 'probe\n' > "$WORK/probe"
+gpg --batch --yes --clearsign --output "$WORK/probe.asc" "$WORK/probe" 2>/dev/null
+check "under that preference gpg signs with SHA256 unless told otherwise" "Hash: SHA256" "$(sed -n 2p "$WORK/probe.asc")"
+D="$(fresh digest)"
+rc=0; run "$D" || rc=$?
+check "an archive is signed under that preference" "0" "$rc"
+check "InRelease is signed with SHA512 whatever gpg defaults to" "Hash: SHA512" "$(sed -n 2p "$D/dists/stable/InRelease")"
+check "and so is Release.gpg" "digest algo 10" \
+	"$(gpg --list-packets "$D/dists/stable/Release.gpg" 2>/dev/null | grep -o 'digest algo [0-9]*' | head -1)"
+rm -f "$GNUPGHOME/gpg.conf"
+
 # A field already there is accepted only as the line this script writes.
 D="$(fresh present)"
 sed -i 's/^MD5Sum:$/Acquire-By-Hash: yes\nMD5Sum:/' "$D/dists/stable/Release"

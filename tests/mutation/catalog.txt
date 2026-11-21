@@ -432,3 +432,5 @@ verify-debs-pq-state-reported	scripts/verify/verify-debs.sh	echo "ML-DSA-65 seco
 sync-archive-endpoint-overridden	scripts/publish/sync-archive.sh	  if [ -n "${!v+set}" ]; then	  if false; then	tests/publish/sync-archive.test.sh
 prune-installers-endpoint-overridden	scripts/publish/prune-installers.sh	if [ -n "${!v+set}" ]; then	if false; then	tests/publish/prune-installers.test.sh
 build-repo-key-out-of-env	scripts/build/build-repo.sh	unset GLYNDOR_APT_GPG_PRIVATE_KEY	:	tests/build/build-repo.test.sh
+by-hash-digest-clearsign	scripts/build/add-by-hash.sh	--digest-algo SHA512 --clearsign	--clearsign	tests/build/add-by-hash.test.sh
+by-hash-digest-detached	scripts/build/add-by-hash.sh	--digest-algo SHA512 --armor --detach-sign	--armor --detach-sign	tests/build/add-by-hash.test.sh
