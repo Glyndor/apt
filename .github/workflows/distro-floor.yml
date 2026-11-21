@@ -31,6 +31,8 @@ permissions:
 jobs:
   floor:
     name: ${{ matrix.image }} should ${{ matrix.expect }}
+    # ubuntu-latest on purpose: the verdict comes from the container image the
+    # matrix names, and the runner only hosts docker.
     runs-on: ubuntu-latest
     # Measured locally on 2026-09-12: 24 to 40 seconds per image, pull and
     # apt-get update included. Fifteen minutes leaves room for a slow mirror

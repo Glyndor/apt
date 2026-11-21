@@ -151,7 +151,7 @@ CI is split by responsibility rather than gathered in one file:
 |---|---|
 | `tests.yml` | the suite and shellcheck |
 | `pr-hygiene.yml` | the pull request itself is malformed |
-| `freshness.yml` | something scheduled stopped happening elsewhere |
+| `freshness.yml` | something scheduled stopped happening elsewhere, or a tool pinned in a reusable fell behind its upstream release |
 | `dco.yml`, `line-limit.yml`, `workflow-lint.yml` | one rule each |
 | `commit-hygiene.yml` | a commit carries a personal email address, or the change adds a line shaped like a credential |
 | `publish.yml` | the daily build and upload of the archive |

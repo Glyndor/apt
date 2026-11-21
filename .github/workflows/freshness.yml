@@ -55,7 +55,8 @@ on:
   schedule:
     - cron: "13 8,20 * * *"
   # A pull request runs these only when it changes what these jobs are made of:
-  # this file, the two reusables it calls and the script its suite job runs.
+  # this file, the two reusables it calls, the script its suite job runs and
+  # the one its tool-versions job runs.
   # Anything else cannot change the verdict, so it would only repeat the same
   # verdicts. None of the jobs here is a
   # required check, which is what makes a path filter safe: a required check
@@ -69,6 +70,7 @@ on:
       - .github/workflows/reusable-dependabot-freshness.yml
       - .github/workflows/reusable-schedule-freshness.yml
       - scripts/monitoring/check-suite-on-main.sh
+      - scripts/monitoring/check-tool-versions.sh
   push:
     branches: [main]
 
@@ -77,13 +79,15 @@ permissions:
 
 jobs:
   # A pull request reaches this file only through the paths above, and each of
-  # them can change the answer of one group of jobs, not of all seven. This job
+  # them can change the answer of one group of jobs, not of all of them. This job
   # reads the changed files and says which groups have anything to look at. It
   # fails open: on a push or a schedule it does not run, and if it cannot read
   # the diff, or sees a path it does not know, every output is true. A job below
   # is skipped only when an output here is exactly "false".
   scope:
     if: github.event_name == 'pull_request'
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -92,6 +96,7 @@ jobs:
       dependabot: ${{ steps.scope.outputs.dependabot }}
       schedule: ${{ steps.scope.outputs.schedule }}
       suite: ${{ steps.scope.outputs.suite }}
+      tools: ${{ steps.scope.outputs.tools }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -106,6 +111,7 @@ jobs:
           dependabot=true
           schedule=true
           suite=true
+          tools=true
           changed="$(mktemp)"
           trap 'rm -f "$changed"' EXIT
           # HEAD^1..HEAD is the pull request only on the merge commit the
@@ -117,12 +123,14 @@ jobs:
             dependabot=false
             schedule=false
             suite=false
+            tools=false
             while IFS= read -r -d '' path; do
               case "$path" in
                 .github/workflows/reusable-dependabot-freshness.yml) dependabot=true ;;
                 .github/workflows/reusable-schedule-freshness.yml) schedule=true ;;
                 scripts/monitoring/check-suite-on-main.sh) suite=true ;;
-                *) dependabot=true; schedule=true; suite=true ;;
+                scripts/monitoring/check-tool-versions.sh) tools=true ;;
+                *) dependabot=true; schedule=true; suite=true; tools=true ;;
               esac
             done < "$changed"
           fi
@@ -130,6 +138,7 @@ jobs:
             echo "dependabot=$dependabot"
             echo "schedule=$schedule"
             echo "suite=$suite"
+            echo "tools=$tools"
           } >> "$GITHUB_OUTPUT"
 
   dependabot-freshness:
@@ -139,6 +148,19 @@ jobs:
     with:
       max-age-days: 15
 
+  # HOW THE LIMIT OF A DAILY OR WEEKLY CRON IS CHOSEN
+  #
+  # Two periods plus one day: three days for a daily cron, fifteen for a
+  # weekly one, the rule reusable-schedule-freshness.yml states for its
+  # max-age-days input. One dropped firing passes and a second does not, and
+  # the extra day absorbs GitHub starting a schedule hours late, which is the
+  # ordinary case here (measured lateness of three to six hours below). Every
+  # daily and weekly watcher in this file uses it, so two crons of the same
+  # cadence cannot be held to limits that differ for no written reason.
+  # A cron that fires more than once a day keeps a limit of its own instead,
+  # because the cadence GitHub delivers is far from the one it asks for.
+  #
+  # publish.yml is daily, so three days.
   freshness-publish:
     needs: scope
     if: ${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}
@@ -150,8 +172,10 @@ jobs:
       workflow: publish.yml
       max-age-days: 3
 
-  # Weekly cron, so ten days: one missed Monday firing plus the usual lateness
-  # still passes, two do not. Added once the workflow had a run history to
+  # Weekly cron, so fifteen days by the rule above: one missed Monday firing
+  # plus the usual lateness still passes, two do not. It was ten, which the
+  # first missed Monday already exceeded, so the sentence before this one was
+  # not true of it. Added once the workflow had a run history to
   # measure against; before that the watcher would have opened red with
   # nothing wrong.
   freshness-distro-floor:
@@ -163,7 +187,7 @@ jobs:
     uses: ./.github/workflows/reusable-schedule-freshness.yml
     with:
       workflow: distro-floor.yml
-      max-age-days: 10
+      max-age-days: 15
 
   freshness-health-check:
     needs: scope
@@ -224,12 +248,9 @@ jobs:
   # cron stops, drift stops being reported and nothing says so. That is the
   # same silence every job above exists to break.
   #
-  # Three days rather than one. The cron asks for 09:41Z and the last five
-  # firings started between 13:00Z and 13:50Z, so three to four hours late is
-  # ordinary here; a one-day threshold on a daily job would trip on lateness
-  # rather than on failure. Three tolerates two skipped firings, and drift is a
-  # slow fault: it harms nobody today, it harms the day somebody fixes a bug in
-  # one copy and not the others.
+  # Three days, by the rule above for a daily cron. The cron asks for 09:41Z
+  # and the last five firings started between 13:00Z and 13:50Z, so three to
+  # four hours late is ordinary here, which the day of margin covers.
   freshness-drift:
     needs: scope
     if: ${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}
@@ -240,6 +261,28 @@ jobs:
     with:
       workflow: drift.yml
       max-age-days: 3
+
+  # mutation.yml runs the catalogue every Monday and on demand, never on a
+  # pull request, so its cron is the only thing that asks whether the guards
+  # still die under their mutations. A cron that stops takes that question
+  # with it, and nothing says so.
+  #
+  # Fifteen days, by the rule above for a weekly cron. The cron landed on
+  # 2026-11-16 and had not fired when this job was added; the reusable gives a
+  # workflow with no scheduled run on record a grace period of the same fifteen
+  # days from the commit that added its file, and passes with a notice until
+  # then, so the watcher is not born red and still fails if the first Monday
+  # never comes.
+  freshness-mutation:
+    needs: scope
+    if: ${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/reusable-schedule-freshness.yml
+    with:
+      workflow: mutation.yml
+      max-age-days: 15
 
   # Reports the verdict of the suite on main, which nothing else does.
   #
@@ -304,6 +347,8 @@ jobs:
     needs: scope
     if: ${{ !cancelled() && needs.scope.outputs.suite != 'false' }}
     name: suite on main
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
     runs-on: ubuntu-latest
     # A newer push to the same pull request supersedes the poll; on main and on
     # the schedule every run is kept, as each answers for its own commit.
@@ -353,3 +398,55 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: ./scripts/monitoring/check-suite-on-main.sh "$REPO" workflow-lint.yml main
+
+  # The versions of shellcheck and actionlint written inside the reusables have
+  # no update path: Dependabot moves `uses:` pins only, and dependabot-freshness
+  # reads only those. This compares each pinned version with the releases its
+  # upstream publishes and fails once the first release after the pin has been
+  # out longer than the lag the script states and explains (30 days). An
+  # upstream that cannot be read fails too, rather than passing unread.
+  #
+  # Here because this workflow already runs twice a day and on every push to
+  # main, and its own cron is watched by freshness-itself. Like every job here
+  # it is not a required check: a new release upstream says nothing about the
+  # pull request under review. The pull request filter names the script and not
+  # the reusables that carry the pins, so a pin bump is judged by the push that
+  # lands it.
+  #
+  # It asks GitHub for the releases of two public repositories with the job's
+  # own token, and `contents: read` is all that needs.
+  #
+  # The script imports yaml and this job installs nothing for it, by the same
+  # criterion as the workflow-lint job: the image ships python3-yaml, as the
+  # lint steps that imported yaml on ubuntu-latest showed, and ubuntu-latest
+  # resolved to ubuntu-26.04 on 2026-11-21. An image without it is an
+  # ImportError and a red job, not a green one.
+  tool-versions:
+    needs: scope
+    if: ${{ !cancelled() && needs.scope.outputs.tools != 'false' }}
+    name: pinned tool versions keep up with upstream
+    # A newer push to the same pull request supersedes the run; on main and on
+    # the schedule every run is kept, as each answers for its own commit.
+    concurrency:
+      group: freshness-tool-versions-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
+    runs-on: ubuntu-latest
+    # Two `gh release list` calls and a checkout, seconds when measured
+    # locally against stubs; the real calls are two API requests. Ten minutes
+    # is the floor this repository uses for a job whose honest run is seconds.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare the pinned tool versions with upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash ./scripts/monitoring/check-tool-versions.sh

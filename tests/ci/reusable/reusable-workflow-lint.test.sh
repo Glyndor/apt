@@ -1,30 +1,23 @@
 #!/usr/bin/env bash
-# Behaviour tests for the two assertions this repository adds to
-# .github/workflows/reusable-workflow-lint.yml on top of actionlint.
+# Behaviour tests for .github/workflows/reusable-workflow-lint.yml itself: that
+# each assertion it adds on top of actionlint is wired to the script that holds
+# the rule, under the condition it is meant to run under.
 #
-# Both are gates over other gates. One parses every caller of
-# reusable-shell-ci and refuses, each with its own message, the mechanisms
-# that can switch the required `shell / test` check off without failing it:
-# a job-level `if:`, an empty or malformed test-command, and the suppression
-# forms (`|| true`, `true ||`, `exit 0`). The other refuses a job that
-# installs third-party tooling while holding a secret. Neither had a test: a
-# script that gates gets tests, and its schedule is when it reports, not
-# when it is verified.
+# The rules live in scripts/quality/ and their cases in tests/quality/: one
+# suite per script. What those suites cannot see is the workflow: a step that
+# stops calling its script, or calls it under a condition that never holds,
+# leaves every case of the script green and the gate gone. So each step is read
+# out of the workflow as it ships and its `run:` is executed in a temporary tree
+# that carries the real scripts, once over a planted violation, which must turn
+# it red for that rule, and once over a clean tree, which must leave it green.
 #
-# Each step's `run:` body is extracted from the workflow and executed as it
-# ships, in a temporary tree shaped like a repository. Every refusal asserts
-# which refusal, and every refusal is paired with an acceptance of the same
-# shape just inside the line.
-#
-# Requires: python3 with PyYAML (the tooling-isolation step imports it, and
-# the caller-assertion step parses YAML itself).
-# The fixtures below carry literal `${{ secrets.X }}` expressions and backticks:
-# the assertion under test reads those characters, so they must reach the file
-# unexpanded. Single quotes are the point, not an oversight.
+# Requires: python3 with PyYAML.
+# The fixtures carry literal `${{ secrets.X }}`; single quotes are the point.
 # shellcheck disable=SC2016
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+WORKFLOW="$HERE/.github/workflows/reusable-workflow-lint.yml"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -43,47 +36,48 @@ check() { # <description> <expected> <actual>
 	fi
 }
 
-# Pull one step's `run:` body out of a workflow, dedented, so it can be run.
-# Same helper as tests/publication/update/update-workflow.test.sh in the tap and the bucket: the point is to exercise the
-# shell as it ships rather than a copy of it that can drift.
-step_script() { # $1=workflow path  $2=step name substring
-	python3 - "$1" "$2" <<'PY'
+# One field of one step of the workflow-lint job, read with a YAML parser so
+# a comment that names the script does not count as calling it.
+field() { # $1=step name $2=run|if
+	python3 -I - "$WORKFLOW" "$1" "$2" <<'PY'
 import sys
-lines = open(sys.argv[1]).read().splitlines()
-start = next(i for i, l in enumerate(lines) if "name: " + sys.argv[2] in l)
-run = next(i for i, l in enumerate(lines) if i > start and l.strip() == "run: |")
-body = []
-for line in lines[run + 1:]:
-    if not line.strip():
-        body.append("")
-        continue
-    if not line.startswith(" " * 10):
-        break
-    body.append(line[10:])
-print("\n".join(body))
+import yaml
+spec = yaml.safe_load(open(sys.argv[1]))
+steps = spec["jobs"]["workflow-lint"]["steps"]
+step = next((s for s in steps if s.get("name") == sys.argv[2]), None)
+print("MISSING" if step is None else str(step.get(sys.argv[3], "")).strip())
 PY
 }
 
-WORKFLOW="$HERE/.github/workflows/reusable-workflow-lint.yml"
-step_script "$WORKFLOW" "A required test job must not be switchable off" > "$WORK/callers.sh"
-step_script "$WORKFLOW" "A job holding a secret must not install" > "$WORK/tooling.sh"
-check "the caller assertion was extracted from the workflow" "1" \
-	"$(grep -c 'reusable-shell-ci' "$WORK/callers.sh" | awk '{print ($1>0)}')"
-check "the tooling assertion was extracted from the workflow" "1" \
-	"$(grep -c 'INSTALL_PATTERNS' "$WORK/tooling.sh" | awk '{print ($1>0)}')"
-
-new() { rm -rf "$WORK/t"; mkdir -p "$WORK/t/.github/workflows"; printf '%s' "$WORK/t"; }
-run_in() { # $1=dir $2=script -> stdout+stderr, status in $?
-	( cd "$1" && bash "$2" 2>&1 )
+default_of() { # $1=input name
+	python3 -I - "$WORKFLOW" "$1" <<'PY'
+import sys
+import yaml
+spec = yaml.safe_load(open(sys.argv[1]))
+# PyYAML reads the bare key `on` as the boolean True.
+print(spec[True]["workflow_call"]["inputs"][sys.argv[2]].get("default"))
+PY
 }
+
 said() { printf '%s' "$1" | grep -q -- "$2" && echo 1 || echo 0; }
 
-# A caller of reusable-shell-ci, with whatever test-command the case wants.
-# The value is folded onto following lines by `>-`, so a YAML block scalar
-# here is what every real caller uses too; the parser reads it back into a
-# single string before checking it.
-caller() { # $1=dir $2=test-command value (may be empty)
-	cat > "$1/.github/workflows/tests.yml" <<EOF
+# A repository shaped like a caller, built as a pull request is checked out: a
+# base commit, a branch on top and a --no-ff merge of it, so HEAD^1 is the base.
+# The base carries a caller that runs a suite and a job that holds no secret,
+# and the real rule scripts unless it is a first adoption.
+RULES=(check-test-job-not-switchable.sh check-tooling-isolation.sh)
+gitt() { git -C "$WORK/t" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "$@"; }
+base_repo() { # $1=with|without the rule scripts in the base
+	local x
+	rm -rf "$WORK/t"
+	mkdir -p "$WORK/t/.github/workflows" "$WORK/t/scripts/quality"
+	gitt init -q -b main
+	# The picker also takes the checker of the suites; it is not under test here.
+	cp "$HERE/scripts/quality/check-suites-wired.sh" "$WORK/t/scripts/quality/"
+	if [ "$1" = with ]; then
+		for x in "${RULES[@]}"; do cp "$HERE/scripts/quality/$x" "$WORK/t/scripts/quality/"; done
+	fi
+	cat > "$WORK/t/.github/workflows/tests.yml" <<'EOF'
 name: Tests
 on: pull_request
 jobs:
@@ -91,315 +85,218 @@ jobs:
     uses: ./.github/workflows/reusable-shell-ci.yml
     with:
       test-command: >-
-        $2
-      apt-packages: shellcheck
+        ./tests/one.test.sh
 EOF
-}
-
-# ===========================================================================
-# A required test job must not be switchable off
-# ===========================================================================
-
-# Like caller(), but adds a job-level `if:` value. The previous text match
-# could not see this key at all; the parser must, and must refuse any value
-# because any conditional on a caller of a required job is a switch.
-caller_if() { # $1=dir $2=test-command value $3=if value
-	cat > "$1/.github/workflows/tests.yml" <<EOF
-name: Tests
-on: pull_request
-jobs:
-  shell:
-    if: $3
-    uses: ./.github/workflows/reusable-shell-ci.yml
-    with:
-      test-command: >-
-        $2
-      apt-packages: shellcheck
-EOF
-}
-
-# --- the repository's real caller is the positive control ------------------
-d="$(new)"
-cp "$HERE/.github/workflows/tests.yml" "$d/.github/workflows/"
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "the real tests.yml caller stays accepted" "0" "$rc"
-check "and the step says every caller passes" "1" \
-	"$(said "$out" 'every reusable-shell-ci caller passes')"
-
-# --- the runner form ------------------------------------------------------
-#
-# The suites can also be handed to a runner that executes each one and requires
-# the sentinel it prints as its last line. A `&&` chain cannot tell a suite that
-# ran every assertion from one that exited early having run three, so the
-# grammar accepts that shape too, with the same rule about what may follow.
-d="$(new)"; caller "$d" './tests/ci/suites/check-suite-completeness.test.sh ./tests/one.test.sh ./tests/two.test.sh'
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "the runner form with suites after it passes" "0" "$rc"
-
-# The runner with nothing to run is the empty test-command wearing a disguise:
-# it exits 0 having tested nothing, and the required check reports Success.
-d="$(new)"; caller "$d" './tests/ci/suites/check-suite-completeness.test.sh'
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "the runner with no suites after it is refused" "1" "$rc"
-check "and the message says it would test nothing" "1" \
-	"$(said "$out" 'no suites to run')"
-
-d="$(new)"; caller "$d" './tests/ci/suites/check-suite-completeness.test.sh --quiet ./tests/one.test.sh'
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "an argument to the runner that is not a suite is refused" "1" "$rc"
-check "and the message quotes the argument it refused" "1" \
-	"$(said "$out" '`--quiet`')"
-
-# The suppression forms are checked before the shape is decided, so they are
-# refused in this form as well and for the same reason.
-d="$(new)"; caller "$d" './tests/ci/suites/check-suite-completeness.test.sh ./tests/one.test.sh || true'
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "the runner form with || true is still refused" "1" "$rc"
-check "and it is refused as the suppression, not as the grammar" "1" \
-	"$(said "$out" '`|| true` in its')"
-
-# A literal block scalar (`|`) keeps newlines, so the runner sits on line one
-# and each suite sits on its own line: three shell statements after YAML
-# parses, not one. Without this check, the guard joins the lines back into a
-# single string and the suite never fails the required check.
-caller_lit() { # $1=dir  $2..=lines of the test-command body
-	{
-		echo 'name: Tests'
-		echo 'on: pull_request'
-		echo 'jobs:'
-		echo '  shell:'
-		echo '    uses: ./.github/workflows/reusable-shell-ci.yml'
-		echo '    with:'
-		echo '      test-command: |'
-		shift
-		for line in "$@"; do
-			echo "        $line"
-		done
-		echo '      apt-packages: shellcheck'
-	} > "$1/.github/workflows/tests.yml"
-}
-
-d="$(new)"
-caller_lit "$d" \
-	'./tests/ci/suites/check-suite-completeness.test.sh' \
-	'./tests/one.test.sh' \
-	'./tests/two.test.sh'
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "a literal block scalar in test-command is refused" "1" "$rc"
-check "and the refusal says the statements would run separately" "1" \
-	"$(said "$out" 'separate shell statements')"
-
-# --- a caller that runs a suite passes (sanity check) ---------------------
-d="$(new)"; caller "$d" './tests/one.test.sh && ./tests/two.test.sh'
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "a caller whose test-command runs a suite passes" "0" "$rc"
-
-# --- a job-level `if:` on a caller is refused, for that reason -------------
-d="$(new)"; caller_if "$d" './tests/one.test.sh' 'false'
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "a caller with a job-level if: is refused" "1" "$rc"
-check "and the message names the if: defect, not something else" "1" \
-	"$(said "$out" 'job-level `if:`')"
-check "and the offending job is named" "1" "$(said "$out" '`shell`')"
-check "and no grammar message fires alongside" "0" \
-	"$(said "$out" 'first non-blank token')"
-
-# --- `needs:` on a caller is refused, for that reason ----------------------
-d="$(new)"; caller_if "$d" './tests/one.test.sh' 'false'
-sed -i 's/^    if: false$/    needs: noop/' "$d/.github/workflows/tests.yml"
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "a caller with needs: is refused" "1" "$rc"
-check "and the message names the needs: defect" "1" "$(said "$out" 'carries `needs:`')"
-check "and not the if: one" "0" "$(said "$out" 'job-level `if:`')"
-
-# --- a test-command whose first token is not a suite is refused ------------
-d="$(new)"; caller "$d" 'echo tests are elsewhere'
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "a test-command that runs no ./tests/*.test.sh is refused" "1" "$rc"
-check "and the message names the first-token defect" "1" \
-	"$(said "$out" 'first non-blank token is not a suite invocation')"
-check "and the offending workflow is named" "1" "$(said "$out" 'tests.yml')"
-check "and no if: message fires alongside" "0" \
-	"$(said "$out" 'job-level `if:`')"
-
-# --- an empty test-command is refused (existing rule, kept) ---------------
-d="$(new)"; caller "$d" ''
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "a caller with an empty test-command is refused" "1" "$rc"
-check "and it is refused for the test-command, not something else" "1" \
-	"$(said "$out" 'without a test-command that runs any suite')"
-check "and the offending workflow is named" "1" "$(said "$out" 'tests.yml')"
-
-# --- a `|| true` anywhere in the test-command is refused -------------------
-d="$(new)"; caller "$d" './tests/one.test.sh || true'
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "a test-command with || true is refused" "1" "$rc"
-check "and the message names the infix suppression form" "1" \
-	"$(said "$out" '`|| true`')"
-check "and it is not refused as the prefix form" "0" \
-	"$(said "$out" 'starts with `true ||`')"
-check "and it is not refused as the exit-0 form" "0" \
-	"$(said "$out" '`exit 0`')"
-
-# --- a `true ||` prefix on the test-command is refused --------------------
-d="$(new)"; caller "$d" 'true || ./tests/one.test.sh && ./tests/two.test.sh'
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "a test-command with true || prefix is refused" "1" "$rc"
-check "and the message names the prefix form" "1" \
-	"$(said "$out" 'starts with `true ||`')"
-check "and it is not refused as the infix form" "0" \
-	"$(said "$out" '`|| true`')"
-check "and it is not refused as the exit-0 form" "0" \
-	"$(said "$out" '`exit 0`')"
-
-# --- a leading `exit 0` on the test-command is refused --------------------
-d="$(new)"; caller "$d" 'exit 0'
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "a test-command starting with exit 0 is refused" "1" "$rc"
-check "and the message names the exit-0 form" "1" \
-	"$(said "$out" '`exit 0`')"
-check "and it is not refused as the prefix form" "0" \
-	"$(said "$out" 'starts with `true ||`')"
-check "and it is not refused as the infix form" "0" \
-	"$(said "$out" '`|| true`')"
-
-# --- no caller at all is refused, and named as the other failure ----------
-d="$(new)"
-cat > "$d/.github/workflows/other.yml" <<'EOF'
-name: Other
-on: push
-jobs:
-  x:
-    runs-on: ubuntu-latest
-    steps:
-      - run: true
-EOF
-out="$(run_in "$d" "$WORK/callers.sh")"; rc=$?
-check "a tree with no reusable-shell-ci caller is refused" "1" "$rc"
-check "and it says no workflow calls it, which is the other failure" "1" \
-	"$(said "$out" 'no workflow calls reusable-shell-ci')"
-
-# --- the reusable itself is not counted as a caller -----------------------
-d="$(new)"
-cp "$HERE/.github/workflows/reusable-shell-ci.yml" "$d/.github/workflows/"
-rc=0; run_in "$d" "$WORK/callers.sh" >/dev/null || rc=$?
-check "the reusable's own file does not count as a caller" "1" "$rc"
-
-# ===========================================================================
-# A job holding a secret must not install third-party tooling
-# ===========================================================================
-
-tooling_case() { # $1=dir $2=env line (or empty) $3=run line
-	cat > "$1/.github/workflows/job.yml" <<EOF
+	cat > "$WORK/t/.github/workflows/job.yml" <<'EOF'
 name: Job
 on: push
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      $2
+      TOKEN: ${{ vars.PLAIN }}
     steps:
-      - run: |
-          $3
+      - run: cargo install --locked cargo-cyclonedx
 EOF
+	gitt add -A
+	gitt commit -qm base
+	gitt checkout -q -b pr
+}
+merge_pr() {
+	gitt add -A
+	gitt commit -qm pr --allow-empty
+	gitt checkout -q main
+	gitt merge -q --no-ff pr -m merge
+}
+# The violation each rule exists to refuse, planted in the pull request.
+violate() { # $1=rule
+	case "$1" in
+	check-test-job-not-switchable.sh)
+		sed -i 's/^  shell:$/  shell:\n    if: false/' "$WORK/t/.github/workflows/tests.yml" ;;
+	check-tooling-isolation.sh)
+		sed -i 's/vars.PLAIN/secrets.DEPLOY_TOKEN/' "$WORK/t/.github/workflows/job.yml" ;;
+	esac
+}
+refusal() { # $1=rule -> a fragment of that rule's refusal
+	case "$1" in
+	check-test-job-not-switchable.sh) printf '%s' 'job-level `if:`' ;;
+	check-tooling-isolation.sh) printf '%s' 'installs third-party tooling while holding a secret' ;;
+	esac
+}
+hollow() { # $1=rule: the pull request replaces the rule with one that passes
+	printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/t/scripts/quality/$1"
 }
 
-# --- a secret plus a pip install is refused, and named --------------------
-d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'pip install requests'
-out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
-check "a job holding a secret that pip installs is refused" "1" "$rc"
-check "and the message names the job and the line" "1" \
-	"$(said "$out" 'job `build` installs third-party tooling while holding a secret: `pip install requests`')"
-
-# --- the same install pinned by hash is the documented exemption ----------
-d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'pip install --require-hashes -r req.txt'
-out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
-check "pip install --require-hashes while holding a secret is allowed" "0" "$rc"
-check "and the step says nothing was found" "1" "$(said "$out" 'no job holding a secret installs')"
-
-# --- cargo install has no hash exemption ---------------------------------
-d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'cargo install --locked cargo-cyclonedx'
-rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
-check "cargo install --locked while holding a secret is still refused" "1" "$rc"
-
-# --- the same install without a secret is fine ---------------------------
-d="$(new)"; tooling_case "$d" 'PLAIN: value' 'cargo install --locked cargo-cyclonedx'
-rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
-check "the same install in a job holding no secret passes" "0" "$rc"
-
-# --- a third-party action in a secret-holding job is refused ---------------
-action_case() { # $1=dir $2=env line  $3=uses value
-	cat > "$1/.github/workflows/job.yml" <<EOF
-name: Job
-on: push
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    env:
-      $2
-    steps:
-      - uses: $3
-EOF
+PICK="$(field "Take the rule scripts from the base commit" run)"
+pick() { # $1=event [$2=base sha the event names, default the merge's first parent]
+	rm -rf "$WORK/rt"
+	mkdir -p "$WORK/rt"
+	local base
+	base="${2-$(gitt rev-parse HEAD^1)}"
+	out="$(cd "$WORK/t" && EVENT="$1" BASE_SHA="$base" RUNNER_TEMP="$WORK/rt" bash -e -o pipefail -c "$PICK" 2>&1)"
+	rc=$?
 }
-d="$(new)"; action_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'someone/tool@0123456789abcdef0123456789abcdef01234567'
-out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
-check "an action from outside actions/ and github/ in a job holding a secret is refused" "1" "$rc"
-check "and the message names the job and the action" "1" \
-	"$(said "$out" 'job `build` installs third-party tooling while holding a secret: `uses: someone/tool@')"
-d="$(new)"; action_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' 'actions/checkout@0123456789abcdef0123456789abcdef01234567'
-rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
-check "a GitHub-owned action in a job holding a secret passes" "0" "$rc"
-d="$(new)"; action_case "$d" 'PLAIN: value' 'someone/tool@0123456789abcdef0123456789abcdef01234567'
-rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
-check "a third-party action in a job holding no secret passes" "0" "$rc"
-d="$(new)"; action_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' './.github/workflows/reusable-x.yml'
-rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
-check "a local reusable in a job holding a secret passes" "0" "$rc"
+rule() { # $1=run line -> output, status in rc
+	out="$(cd "$WORK/t" && RUNNER_TEMP="$WORK/rt" bash -e -o pipefail -c "$1" 2>&1)"
+	rc=$?
+}
 
-# --- a commented-out install is not an install ---------------------------
-d="$(new)"; tooling_case "$d" 'TOKEN: ${{ secrets.DEPLOY_TOKEN }}' '# pip install requests'
-rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
-check "an install that only appears in a comment is not reported" "0" "$rc"
+check "the rule scripts are taken on every event, before anything uses them" \
+	"" "$(field "Take the rule scripts from the base commit" if)"
 
-# --- a secret referenced in a step, not the job env, still counts --------
-d="$(new)"
-cat > "$d/.github/workflows/job.yml" <<'EOF'
-name: Job
-on: push
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - run: go install example.com/tool@v1
-      - run: echo "$KEY"
-        env:
-          KEY: ${{ secrets.SIGNING_KEY }}
+declare -A STEP=(
+	[check-test-job-not-switchable.sh]="A required test job must not be switchable off"
+	[check-tooling-isolation.sh]="A job holding a secret must not install third-party tooling"
+)
+declare -A CONDITION=(
+	[check-test-job-not-switchable.sh]="steps.scope.outputs.needed != 'false'"
+	[check-tooling-isolation.sh]='${{ inputs.tooling-isolation && steps.scope.outputs.needed != '"'false'"' }}'
+)
+for r in "${RULES[@]}"; do
+	name="${r%.sh}"
+	run="$(field "${STEP[$r]}" run)"
+	check "$name: the step runs the copy the picker took, with an explicit interpreter" \
+		"bash \"\$RUNNER_TEMP/lint-rules/$r\"" "$run"
+	check "$name: and runs under its condition" "${CONDITION[$r]}" "$(field "${STEP[$r]}" if)"
+
+	base_repo with; merge_pr
+	pick pull_request; rule "$run"
+	check "$name: a clean pull request passes through the step" "0" "$rc"
+
+	base_repo with; violate "$r"; merge_pr
+	pick pull_request; rule "$run"
+	check "$name: a planted violation turns the step red" "1" "$rc"
+	check "$name: and for that rule" "1" "$(said "$out" "$(refusal "$r")")"
+
+	# The pull request hollows the rule out and breaks it in the same change.
+	base_repo with; violate "$r"; hollow "$r"; merge_pr
+	pick pull_request
+	check "$name: on a pull request the picker says it read the base" "1" \
+		"$(said "$out" "$r read from the base commit")"
+	rule "$run"
+	check "$name: a pull request that hollows the rule is still judged by the base's" "1" "$rc"
+	check "$name: and refused for that rule" "1" "$(said "$out" "$(refusal "$r")")"
+	# On a push there is no base to trust: the checkout is what landed.
+	pick push; rule "$run"
+	check "$name: on a push the checkout's copy decides" "0" "$rc"
+
+	# First adoption: the base has no rule, so the checkout's copy decides.
+	base_repo without
+	for x in "${RULES[@]}"; do cp "$HERE/scripts/quality/$x" "$WORK/t/scripts/quality/"; done
+	violate "$r"; merge_pr
+	pick pull_request
+	check "$name: a base without the rule falls back to the checkout" "0" "$(said "$out" "$r read from the base commit")"
+	rule "$run"
+	check "$name: and the checkout's rule refuses the violation" "1" "$rc"
+done
+
+base_repo without; merge_pr
+pick pull_request
+check "a rule in neither the base nor the checkout fails the picker" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+
+# The base is the commit the event names, not HEAD^1 of the checkout. A pull
+# request of two commits checked out at its own head has its first commit as
+# HEAD^1, and that commit hollows the tooling rule out.
+base_repo with; base="$(gitt rev-parse HEAD)"
+hollow check-tooling-isolation.sh; gitt add -A; gitt commit -qm 'hollow the rule'
+violate check-tooling-isolation.sh; gitt add -A; gitt commit -qm 'break it'
+TOOLING_RUN="$(field "${STEP[check-tooling-isolation.sh]}" run)"
+pick pull_request "$base"
+check "with HEAD^1 inside the pull request, the picker reads the base the event names" "1" \
+	"$(said "$out" "check-tooling-isolation.sh read from the base commit $base")"
+rule "$TOOLING_RUN"
+check "and that base's rule refuses the violation" "1" "$rc"
+pick pull_request "$(gitt rev-parse HEAD^1)"
+rule "$TOOLING_RUN"
+check "control: had HEAD^1 been taken as the base, the hollowed rule would pass" "0" "$rc"
+
+# A base the checkout lacks is fetched from origin; one that cannot be fetched,
+# or no base at all on a pull request, fails rather than falling back.
+base_repo with; base="$(gitt rev-parse HEAD)"; merge_pr
+git clone -q --bare "$WORK/t" "$WORK/origin.git"
+git -C "$WORK/origin.git" config uploadpack.allowAnySHA1InWant true
+rm -rf "$WORK/t2"; git clone -q --depth 1 --branch main "file://$WORK/origin.git" "$WORK/t2"
+check "the shallow checkout lacks the base commit" "1" \
+	"$(git -C "$WORK/t2" cat-file -e "$base^{commit}" 2>/dev/null && echo 0 || echo 1)"
+mv "$WORK/t" "$WORK/t.full"; mv "$WORK/t2" "$WORK/t"
+pick pull_request "$base"
+check "a base the checkout lacks is fetched and read" "1" \
+	"$(said "$out" "check-tooling-isolation.sh read from the base commit $base")"
+pick pull_request "$(printf '%040d' 7)"
+check "a base that cannot be fetched fails the picker" "1" "$rc"
+check "and says so rather than using the checkout" "1" "$(said "$out" 'Could not fetch the base commit')"
+pick pull_request ""
+check "a pull request event that names no base fails the picker" "1" "$rc"
+rm -rf "$WORK/t" "$WORK/origin.git"; mv "$WORK/t.full" "$WORK/t"
+check "and tooling-isolation is on unless a caller turns it off" "True" "$(default_of tooling-isolation)"
+
+# ===========================================================================
+# actionlint is the release binary, verified before it is extracted
+# ===========================================================================
+
+# Read from the job, not grepped from the file, so a comment naming a step or a
+# value does not count.
+job_facts="$(python3 -I - "$WORKFLOW" <<'PY'
+import re
+import sys
+import yaml
+job = yaml.safe_load(open(sys.argv[1]))["jobs"]["workflow-lint"]
+env = job.get("env", {})
+uses = [s.get("uses", "").split("@")[0] for s in job["steps"] if s.get("uses")]
+runs = "\n".join(str(s.get("run", "")) for s in job["steps"])
+print(bool(re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", str(env.get("ACTIONLINT_VERSION", "")))),
+      bool(re.fullmatch(r"[0-9a-f]{64}", str(env.get("ACTIONLINT_SHA256", "")))),
+      "actions/setup-go" in uses, "actions/cache" in uses,
+      bool(re.search(r"(?m)^\s*go\s+install\b", runs)))
+PY
+)"
+check "the job pins an exact actionlint version and the sha256 of its tarball, and needs no Go" \
+	"True True False False False" "$job_facts"
+
+install="$(field "Install actionlint" run)"
+mkdir -p "$WORK/release/pkg" "$WORK/bin"
+printf '#!/bin/sh\necho fixture actionlint\n' > "$WORK/release/pkg/actionlint"
+chmod +x "$WORK/release/pkg/actionlint"
+tar -czf "$WORK/release/actionlint.tar.gz" -C "$WORK/release/pkg" actionlint
+good_sha="$(sha256sum "$WORK/release/actionlint.tar.gz" | cut -d' ' -f1)"
+# curl serves the fixture tarball and records the URL it was asked for.
+cat > "$WORK/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+out=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-o) out="$2"; shift 2 ;;
+	-*) shift ;;
+	*) printf '%s\n' "$1" >> "$CURL_LOG"; shift ;;
+	esac
+done
+cp "$FIXTURE_TARBALL" "$out"
 EOF
-rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
-check "a secret held by a later step of the same job still counts" "1" "$rc"
+chmod +x "$WORK/bin/curl"
+install_with() { # $1=sha256 -> status in rc
+	rm -rf "$WORK/rt"; mkdir -p "$WORK/rt"; : > "$WORK/curl.log"; : > "$WORK/path"
+	( cd "$WORK" && PATH="$WORK/bin:$PATH" CURL_LOG="$WORK/curl.log" \
+		FIXTURE_TARBALL="$WORK/release/actionlint.tar.gz" RUNNER_TEMP="$WORK/rt" \
+		GITHUB_PATH="$WORK/path" ACTIONLINT_VERSION=v9.8.7 ACTIONLINT_SHA256="$1" \
+		bash -e -o pipefail -c "$install" ) > "$WORK/install.out" 2>&1
+	rc=$?
+}
 
-# --- a `secrets:` declaration is not a reference -------------------------
-d="$(new)"
-cat > "$d/.github/workflows/job.yml" <<'EOF'
-name: Job
-on: push
-jobs:
-  call:
-    uses: ./.github/workflows/reusable-x.yml
-    secrets: inherit
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - run: go install example.com/tool@v1
-EOF
-rc=0; run_in "$d" "$WORK/tooling.sh" >/dev/null || rc=$?
-check "secrets: inherit on a reusable call is not a secret reference" "0" "$rc"
+install_with "$good_sha"
+check "the install with the matching sha256 succeeds" "0" "$rc"
+check "and it asked for that version's linux_amd64 release asset" \
+	"https://github.com/rhysd/actionlint/releases/download/v9.8.7/actionlint_9.8.7_linux_amd64.tar.gz" \
+	"$(cat "$WORK/curl.log")"
+check "and the extracted binary is the one put on PATH" "fixture actionlint" \
+	"$("$(cat "$WORK/path")/actionlint")"
 
-# --- an unparseable workflow is a warning, not a silent skip -------------
-d="$(new)"; printf 'name: [\n' > "$d/.github/workflows/broken.yml"
-out="$(run_in "$d" "$WORK/tooling.sh")"; rc=$?
-check "a workflow that does not parse does not fail the step" "0" "$rc"
-check "but is reported as skipped, so the silence is visible" "1" "$(said "$out" '::warning')"
+install_with "$(printf '%064d' 0)"
+check "a tarball whose sha256 does not match is refused" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+check "and nothing was extracted from it" "0" \
+	"$([ -e "$WORK/rt/actionlint-bin/actionlint" ] && echo 1 || echo 0)"
+check "and nothing was put on PATH" "" "$(cat "$WORK/path")"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

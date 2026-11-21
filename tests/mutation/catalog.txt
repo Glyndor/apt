@@ -151,9 +151,40 @@ quality-test-coverage	scripts/quality/check-test-coverage.sh	[ -f "$root/tests/$
 suites-wired-watcher-dropped	.github/workflows/tests.yml	./tests/ci/suites/ci-runs-every-test.test.sh	./tests/quality/check-test-coverage.test.sh	tests/quality/check-suites-wired.test.sh
 suites-wired-unwired	scripts/quality/check-suites-wired.sh	for path in sorted(suites - wired - set(exempt)):	for path in []:	tests/quality/check-suites-wired.test.sh
 suites-wired-needs	scripts/quality/check-suites-wired.sh	                    if "needs" in job else "") \	                    if False else "") \	tests/quality/check-suites-wired.test.sh
-lint-caller-needs	.github/workflows/reusable-workflow-lint.yml	                      if "needs" in job:	                      if False:	tests/ci/reusable/reusable-workflow-lint.test.sh
+lint-caller-needs	scripts/quality/check-test-job-not-switchable.sh	            if "needs" in job:	            if False:	tests/quality/check-test-job-not-switchable.test.sh
+lint-caller-continue	scripts/quality/check-test-job-not-switchable.sh	            if "continue-on-error" in job:	            if False:	tests/quality/check-test-job-not-switchable.test.sh
+lint-callers-none	scripts/quality/check-test-job-not-switchable.sh	    if callers == 0:	    if False:	tests/quality/check-test-job-not-switchable.test.sh
+lint-callers-verdict	scripts/quality/check-test-job-not-switchable.sh	    if violations:	    if False:	tests/quality/check-test-job-not-switchable.test.sh
+lint-tooling-verdict	scripts/quality/check-tooling-isolation.sh	    if violations:	    if False:	tests/quality/check-tooling-isolation.test.sh
+tooling-token-write	scripts/quality/check-tooling-isolation.sh	        if not (holds_secret or writes):	        if not holds_secret:	tests/quality/check-tooling-isolation.test.sh
+tooling-token-default	scripts/quality/check-tooling-isolation.sh	        return "no `permissions` at the job or the workflow, so the repository default applies"	        return None	tests/quality/check-tooling-isolation.test.sh
+tooling-token-writeall	scripts/quality/check-tooling-isolation.sh	        return None if perms == "read-all" else f"`permissions: {perms}`"	        return None	tests/quality/check-tooling-isolation.test.sh
+tooling-token-job-first	scripts/quality/check-tooling-isolation.sh	    if "permissions" in job:	    if False:	tests/quality/check-tooling-isolation.test.sh
+lint-callers-wired	.github/workflows/reusable-workflow-lint.yml	run: bash "$RUNNER_TEMP/lint-rules/check-test-job-not-switchable.sh"	run: "true"	tests/ci/reusable/reusable-workflow-lint.test.sh
+lint-tooling-wired	.github/workflows/reusable-workflow-lint.yml	run: bash "$RUNNER_TEMP/lint-rules/check-tooling-isolation.sh"	run: "true"	tests/ci/reusable/reusable-workflow-lint.test.sh
+lint-rules-from-base	.github/workflows/reusable-workflow-lint.yml	            if [ "$from_base" = true ] && git cat-file -e "${BASE_SHA}:scripts/quality/${file}" 2>/dev/null; then	            if false; then	tests/ci/reusable/reusable-workflow-lint.test.sh,tests/quality/check-suites-wired.test.sh
+lint-rules-event-base	.github/workflows/reusable-workflow-lint.yml	              git show "${BASE_SHA}:scripts/quality/${file}" > "$dir/$file"	              git show "HEAD^1:scripts/quality/${file}" > "$dir/$file"	tests/ci/reusable/reusable-workflow-lint.test.sh,tests/quality/check-suites-wired.test.sh
+lint-rules-fetch	.github/workflows/reusable-workflow-lint.yml	              git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true	              true	tests/ci/reusable/reusable-workflow-lint.test.sh
+scope-lint-rule-scripts	scripts/quality/ci-job-scope.sh	    "scripts/quality/check-tooling-isolation.sh",	    "scripts/quality/unused.sh",	tests/quality/ci-job-scope.test.sh
+lint-actionlint-sha256	.github/workflows/reusable-workflow-lint.yml	printf '%s  %s\n' "$ACTIONLINT_SHA256" "$tarball" | sha256sum -c -	true	tests/ci/reusable/reusable-workflow-lint.test.sh
+tools-past-lag	scripts/monitoring/check-tool-versions.sh	    if days > lag_days:	    if False:	tests/monitoring/check-tool-versions.test.sh
+tools-first-newer	scripts/monitoring/check-tool-versions.sh	    days = (now - min(newer)).days	    days = (now - max(newer)).days	tests/monitoring/check-tool-versions.test.sh
+tools-unreadable	scripts/monitoring/check-tool-versions.sh	        problems.append(f"cannot read the releases of {upstream}: {exc}")	        pass	tests/monitoring/check-tool-versions.test.sh
+tools-no-release	scripts/monitoring/check-tool-versions.sh	    if not found:	    if False:	tests/monitoring/check-tool-versions.test.sh
+tools-pins-disagree	scripts/monitoring/check-tool-versions.sh	    if len(shellcheck) != 1:	    if False:	tests/monitoring/check-tool-versions.test.sh
+tools-verdict	scripts/monitoring/check-tool-versions.sh	if problems or behind:	if False:	tests/monitoring/check-tool-versions.test.sh
+tools-lag-constant	scripts/monitoring/check-tool-versions.sh	lag_days = LAG_DAYS	lag_days = int(os.environ.get("MAX_LAG_DAYS", LAG_DAYS))	tests/monitoring/check-tool-versions.test.sh
+tools-overrides	scripts/monitoring/check-tool-versions.sh	            if given:	            if False:	tests/monitoring/check-tool-versions.test.sh
+fresh-mutation-watched	.github/workflows/freshness.yml	      workflow: mutation.yml	      workflow: unwatched.yml	tests/ci/policy/scheduled-workflows-are-watched.test.sh
+shell-pinned-shellcheck	.github/workflows/reusable-shell-ci.yml	            if [ "$package" = shellcheck ]; then	            if false; then	tests/ci/reusable/reusable-shell-ci.test.sh
+shell-pinned-sha256	.github/workflows/reusable-shell-ci.yml	            printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -	            true	tests/ci/reusable/reusable-shell-ci.test.sh
+grace-shallow	.github/workflows/reusable-schedule-freshness.yml	              && [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = false ]; then	              ; then	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
+grace-limit	.github/workflows/reusable-schedule-freshness.yml	[ $(( (now_s - added) / unit_seconds )) -lt "$limit" ]; then	[ $(( (now_s - added) / unit_seconds )) -lt 99999 ]; then	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
+grace-no-runs	.github/workflows/reusable-schedule-freshness.yml	            if [ "$any_runs" = 0 ] \	            if true \	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
+grace-by-default	.github/workflows/reusable-schedule-freshness.yml	            added=""	            added="$now_s"	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
+grace-future	.github/workflows/reusable-schedule-freshness.yml	            if [[ "$added" =~ ^[0-9]+$ ]] && [ "$added" -gt "$now_s" ]; then	            if false; then	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
 suites-wired-base-exemptions	scripts/quality/check-suites-wired.sh	    return {path: why for path, why in exempt.items() if path in base}	    return exempt	tests/quality/check-suites-wired.test.sh
-lint-base-exemptions	.github/workflows/reusable-workflow-lint.yml	            && git show "HEAD^1:$exemptions" > "$script.exempt" 2>/dev/null; then	            && cp "$exemptions" "$script.exempt" 2>/dev/null; then	tests/quality/check-suites-wired.test.sh
+lint-base-exemptions	.github/workflows/reusable-workflow-lint.yml	            git show "${BASE_SHA}:scripts/quality/suite-exemptions.txt" > "$dir/suite-exemptions.base"	            cp scripts/quality/suite-exemptions.txt "$dir/suite-exemptions.base"	tests/quality/check-suites-wired.test.sh
 suites-wired-operators	scripts/quality/check-suites-wired.sh	OPERATOR_RE = re.compile(r"[|&;<>`]|\$\(")	OPERATOR_RE = re.compile(r"(?!)")	tests/quality/check-suites-wired.test.sh
 suites-wired-heredoc	scripts/quality/check-suites-wired.sh	                        if "<<" in run else "") \	                        if False else "") \	tests/quality/check-suites-wired.test.sh
 suites-wired-skip-paths	scripts/quality/check-suites-wired.sh	                             skip_gate, where)	                             job_gate, where)	tests/quality/check-suites-wired.test.sh

@@ -175,6 +175,18 @@ def suites(candidates):
     return keep
 
 
+# What the workflow-lint job reads besides the workflows: the actionlint
+# configuration, and the two scripts that hold the rules its steps run. Those
+# rules used to be written inside reusable-workflow-lint.yml, where a change to
+# them was a change to a workflow; moved to scripts, they have to be named.
+WORKFLOW_LINT_INPUTS = {
+    ".github/actionlint.yml",
+    ".github/actionlint.yaml",
+    "scripts/quality/check-test-job-not-switchable.sh",
+    "scripts/quality/check-tooling-isolation.sh",
+}
+
+
 def needed(job):
     if os.environ.get("EVENT") != "pull_request":
         return True
@@ -205,7 +217,7 @@ def needed(job):
             if any(path.endswith("." + ext) for ext in extensions):
                 return True
         elif job == "workflow-lint":
-            if workflow or shell_config or path in {".github/actionlint.yml", ".github/actionlint.yaml"}:
+            if workflow or shell_config or path in WORKFLOW_LINT_INPUTS:
                 return True
         else:
             if shell_config or path.endswith((".sh", ".bash")) or path in {

@@ -17,6 +17,8 @@ concurrency:
 jobs:
   dco:
     name: Signed-off-by present on every commit
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
     runs-on: ubuntu-latest
     # Bound: 4 to 14s measured. Ten times that, rounded up, never under ten
     # minutes; the six-hour default is what a hang would otherwise cost.

@@ -73,7 +73,10 @@ env:
 jobs:
   publish:
     name: Build and publish
-    runs-on: ubuntu-latest
+    # ubuntu-latest resolved to ubuntu-26.04 in apt's publish runs on
+    # 2026-11-20. The image is named because this job's verdict depends on the
+    # tools it ships, so a new image arrives as a commit and not overnight.
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     # Measured over the last ten runs: 31 to 50 seconds end to end. The job
