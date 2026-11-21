@@ -314,6 +314,88 @@ d="$(new)"; token_case - 'contents: write' 'echo nothing installed'
 rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
 check "a write token in a job that installs nothing passes" "0" "$rc"
 
+# ===========================================================================
+# The token rule holds for every form of install the check recognises
+# ===========================================================================
+#
+# One case per form, each refused with a write token and accepted read-only,
+# and each accepted by a copy of the check with the token rule taken out, so
+# the refusal is the token rule's and not another guard's. The two forms the
+# check exempts (an apt install from the distribution's archive and a pip
+# install pinned by hash) are pinned the other way: accepted with a write
+# token, as with a secret, and refused by a copy without the exemption, so the
+# exemption is what accepts them.
+python3 -I - "$WORK/real.sh" "$WORK/notoken.sh" "$WORK/notokenenv.sh" "$WORK/noaptexempt.sh" "$WORK/nohashexempt.sh" <<'PY'
+import sys
+src = open(sys.argv[1]).read()
+def variant(out, old, new):
+    assert src.count(old) == 1, old
+    open(out, "w").write(src.replace(old, new))
+variant(sys.argv[2], "        if not (holds_secret or writes):", "        if not holds_secret:")
+variant(sys.argv[3], "        if writes and env_carries_token(env):", "        if False:")
+variant(sys.argv[4], "            )\n        return None\n    if BREW_INSTALL_RE", "            )\n        return \"\"\n    if BREW_INSTALL_RE")
+variant(sys.argv[5], "except_marker and except_marker in line", "False")
+PY
+for v in notoken notokenenv noaptexempt nohashexempt; do
+	check "the $v control differs from the shipped check" "1" \
+		"$(cmp -s "$WORK/real.sh" "$WORK/$v.sh" && echo 0 || echo 1)"
+done
+
+form_case() { # <write|read> <run block, or `uses: <action>`> [step env line]
+	{
+		printf 'name: Job\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    permissions:\n'
+		printf '      contents: %s\n' "$([ "$1" = write ] && echo write || echo read)"
+		printf '    steps:\n'
+		case "$2" in
+		uses:*) printf '      - %s\n' "$2" ;;
+		*)
+			printf '      - run: |\n'
+			printf '%s\n' "$2" | sed 's/^/          /'
+			[ -n "${3:-}" ] && printf '        env:\n          %s\n' "$3"
+			;;
+		esac
+	} > "$WORK/t/.github/workflows/job.yml"
+}
+refused_with_write() { # <form> <run block> [step env line]
+	new >/dev/null; form_case write "$2" "${3:-}"
+	local out rc=0
+	out="$(run_in "$WORK/t" "$WORK/real.sh")" || rc=$?
+	check "$1: refused when the token can write" "1" "$rc"
+	check "  and refused for the token" "1" "$(said "$out" 'while its token can write (`contents: write`)')"
+	check "  and accepted by a copy without the token rule" "pass" "$(verdict "$WORK/notoken.sh")"
+	form_case read "$2" "${3:-}"
+	check "$1: accepted when the token is read-only" "pass" "$(verdict "$WORK/real.sh")"
+}
+refused_with_write "cargo install" 'cargo install --locked tool'
+refused_with_write "go install" 'go install example.com/tool@v1'
+refused_with_write "gem install" 'gem install tool'
+refused_with_write "npm install -g" 'npm install -g tool'
+refused_with_write "npm i -g" 'npm i -g tool'
+refused_with_write "pip install" 'pip install requests'
+refused_with_write "brew install" 'brew install someformula'
+refused_with_write "brew upgrade" 'brew upgrade'
+refused_with_write "brew style" 'brew style Formula/*.rb'
+refused_with_write "brew audit" 'brew audit --strict podup'
+refused_with_write "apt install after a source of its own" 'sudo add-apt-repository ppa:x/y
+sudo apt-get install -y tool'
+refused_with_write "apt install of a URL" 'sudo apt-get install -y https://x.example/tool.deb'
+refused_with_write "apt install with the signature check off" 'sudo apt-get install -y --allow-unauthenticated tool'
+refused_with_write "an action from outside actions/ and github/" 'uses: someone/tool@0123456789abcdef0123456789abcdef01234567'
+refused_with_write "apt install from the archive, the token named in the step" 'sudo apt-get install -y jq' 'GH_TOKEN: ${{ github.token }}'
+check "  and accepted by a copy that does not look at the token in the step" "pass" "$(verdict "$WORK/notokenenv.sh")"
+
+accepted_with_write() { # <form> <run block> [step env line]
+	new >/dev/null; form_case write "$2" "${3:-}"
+	check "$1: accepted when the token can write" "pass" "$(verdict "$WORK/real.sh")"
+}
+accepted_with_write "apt install from the distribution's archive, the exemption" 'sudo apt-get install -y -qq reprepro python3-cryptography'
+check "  which is the exemption's doing, not the check's blindness to apt" "flag" "$(verdict "$WORK/noaptexempt.sh")"
+accepted_with_write "pip install --require-hashes, the exemption" 'pip install --require-hashes -r requirements.txt'
+check "  which is the exemption's doing, not the check's blindness to pip" "flag" "$(verdict "$WORK/nohashexempt.sh")"
+accepted_with_write "apt install from the archive, the token not named in the step" 'sudo apt-get install -y jq' 'LANG: C'
+new >/dev/null; form_case read 'sudo apt-get install -y jq' 'GH_TOKEN: ${{ github.token }}'
+check "apt install from the archive naming the token in the step is accepted when the token is read-only" "pass" "$(verdict "$WORK/real.sh")"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
