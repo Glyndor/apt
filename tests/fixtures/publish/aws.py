@@ -12,6 +12,12 @@ import shutil
 import sys
 
 args = sys.argv[1:]
+if args == ['--version']:
+    print(os.environ.get('FAKE_AWS_VERSION', 'aws-cli/2.31.0 Python/3.13.7 Linux/6.8.0 exe/x86_64.ubuntu.26'))
+    sys.exit(0)
+# The endpoint arrives in the environment, never in argv.
+assert '--endpoint-url' not in args, args
+assert os.environ.get('AWS_ENDPOINT_URL') == 'https://r2.invalid', os.environ.get('AWS_ENDPOINT_URL')
 # The script under test assigns BUCKET; keep the model's root independent.
 bucket = Path(os.environ.get('FAKE_BUCKET', os.environ['BUCKET']))
 assert bucket.is_dir(), bucket

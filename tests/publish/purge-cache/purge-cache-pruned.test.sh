@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory() as temp:
                PURGE_CALLS=str(work / 'purges'), ARCHIVE_URL='https://apt.invalid',
                CF_TOKEN='fixture', CF_ZONE='test-zone', CF_API_BASE='https://cloudflare.invalid',
                AWS_ACCESS_KEY_ID='fixture', AWS_SECRET_ACCESS_KEY='fixture',
-               GLYNDOR_APT_R2_ENDPOINT='https://r2.invalid')
+               AWS_ENDPOINT_URL='https://r2.invalid')
     # Read the workflow's actual hand-off, so dropping or misnaming it is observable.
     pruned = purge.get('env', {}).get('PRUNED_PATHS')
     if pruned:

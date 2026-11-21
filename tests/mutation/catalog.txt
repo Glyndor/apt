@@ -350,7 +350,7 @@ release-order-served-version-not-semver	scripts/verify/check-release-order.sh	sy
 release-order-dpkg-cannot-compare	scripts/verify/check-release-order.sh	if comparison.returncode != 1:	if False:	tests/verify/check-release-order.test.sh
 release-order-no-sha256-section	scripts/verify/check-release-order.sh	sys.exit("the served index declares no SHA256 section")	section = re.match("()", "")	tests/verify/check-release-order.test.sh
 release-order-no-packages-in-index	scripts/verify/check-release-order.sh	sys.exit("the served index declares no per-architecture Packages file")	pass	tests/verify/check-release-order.test.sh
-prune-installers-usage	scripts/publish/prune-installers.sh	if [ -z "$BUILT_DIR" ] || [ -z "$BUCKET" ] || [ -z "$ENDPOINT" ]; then	if false; then	tests/publish/prune-installers.test.sh
+prune-installers-usage	scripts/publish/prune-installers.sh	if [ -z "$BUILT_DIR" ] || [ -z "$BUCKET" ] || [ -z "${AWS_ENDPOINT_URL:-}" ]; then	if false; then	tests/publish/prune-installers.test.sh
 prune-installers-built-dir-missing	scripts/publish/prune-installers.sh	|| { echo "::error::no built installer directory at $BUILT_DIR" >&2; exit 1; }	|| true	tests/publish/prune-installers.test.sh
 verify-published-pool-cap	scripts/verify/verify-published.sh	if [ "$pool_count" -gt "$MAX_ENTRIES" ]; then	if false; then	tests/verify/verify-published/verify-published-budget.test.sh
 mutation-coverage-python-string	scripts/quality/coverage/check-mutation-coverage.sh	(?:[1-9][0-9]*\s*\)|[rRbBfFuU]{0,2}" + STRING + ")	[1-9][0-9]*\s*\)	tests/quality/coverage/check-mutation-coverage.test.sh
@@ -427,3 +427,4 @@ verify-published-by-hash-value	scripts/verify/verify-published.sh	echo "::error:
 verify-published-by-hash-leg	scripts/verify/verify-published.sh	verify_set "by-hash index file(s)" "$WORK/by-hash-entries" "$DIST_PATH" "$MAX_INDEX_BYTES" ""	:	tests/verify/verify-published/verify-published-by-hash.test.sh
 sync-by-hash-before-index	scripts/publish/sync-archive.sh	--include "dists/*/by-hash/*"	--include "dists/*/by-hash/none"	tests/publish/sync-archive.test.sh,tests/publication/publish/publish-workflow-sync.test.sh
 build-repo-offers-by-hash	scripts/build/build-repo.sh	"$(dirname "$0")/add-by-hash.sh" "$OUT_DIR/dists/stable" "$FPR" "$PUBKEY_ASC"	:	tests/build/build-repo.test.sh
+sync-archive-cli-reads-endpoint	scripts/publish/sync-archive.sh	esac || { echo "::error::this AWS CLI	esac || true || { echo "::error::this AWS CLI	tests/publish/sync-archive.test.sh

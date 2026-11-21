@@ -5,10 +5,22 @@ set -e
 
 # Fail closed if any R2 credential is missing rather than syncing to
 # the wrong place (or nowhere) silently.
-for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY GLYNDOR_APT_R2_ENDPOINT; do
+for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ENDPOINT_URL; do
   eval "[ -n \"\${$v:-}\" ]" \
     || { echo "::error::$v is not configured."; exit 1; }
 done
+# The R2 endpoint comes from a secret like the keys, so it travels the way
+# they do, in the environment (AWS_ENDPOINT_URL), and not as --endpoint-url
+# in argv, which any process on the machine can read in /proc/<pid>/cmdline.
+# A CLI too old to read that variable would send the requests to AWS
+# instead, so it is refused: AWS CLI v2 reads it from 2.13.0, v1 from 1.29.0.
+cli="$(aws --version 2>&1 | sed -n 's|^aws-cli/\([0-9]*\)\.\([0-9]*\)\..*|\1 \2|p')"
+read -r cli_major cli_minor <<< "$cli" || true
+case "${cli_major:-}:${cli_minor:-}" in
+  2:* ) [ "$cli_minor" -ge 13 ] ;;
+  1:* ) [ "$cli_minor" -ge 29 ] ;;
+  * ) false ;;
+esac || { echo "::error::this AWS CLI ($(aws --version 2>&1 | head -n 1)) does not read AWS_ENDPOINT_URL; refusing to sync to an endpoint it would ignore."; exit 1; }
 # Five passes: the Cache-Control differs per file class, and the
 # ordering keeps the live archive consistent for clients mid-publish:
 # new packages land before the metadata that references them, and old
@@ -124,35 +136,30 @@ done
 # rather than silent.
 # 1. Upload new pool/ packages (no deletions yet).
 aws s3 sync public/ s3://glyndor-apt/ \
-  --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
   --no-progress --size-only \
   --exclude "*" --include "pool/*" \
   --cache-control "public, max-age=31536000, immutable"
 # 2. Upload the by-hash copies of the new index files, before anything that
 #    names them.
 aws s3 sync public/ s3://glyndor-apt/ \
-  --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
   --no-progress --size-only \
   --exclude "*" --include "dists/*/by-hash/*" \
   --cache-control "public, max-age=31536000, immutable"
 # 3. Publish the signed index, after the copies it declares and before
 #    the fixed-name index files.
 aws s3 sync public/ s3://glyndor-apt/ \
-  --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
   --no-progress \
   --exclude "*" --include "dists/stable/InRelease" --include "dists/stable/Release" --include "dists/stable/Release.gpg" \
   --cache-control "public, max-age=86400"
 # 4. Publish the rest of the metadata, the index files under their fixed
 #    names among it. Deliberately NOT --delete: see above.
 aws s3 sync public/ s3://glyndor-apt/ \
-  --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
   --no-progress \
   --exclude "pool/*" --exclude "dists/*/by-hash/*" \
   --exclude "dists/stable/InRelease" --exclude "dists/stable/Release" --exclude "dists/stable/Release.gpg" \
   --cache-control "public, max-age=86400"
 # 5. Remove pool/ packages the new metadata no longer references.
 aws s3 sync public/ s3://glyndor-apt/ \
-  --endpoint-url "$GLYNDOR_APT_R2_ENDPOINT" \
   --delete --no-progress --size-only \
   --exclude "*" --include "pool/*" \
   --cache-control "public, max-age=31536000, immutable"

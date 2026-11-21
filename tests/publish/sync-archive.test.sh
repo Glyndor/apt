@@ -126,11 +126,11 @@ passes = [
     + [arg for name in signed_names for arg in ('--exclude', name)] + day,
     ['--delete', '--no-progress', '--size-only', '--exclude', '*', '--include', 'pool/*'] + immutable,
 ]
-expected_calls = [['s3', 'sync', 'public/', 's3://glyndor-apt/', '--endpoint-url', 'https://r2.invalid'] + args
+expected_calls = [['s3', 'sync', 'public/', 's3://glyndor-apt/'] + args
                   for args in passes]
 
 list_call = ['s3api', 'list-objects-v2', '--bucket', 'glyndor-apt', '--prefix', 'install/',
-             '--endpoint-url', 'https://r2.invalid', '--output', 'json', '--no-paginate']
+             '--output', 'json', '--no-paginate']
 complete_calls = expected_calls + [list_call, list_call]
 
 with tempfile.TemporaryDirectory() as temp:
@@ -145,7 +145,7 @@ with tempfile.TemporaryDirectory() as temp:
     (work / 'job.sh').write_text('bash -e publish.sh\nbash -e purge.sh\necho PUBLICATION_COMPLETE\n')
     env = dict(os.environ, PATH=str(work / 'bin') + ':' + os.environ['PATH'],
                AWS_ACCESS_KEY_ID='fixture', AWS_SECRET_ACCESS_KEY='fixture',
-               GLYNDOR_APT_R2_ENDPOINT='https://r2.invalid', CF_TOKEN='fixture', CF_ZONE='test-zone',
+               AWS_ENDPOINT_URL='https://r2.invalid', CF_TOKEN='fixture', CF_ZONE='test-zone',
                ARCHIVE_URL='https://apt.invalid', CF_API_BASE='https://cloudflare.invalid', PRUNED_PATHS='pruned-installers.txt',
                BUCKET=str(work / 'bucket'), FAKE_BUCKET=str(work / 'bucket'), EDGE=str(work / 'edge'),
                AWS_STATE=str(work / 'state'), AWS_CALLS=str(work / 'aws-calls'),
@@ -163,13 +163,15 @@ with tempfile.TemporaryDirectory() as temp:
                 put(work / 'edge', key, value, 1000)
         put(work / 'edge', 'pool/shared.deb', b'bad cached copy', 1000)
 
-    def run(fail_pass=0, after=0, fail_purge=0, order='forward', missing=None):
+    def run(fail_pass=0, after=0, fail_purge=0, order='forward', missing=None, version=None):
         for name in ('state', 'aws-calls', 'writes', 'purges'):
             (work / name).unlink(missing_ok=True)
         current = dict(env, FAIL_PASS=str(fail_pass), FAIL_AFTER=str(after),
                        FAIL_PURGE=str(fail_purge), OBJECT_ORDER=order)
         if missing:
             current.pop(missing)
+        if version:
+            current['FAKE_AWS_VERSION'] = version
         return subprocess.run(['bash', '-e', 'job.sh'], cwd=work, env=current,
                               capture_output=True, text=True)
 
@@ -190,12 +192,27 @@ with tempfile.TemporaryDirectory() as temp:
     reset()
     converged(run(), 'positive control')
     # All credentials must fail before the first write, not merely at fake AWS.
-    for credential in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'GLYNDOR_APT_R2_ENDPOINT'):
+    for credential in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_ENDPOINT_URL'):
         reset()
         result = run(missing=credential)
         check(result.returncode != 0 and credential + ' is not configured.' in result.stdout,
               credential + ': named credential rejection')
         check(not records('aws-calls') and tree(work / 'bucket') == old, 'credential rejection writes nothing')
+
+    # A CLI that does not read AWS_ENDPOINT_URL would send the sync to AWS, so it
+    # is refused before the first call; the oldest that reads it is accepted.
+    for version, accepted in (('aws-cli/2.12.9 Python/3.11', False), ('aws-cli/1.28.0 Python/3.11', False),
+                              ('not a version', False), ('aws-cli/2.13.0 Python/3.11', True),
+                              ('aws-cli/1.29.0 Python/3.11', True)):
+        reset()
+        result = run(version=version)
+        if accepted:
+            check(result.returncode == 0 and len(records('aws-calls')) == len(complete_calls),
+                  version + ': a CLI that reads the endpoint from the environment syncs')
+        else:
+            check(result.returncode != 0 and 'does not read AWS_ENDPOINT_URL' in result.stdout,
+                  version + ': refused for the endpoint it would ignore')
+            check(not records('aws-calls') and tree(work / 'bucket') == old, version + ': and nothing is written')
 
     # Every point a pass can fail at, from an archive already offered by hash and
     # from one before the field: the first publish that carries it starts from

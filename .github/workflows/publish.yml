@@ -481,7 +481,9 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.GLYNDOR_APT_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.GLYNDOR_APT_R2_SECRET_ACCESS_KEY }}
-          GLYNDOR_APT_R2_ENDPOINT: ${{ secrets.GLYNDOR_APT_R2_ENDPOINT }}
+          # The endpoint is read by the AWS CLI from the environment, so it never
+          # reaches argv; sync-archive.sh refuses a CLI too old to read it.
+          AWS_ENDPOINT_URL: ${{ secrets.GLYNDOR_APT_R2_ENDPOINT }}
           # R2 ignores the region but the AWS CLI requires one to be set.
           AWS_DEFAULT_REGION: auto
         run: |
@@ -498,7 +500,7 @@ jobs:
           # back. The removed paths go to a file outside public/ for the edge
           # purge below, because the edge holds an installer for a day.
           ./scripts/publish/prune-installers.sh \
-            public/install glyndor-apt "$GLYNDOR_APT_R2_ENDPOINT" pruned-installers.txt
+            public/install glyndor-apt pruned-installers.txt
 
       - name: Purge Cloudflare cache (mutable, fixed-name files)
         env:
