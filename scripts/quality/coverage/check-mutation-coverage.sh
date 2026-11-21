@@ -13,7 +13,9 @@
 # WHAT IS A REFUSAL
 #
 # A line of code, comments and quoted text aside, that exits with a non-zero
-# status: `exit N`, a call of `fail` where the file defines that helper, or, in
+# status: `exit N`, a call of `fail` where the file defines that helper,
+# `return N` in the shell of a function (`return 1` is one; `return 0`, a bare
+# `return` and `return "$rc"` are not), or, in
 # the Python a script carries, `sys.exit(...)` or `raise SystemExit(...)` whose
 # argument is a non-zero integer or starts with a string: `sys.exit(3)`,
 # `sys.exit("no index")`, `sys.exit(f"cannot read {path}")`,
@@ -45,16 +47,27 @@
 # is a failure: an exemption that outlived its premise keeps a hole open after
 # the reason for it is gone.
 #
-# Only a literal non-zero status or a string counts: `exit "$rc"`, `return 1`
-# and `sys.exit(message)`, whose value is not known without running the code (a
-# status that may be 0 as likely as a message), are not read, so a helper that
-# refuses that way is invisible here.
+# A function that returns 1 hands the refusal to its caller, which decides what
+# it means: `check_entry` returns 1 for an object that does not match its
+# signed size, and the caller retries it and then exits. The `return 1` is the
+# place a mutation removes that refusal, so it is read as one. A function that
+# returns 1 to say "no" to a question, and not to refuse, is read the same
+# way, and is exempted with that reason. A `return` inside the Python of a
+# heredoc is Python returning a value, and is not read.
+#
+# Only a literal non-zero status or a string counts: `exit "$rc"`,
+# `return "$rc"` and `sys.exit(message)`, whose value is not known without
+# running the code (a status that may be 0 as likely as a message), are not
+# read, so a helper that refuses that way is invisible here.
 #
 # WHAT IS READ
 #
 # Every shell script under scripts/ and keyring/upgrade/ (by extension, or by
-# shebang for a file with none) and .github/workflows/publish.yml, the workflow
-# that touches production and that no pull request runs.
+# shebang for a file with none), and the `run:` blocks of every workflow under
+# .github/workflows/: publish.yml touches production and no pull request runs
+# it, and the others hold the gates of every pull request. Only the shell of a
+# workflow is read; a description or a name that says `exit 1` is YAML, not a
+# refusal.
 #
 # Usage: check-mutation-coverage.sh [repo-root]   (default: the current directory)
 set -euo pipefail
@@ -68,9 +81,16 @@ root = sys.argv[1]
 CATALOG = "tests/mutation/catalog.txt"
 EXEMPTIONS = "tests/mutation/exemptions.txt"
 WATCHED_DIRS = ("scripts", "keyring/upgrade")
-WATCHED_FILES = (".github/workflows/publish.yml",)
+WORKFLOWS = ".github/workflows"
 SHEBANG = re.compile(r"^#!.*(/| )(sh|bash|dash)(\s|$)")
 EXIT = re.compile(r"(?<![\w$.-])exit\s+[1-9][0-9]*\b")
+RETURN = re.compile(r"(?<![\w$.-])return\s+[1-9][0-9]*\b")
+# A heredoc handed to python3, and the word that ends it.
+PY_HEREDOC = re.compile(r"\bpython3\b[^\n]*<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?")
+# The key of a `run:` step: a block scalar (`run: |`, `run: >-`, `- run: |`, a
+# comment after it) or a command on the same line.
+RUN_BLOCK = re.compile(r"^(\s*(?:-\s+)?)run:\s*[|>][-+]?[0-9]*\s*(?:#.*)?$")
+RUN_LINE = re.compile(r"^(\s*(?:-\s+)?run:\s*)\S")
 # A quote is read as STRING (see code_of) so a string argument can be told from
 # `sys.exit()`, whose parentheses hold nothing.
 STRING = "\x01"
@@ -114,12 +134,57 @@ def watched():
                 rel = os.path.relpath(os.path.join(dirpath, name), root).replace(os.sep, "/")
                 if is_script(rel):
                     found.append(rel)
-    for rel in WATCHED_FILES:
-        if os.path.isfile(os.path.join(root, rel)):
-            found.append(rel)
-        else:
-            errors.append(f"{rel} is watched and does not exist")
-    return found
+    try:
+        names = sorted(os.listdir(os.path.join(root, WORKFLOWS)))
+    except OSError:
+        names = []
+    flows = [f"{WORKFLOWS}/{n}" for n in names if n.endswith((".yml", ".yaml"))]
+    if not flows:
+        errors.append(f"{WORKFLOWS} holds no workflow, so its refusals cannot be read")
+    if f"{WORKFLOWS}/publish.yml" not in flows:
+        errors.append(f"{WORKFLOWS}/publish.yml is watched and does not exist")
+    return found + flows
+
+
+def is_workflow(rel):
+    return rel.startswith(WORKFLOWS + "/")
+
+
+def shell_of(lines):
+    """The lines of a workflow with everything but the shell of its `run:` steps blanked."""
+    out = [""] * len(lines)
+    n = 0
+    while n < len(lines):
+        block = RUN_BLOCK.match(lines[n])
+        inline = RUN_LINE.match(lines[n])
+        if block:
+            key = len(block.group(1).expandtabs(8))
+            n += 1
+            while n < len(lines) and (not lines[n].strip() or indent(lines[n]) > key):
+                out[n] = lines[n]
+                n += 1
+            continue
+        if inline:
+            out[n] = " " * len(inline.group(1)) + lines[n][len(inline.group(1)):]
+        n += 1
+    return out
+
+
+def python_lines(lines):
+    """0-based numbers of the lines of a heredoc handed to python3."""
+    inside, n = set(), 0
+    while n < len(lines):
+        start = PY_HEREDOC.search(lines[n])
+        if not start or "python3" not in code_of(lines[n]):
+            n += 1
+            continue
+        tag = start.group(1)
+        n += 1
+        while n < len(lines) and lines[n].strip() != tag:
+            inside.add(n)
+            n += 1
+        n += 1
+    return inside
 
 
 def code_of(line, mark=" "):
@@ -159,6 +224,7 @@ def blank(line):
 def refusals(rel, lines):
     """(first line, refusal line) of every refusal, 0-based."""
     defines_fail = any(FAIL_DEF.match(line) for line in lines)
+    python = python_lines(lines)
     found = []
     for n, line in enumerate(lines):
         if blank(line):
@@ -167,7 +233,8 @@ def refusals(rel, lines):
         if FAIL_DEF.match(line):
             continue
         hit = EXIT.search(code) or PY_EXIT.search(code_of(line, STRING)) \
-            or (defines_fail and FAIL_CALL.search(code))
+            or (defines_fail and FAIL_CALL.search(code)) \
+            or (n not in python and RETURN.search(code))
         if not hit:
             continue
         start = statement_start(lines, n)
@@ -308,6 +375,8 @@ used = set()
 for rel in files:
     text = read(rel)
     lines = text.split("\n")
+    if is_workflow(rel):
+        lines = shell_of(lines)
     marks = []
     for ident, old in catalogued.get(rel, []):
         where = span_of(text, old)

@@ -751,6 +751,17 @@ tests/quality/coverage/check-mutation-coverage.test.sh
 	tests/quality/coverage/check-mutation-coverage.test.sh
 	.github/workflows/publish.yml
 
+# The same check over the run: blocks of every workflow, and over this
+# repository, so a change to any workflow selects it.
+tests/quality/coverage/check-mutation-coverage-workflows.test.sh
+	scripts/quality/coverage/check-mutation-coverage.sh
+	scripts/**
+	keyring/upgrade/**
+	.github/workflows/**
+	tests/mutation/catalog.txt
+	tests/mutation/exemptions.txt
+	tests/quality/coverage/check-mutation-coverage-workflows.test.sh
+
 # The decider calls the suite resolver, so a change to either can change it.
 tests/quality/scope/mutation-scope.test.sh
 	scripts/quality/scope/mutation-scope.sh

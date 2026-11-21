@@ -40,8 +40,9 @@
 # THE GUARDS THAT ARE NOT IN THIS CATALOGUE
 #
 # A guard with no entry here is not measured by the sweep, so every refusal of
-# the scripts under scripts/ and keyring/upgrade/ and of publish.yml has to have
-# an entry or a line in tests/mutation/exemptions.txt that says why it has none.
+# the scripts under scripts/ and keyring/upgrade/ and of the run: blocks of every
+# workflow has to have an entry or a line in tests/mutation/exemptions.txt that
+# says why it has none.
 # scripts/quality/coverage/check-mutation-coverage.sh fails a pull request that leaves
 # one with neither, and tests/quality/coverage/check-mutation-coverage.test.sh runs it in
 # the suite job. A guard measured to survive is recorded there with what was
@@ -370,3 +371,40 @@ packages-suite-unknown	scripts/quality/scope/ci-job-scope.sh	    if any(s not in
 line-limit-scope-base	.github/workflows/reusable-line-limit.yml	            && git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then	            && cat scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then	tests/ci/suites/lint-job-scope.test.sh
 line-limit-txt-comments	.github/workflows/reusable-line-limit.yml	*.yml|*.yaml|*.toml|*.txt) hash_comment=1	*.yml|*.yaml|*.toml) hash_comment=1	tests/ci/reusable/reusable-line-limit.test.sh
 line-limit-caller-txt	.github/workflows/line-limit.yml	svelte yml yaml txt"	svelte yml yaml"	tests/ci/reusable/reusable-line-limit.test.sh
+
+# The refusals below became visible when the check started reading a literal
+# `return N` of a shell function. Each was measured the same way as the ones above.
+verify-published-entry-unreachable	scripts/verify/verify-published.sh	if ! fetch "$url" "$dest" "$max_bytes"; then	if false; then	tests/verify/verify-published.test.sh
+verify-published-entry-size	scripts/verify/verify-published.sh	if [ "$got_size" != "$want_size" ]; then	if false; then	tests/verify/verify-published.test.sh
+verify-published-entry-hash	scripts/verify/verify-published.sh	if [ "$got_hash" != "$want_hash" ]; then	if false; then	tests/verify/verify-published.test.sh
+mutation-coverage-return	scripts/quality/coverage/check-mutation-coverage.sh	            or (n not in python and RETURN.search(code))	            or False	tests/quality/coverage/check-mutation-coverage.test.sh
+mutation-coverage-return-python	scripts/quality/coverage/check-mutation-coverage.sh	n not in python and RETURN.search(code)	RETURN.search(code)	tests/quality/coverage/check-mutation-coverage.test.sh
+
+# The refusals below became visible when the check started reading the `run:`
+# blocks of every workflow, not only publish.yml. Each was measured the same way.
+health-check-unreachable	.github/workflows/health-check.yml	if ! curl -fsS --retry 3 --retry-all-errors --retry-delay 5 --max-time 30 "$url" -o "$tmp"; then	if false; then	tests/publication/health-check/health-check-workflow.test.sh
+health-check-signature	.github/workflows/health-check.yml	if ! gpgv --keyring "$gpghome/pubring.kbx" --quiet \	if false && ! gpgv --keyring "$gpghome/pubring.kbx" --quiet \	tests/publication/health-check/health-check-workflow.test.sh
+health-check-no-date	.github/workflows/health-check.yml	if [ -z "$date_line" ]; then	if false; then	tests/publication/health-check/health-check-workflow.test.sh
+health-check-date-unreadable	.github/workflows/health-check.yml	if ! rel_epoch="$(date -u -d "$date_line" +%s 2>/dev/null)"; then	if rel_epoch="$(date -u -d "$date_line" +%s 2>/dev/null)"; false; then	tests/publication/health-check/health-check-workflow.test.sh
+health-check-future	.github/workflows/health-check.yml	if [ "$ahead_s" -gt "${MAX_FUTURE_SECONDS:-600}" ]; then	if false; then	tests/publication/health-check/health-check-workflow.test.sh
+health-check-stale	.github/workflows/health-check.yml	if [ "$age_h" -gt "$MAX_AGE_HOURS" ]; then	if false; then	tests/publication/health-check/health-check-workflow.test.sh
+health-check-no-valid-until	.github/workflows/health-check.yml	if [ -z "$valid_line" ]; then	if false; then	tests/publication/health-check/health-check-workflow.test.sh
+health-check-valid-until-unreadable	.github/workflows/health-check.yml	if ! valid_epoch="$(date -u -d "$valid_line" +%s 2>/dev/null)"; then	if valid_epoch="$(date -u -d "$valid_line" +%s 2>/dev/null)"; false; then	tests/publication/health-check/health-check-workflow.test.sh
+health-check-roster-unreadable	.github/workflows/health-check.yml	products="$(./scripts/verify/published-roster.sh)" || exit 1	products="$(./scripts/verify/published-roster.sh)" || true	tests/publication/health-check/health-check-workflow.test.sh
+mutation-gate-verdict	.github/workflows/mutation.yml	echo "::error::the decision said run=$RUN and the sweep ended $SWEEP"	exit 0	tests/ci/policy/mutation-workflow.test.sh
+dco-range-unlisted	.github/workflows/reusable-dco.yml	|| { echo "::error::could not list ${BASE_SHA}..${HEAD_SHA}; the range could not be checked"; exit 1; }	|| true	tests/ci/reusable/reusable-dco.test.sh
+dco-missing-signoff	.github/workflows/reusable-dco.yml	if [ "$missing" -ne 0 ]; then	if false; then	tests/ci/reusable/reusable-dco.test.sh
+dco-evil-merge-verdict	.github/workflows/reusable-dco.yml	if [ "$bad" -ne 0 ]; then	if false; then	tests/ci/reusable/reusable-dco.test.sh
+dependabot-freshness-no-pull-request	.github/workflows/reusable-dependabot-freshness.yml	if [ -z "$latest" ]; then	if false; then	tests/ci/reusable/reusable-dependabot-freshness.test.sh
+empty-diff-no-base	.github/workflows/reusable-empty-diff.yml	if [ -z "${BASE:-}" ]; then	if false; then	tests/ci/reusable/reusable-empty-diff.test.sh
+empty-diff-empty	.github/workflows/reusable-empty-diff.yml	echo "::error::this pull request has an empty diff against ${BASE}"	exit 0	tests/ci/reusable/reusable-empty-diff.test.sh
+empty-diff-cannot-compare	.github/workflows/reusable-empty-diff.yml	echo "::error::could not compare this pull request with origin/${BASE} (git diff exited ${rc})"	exit 0	tests/ci/reusable/reusable-empty-diff.test.sh
+line-limit-hard	.github/workflows/reusable-line-limit.yml	if [ "$fail" -ne 0 ]; then	if false; then	tests/ci/reusable/reusable-line-limit.test.sh
+schedule-freshness-both-limits	.github/workflows/reusable-schedule-freshness.yml	if [ -n "$days" ] && [ -n "$hours" ]; then	if false; then	tests/ci/reusable/reusable-schedule-freshness.test.sh
+schedule-freshness-no-limit	.github/workflows/reusable-schedule-freshness.yml	if [ -z "$days" ] && [ -z "$hours" ]; then	if false; then	tests/ci/reusable/reusable-schedule-freshness.test.sh
+schedule-freshness-limit-number	.github/workflows/reusable-schedule-freshness.yml	if ! [[ "$limit" =~ ^[1-9][0-9]*$ ]]; then	if false; then	tests/ci/reusable/reusable-schedule-freshness.test.sh
+schedule-freshness-unreconciled	.github/workflows/reusable-schedule-freshness.yml	echo "::error::The windowed query saw nothing 3 times, but the unwindowed query returned ${latest}."	exit 0	tests/ci/reusable/reusable-schedule-freshness.test.sh
+schedule-freshness-stale	.github/workflows/reusable-schedule-freshness.yml	echo "the next scheduled fire rather than the next few minutes." >&2	exit 0	tests/ci/reusable/reusable-schedule-freshness.test.sh
+lint-rules-base-unfetched	.github/workflows/reusable-workflow-lint.yml	echo "::error::Could not fetch the base commit ${BASE_SHA}, so the rules cannot be read from it." >&2	exit 0	tests/ci/reusable/reusable-workflow-lint.test.sh
+mutation-coverage-workflow-shell	scripts/quality/coverage/check-mutation-coverage.sh	        lines = shell_of(lines)	        pass	tests/quality/coverage/check-mutation-coverage-workflows.test.sh
+mutation-coverage-every-workflow	scripts/quality/coverage/check-mutation-coverage.sh	if n.endswith((".yml", ".yaml"))]	if n == "publish.yml"]	tests/quality/coverage/check-mutation-coverage-workflows.test.sh
