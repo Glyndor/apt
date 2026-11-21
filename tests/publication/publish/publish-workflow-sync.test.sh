@@ -22,7 +22,7 @@
 # The order of the steps around the sync, and the purge that follows it, are in
 # tests/publication/publish/publish-workflow.test.sh.
 #
-# Requires: nothing beyond coreutils and grep.
+# Requires: coreutils, grep and python3.
 set -u
 
 cd "$(dirname "$0")/../../.." || exit 1
@@ -72,6 +72,90 @@ check "and but the signed index" "1" \
 	"$(has 4 '--exclude "dists/stable/InRelease" --exclude "dists/stable/Release" --exclude "dists/stable/Release.gpg"')"
 check "and deletes nothing" "0" "$(has 4 '--delete')"
 check "pass 5 is the one that deletes, and only in pool/" "11" "$(has 5 '--delete')$(has 5 '--exclude "*" --include "pool/*"')"
+
+# --- the endpoint reaches every step that talks to the bucket ---------------
+#
+# The scripts read the R2 endpoint from AWS_ENDPOINT_URL and refuse to run
+# without it, so a step that calls one of them without the variable fails the
+# publish, and only the publish: no suite runs the workflow. The steps are
+# found by what they run, not by their names: every step whose shell, or a
+# script it runs, or a script that one runs, calls `aws`. Each has to set the
+# variable from the secret.
+endpoint_steps="$(python3 -I - "$WF" <<'PY'
+import os
+import re
+import sys
+
+workflow = sys.argv[1]
+lines = open(workflow, encoding="utf-8").read().splitlines()
+SCRIPT = re.compile(r"(?:\./)?(scripts/[A-Za-z0-9_./-]+\.sh)\b")
+SIBLING = re.compile(r'\$\(dirname "\$0"\)/([A-Za-z0-9_.-]+\.sh)')
+AWS = re.compile(r"(?:^|[\s;&|(])aws\s")
+
+
+def code(text):
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
+def calls_aws(text, seen):
+    if AWS.search(code(text)):
+        return True
+    for path in SCRIPT.findall(code(text)):
+        if path not in seen and os.path.isfile(path):
+            seen.add(path)
+            if calls_aws(open(path, encoding="utf-8").read(), seen):
+                return True
+    return False
+
+
+def script_calls_aws(path, seen):
+    body = open(path, encoding="utf-8").read()
+    if calls_aws(body, seen):
+        return True
+    for name in SIBLING.findall(code(body)):
+        sibling = os.path.join(os.path.dirname(path), name)
+        if sibling not in seen and os.path.isfile(sibling):
+            seen.add(sibling)
+            if script_calls_aws(sibling, seen):
+                return True
+    return False
+
+
+steps, current = [], None
+for line in lines:
+    if line.startswith("      - "):
+        current = {"name": line, "env": [], "run": [], "in": None}
+        steps.append(current)
+        if "name:" in line:
+            current["name"] = line.split("name:", 1)[1].strip()
+    if current is None:
+        continue
+    key = line[8:] if line.startswith("        ") else line[8:] if line.startswith("      - ") else ""
+    if key.startswith("env:"):
+        current["in"] = "env"
+    elif key.startswith("run:"):
+        current["in"] = "run"
+        inline = key[4:].strip()
+        if inline and inline[0] not in "|>":
+            current["run"].append(inline)
+    elif line.startswith("        ") and not line.startswith("          ") and line.strip():
+        current["in"] = None
+    elif current["in"] and line.startswith("          "):
+        current[current["in"]].append(line.strip())
+for step in steps:
+    run = "\n".join(step["run"])
+    seen = set()
+    reaches = AWS.search(code(run)) is not None or any(
+        os.path.isfile(p) and script_calls_aws(p, seen) for p in SCRIPT.findall(code(run)))
+    if reaches:
+        has = "AWS_ENDPOINT_URL: ${{ secrets.GLYNDOR_APT_R2_ENDPOINT }}" in step["env"]
+        print(f"{'set' if has else 'MISSING'}\t{step['name']}")
+PY
+)"
+check "the walk finds the step that talks to the bucket" "1" \
+	"$(printf '%s\n' "$endpoint_steps" | grep -c 'Publish to R2$')"
+check "and every step it finds sets AWS_ENDPOINT_URL from the secret" "" \
+	"$(printf '%s\n' "$endpoint_steps" | grep '^MISSING' || true)"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
