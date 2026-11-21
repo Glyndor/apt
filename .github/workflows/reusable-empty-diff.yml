@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: empty-diff-${{ github.workflow }}-${{ github.ref }}
+  group: empty-diff-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:

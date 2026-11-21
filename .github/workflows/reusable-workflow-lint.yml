@@ -35,10 +35,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: workflow-lint-${{ github.workflow }}-${{ github.ref }}
+  group: workflow-lint-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   # Only a pull request supersedes its own earlier run. A push to main is a
   # distinct commit that has to be judged on its own, and the suite-on-main
   # watcher reads those verdicts; a cron run is never replaced by the next.
+  # Outside a pull request the group carries the run id: a group shared by
+  # pushes would still drop the older run that is waiting when a newer one
+  # queues, and two quick merges would lose the verdict of the first.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
