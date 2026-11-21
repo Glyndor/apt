@@ -267,10 +267,12 @@ jobs:
   # still die under their mutations. A cron that stops takes that question
   # with it, and nothing says so.
   #
-  # Fifteen days, by the rule above for a weekly cron. Like every watcher here
-  # it needs a successful scheduled run on record or it opens red; the cron
-  # landed on 2026-11-16, so its first Monday firing must have succeeded before
-  # this job is merged.
+  # Fifteen days, by the rule above for a weekly cron. The cron landed on
+  # 2026-11-16 and had not fired when this job was added; the reusable gives a
+  # workflow with no scheduled run on record a grace period of the same fifteen
+  # days from the commit that added its file, and passes with a notice until
+  # then, so the watcher is not born red and still fails if the first Monday
+  # never comes.
   freshness-mutation:
     needs: scope
     if: ${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}

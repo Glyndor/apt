@@ -310,7 +310,10 @@ check "C: sleep was called exactly 2 times" "2" \
 printf '%s\n%s\n%s\n%s\n' "" "" "" "" > "$WORK/all-empty.resp"
 out="$(run_step "$MAX_AGE_DAYS" "$WORK/all-empty.resp")"; rc=$?
 check "D: four empty responses fail (exit 1)" "1" "$rc"
-check "D: gh was called exactly 4 times" "4" \
+# The fifth call asks whether any scheduled run exists at all, which is what
+# decides the grace period of a new cron; with none and no readable date, the
+# step still fails.
+check "D: gh was called exactly 5 times" "5" \
 	"$(grep -acz . "$WORK/gh.log" | tr -d ' ')"
 check "D: the output says no successful scheduled run on record" "1" \
 	"$(printf '%s' "$out" | grep -q 'No successful scheduled run on record' && echo 1 || echo 0)"

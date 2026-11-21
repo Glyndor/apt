@@ -146,6 +146,7 @@ jobs:
         ./tests/ci/policy/network-calls-are-bounded.test.sh
         ./tests/ci/reusable/reusable-dependabot-freshness.test.sh
         ./tests/ci/reusable/reusable-schedule-freshness.test.sh
+        ./tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
         ./tests/monitoring/check-suite-on-main.test.sh
         ./tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh
         ./tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh

@@ -21,9 +21,16 @@ name: Schedule freshness (reusable)
 # workflow cannot elevate beyond the permissions of the workflow that calls it,
 # and reading run history needs that scope. Without it the run does not start.
 #
-# Add the check only once the schedule has fired successfully at least once.
-# With no successful run on record there is nothing to measure and the job
-# reports that as a failure, which for an established workflow is exactly right.
+# A workflow whose cron has not fired yet has nothing on record to measure.
+# That is a failure for an established workflow and expected for a new one,
+# so a workflow with NO scheduled run on record at all gets a grace period as
+# long as the limit, counted from the commit that added its file to the
+# branch, and passes with a notice that says when the grace ends. After that,
+# or as soon as any scheduled run exists, the usual rule applies: a workflow
+# with only old runs is a dead cron and gets no grace. If the date the file was
+# added cannot be read (a shallow history, a file that is not there), the job
+# fails; there is no grace by default. Without this, a watcher added with its
+# cron is born red, and a gate born red is a gate somebody switches off.
 
 on:
   workflow_call:
@@ -85,7 +92,16 @@ jobs:
     timeout-minutes: 10
     permissions:
       actions: read # reading this repository's workflow-run history
+      contents: read # the history that dates a new workflow's grace period
     steps:
+      # The whole history, because the grace period of a new workflow is
+      # counted from the commit that added its file; a shallow checkout would
+      # date every file to its one commit and is refused below.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
       # This step runs as GITHUB_TOKEN, a job-scoped token on its own rate
       # limit, and reads nothing beyond this repository's own run history. No
       # personal credential is ever used here, and the `actions: read` grant
@@ -203,7 +219,25 @@ jobs:
           latest=$(gh api "$base" \
             --jq '[.workflow_runs[].created_at] | max // empty')
           if [ -z "$latest" ]; then
+            # The grace period of a new cron: no scheduled run of any
+            # conclusion on record, and a file added less than the limit ago.
+            # Anything else, an unreadable date included, fails as before.
+            any_runs=$(gh api "repos/${REPO}/actions/workflows/${WORKFLOW}/runs?event=schedule&per_page=1" \
+              --jq '.total_count')
+            added=""
+            if [ "$any_runs" = 0 ] \
+              && [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = false ]; then
+              added=$(git log -1 --diff-filter=A --format=%ct -- ".github/workflows/${WORKFLOW}" 2>/dev/null) || added=""
+            fi
+            if [[ "$added" =~ ^[0-9]+$ ]] && [ $(( (now_s - added) / unit_seconds )) -lt "$limit" ]; then
+              ends=$(date -u -d "@$(( added + limit * unit_seconds ))" +%Y-%m-%dT%H:%M:%SZ)
+              echo "::notice::${WORKFLOW} has no scheduled run on record yet. Its file was added to the branch on $(date -u -d "@${added}" +%Y-%m-%dT%H:%M:%SZ), so it is in its grace period until ${ends}; after that it must have ${what} scheduled runs within the ${limit_name} limit."
+              exit 0
+            fi
             echo "::error::No ${what} scheduled run on record for ${WORKFLOW}."
+            if [ "$any_runs" = 0 ] && [ -z "$added" ]; then
+              echo "The date its file was added to the branch could not be read, so no grace period applies." >&2
+            fi
             echo "Either its cron has never fired, or the schedule was dropped." >&2
             echo "Check that the workflow still exists on the default branch, then" >&2
             echo "toggle it: gh workflow disable ${WORKFLOW} && gh workflow enable ${WORKFLOW}" >&2
