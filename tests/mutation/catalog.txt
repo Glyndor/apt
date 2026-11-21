@@ -416,7 +416,7 @@ by-hash-no-release	scripts/build/add-by-hash.sh	[ -f "$RELEASE" ] || { echo "::e
 by-hash-no-public-key	scripts/build/add-by-hash.sh	[ -f "$PUBKEY_ASC" ] || { echo "::error::no public key at $PUBKEY_ASC" >&2; exit 1; }	[ -f "$PUBKEY_ASC" ] || true || { echo "::error::no public key at $PUBKEY_ASC" >&2; exit 1; }	tests/build/add-by-hash.test.sh
 by-hash-no-entries	scripts/build/add-by-hash.sh	if [ ! -s "$WORK/entries" ]; then	if false; then	tests/build/add-by-hash.test.sh
 by-hash-malformed-line	scripts/build/add-by-hash.sh	if [ -n "$rest" ] || ! [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || ! [[ "$size" =~ ^[0-9]+$ ]]; then	if false; then	tests/build/add-by-hash.test.sh
-by-hash-unsafe-path	scripts/build/add-by-hash.sh	'' | . | .. | ./* | */./* | */. | */../* | ../* | */.. | /* | *//* | *[!A-Za-z0-9._/+~-]* | by-hash/* | */by-hash/*)	__mutation_never_matches__)	tests/build/add-by-hash.test.sh
+by-hash-unsafe-path	scripts/build/add-by-hash.sh	'' | . | .. | ./* | */./* | */. | */../* | ../* | */.. | /* | *//* | *[!A-Za-z0-9._/+~-]* | by-hash | */by-hash | by-hash/* | */by-hash/*)	__mutation_never_matches__)	tests/build/add-by-hash.test.sh
 by-hash-missing-file	scripts/build/add-by-hash.sh	if [ ! -f "$file" ]; then	if false; then	tests/build/add-by-hash.test.sh
 by-hash-not-the-file	scripts/build/add-by-hash.sh	if [ "$(stat -c%s "$file")" != "$size" ] || [ "$(sha256sum < "$file" | cut -d' ' -f1)" != "$sha" ]; then	if false; then	tests/build/add-by-hash.test.sh
 by-hash-other-field	scripts/build/add-by-hash.sh	elif [ "$present" -ne 1 ] || ! grep -qx 'Acquire-By-Hash: yes' "$RELEASE"; then	elif false; then	tests/build/add-by-hash.test.sh

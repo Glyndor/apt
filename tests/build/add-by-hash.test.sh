@@ -137,6 +137,13 @@ D="$(fresh by-hash-path)"
 sed -i '/^SHA256:$/a\ '"$(printf '%064d' 0)"' 1 main/binary-amd64/by-hash/SHA256/x' "$D/dists/stable/Release"
 rc=0; run "$D" || rc=$?
 check "and so is one that names a by-hash copy itself" "1" "$(said 'not a plain relative index path: main/binary-amd64/by-hash')"
+for name in main/binary-amd64/by-hash by-hash; do
+	D="$(fresh "named-${name//\//-}")"
+	sed -i '/^SHA256:$/a\ '"$(printf '%064d' 0)"' 1 '"$name" "$D/dists/stable/Release"
+	rc=0; run "$D" || rc=$?
+	check "a declared file named $name, where the copies go, is refused" "1" "$rc"
+	check "with the reason, not the error of mkdir" "1" "$(said "not a plain relative index path: $name")"
+done
 
 D="$(fresh short-hash)"
 sed -i '/^SHA256:$/a\ abc 1 main/binary-amd64/Packages' "$D/dists/stable/Release"

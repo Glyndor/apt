@@ -57,8 +57,10 @@ while read -r sha size path rest; do
 		echo "::error::$RELEASE has a SHA256 line that is not '<sha256> <size> <path>': $sha $size $path $rest" >&2
 		exit 1
 	fi
+	# A path named by-hash, or under one, is refused: it is where the copies
+	# go, and a file of that name would also stop the directory being made.
 	case "$path" in
-		'' | . | .. | ./* | */./* | */. | */../* | ../* | */.. | /* | *//* | *[!A-Za-z0-9._/+~-]* | by-hash/* | */by-hash/*)
+		'' | . | .. | ./* | */./* | */. | */../* | ../* | */.. | /* | *//* | *[!A-Za-z0-9._/+~-]* | by-hash | */by-hash | by-hash/* | */by-hash/*)
 			echo "::error::$RELEASE declares a path that is not a plain relative index path: $path" >&2
 			exit 1 ;;
 	esac
