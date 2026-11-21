@@ -146,6 +146,28 @@ reset; rm "$F/.github/workflows/publish.yml"; drop publish-token
 rc=0; run || rc=$?
 check "a missing publish workflow is an error, not a smaller set" "1" "$rc"
 
+# --- an entry the sweep could not apply ---------------------------------------------
+# The runner refuses these too, but only when it reaches them.
+reset; entry guard-gone scripts/area/guard.sh 'a text the script no longer holds' 'true' tests/a.test.sh >> "$F/tests/mutation/catalog.txt"
+rc=0; run || rc=$?
+check "an entry whose text is not in its file is refused" "1" "$rc"
+check "naming the entry and the count" "1" "$(said 'guard-gone: its text is in scripts/area/guard.sh 0 time(s), not once')"
+reset; entry guard-twice scripts/area/guard.sh 'exit 1' 'exit 0' tests/a.test.sh >> "$F/tests/mutation/catalog.txt"
+rc=0; run || rc=$?
+check "an entry whose text is in its file more than once is refused" "1" "$rc"
+check "naming the entry" "1" "$(said 'guard-twice: its text is in scripts/area/guard.sh ')"
+reset; entry guard-same scripts/area/guard.sh 'echo ok' 'echo ok' tests/a.test.sh >> "$F/tests/mutation/catalog.txt"
+rc=0; run || rc=$?
+check "an entry that replaces its text with itself is refused" "1" "$rc"
+check "and says so" "1" "$(said 'guard-same: it replaces its text with itself')"
+reset; entry elsewhere-gone docs/absent.md 'anything' 'nothing' tests/a.test.sh >> "$F/tests/mutation/catalog.txt"
+rc=0; run || rc=$?
+check "an entry of a file that is not there is refused, outside the scripts as well" "1" "$rc"
+check "naming the file" "1" "$(said 'elsewhere-gone: docs/absent.md cannot be read')"
+mkdir -p "$F/docs"; printf '%s\n' 'anything' > "$F/docs/absent.md"
+rc=0; run || rc=$?
+check "and the same entry passes once its text is there once" "0" "$rc"
+
 # --- this repository --------------------------------------------------------------
 rc=0; bash "$CHECK" "$HERE" > "$WORK/out" 2>&1 || rc=$?
 check "every refusal in this repository has an entry or an exemption" "0" "$rc"
@@ -154,7 +176,7 @@ check "every refusal in this repository has an entry or an exemption" "0" "$rc"
 R="$WORK/repo"
 mkdir -p "$R/tests/mutation" "$R/.github/workflows"
 cp -r "$HERE/scripts" "$R/"; mkdir -p "$R/keyring"; cp -r "$HERE/keyring/upgrade" "$R/keyring/"
-cp "$HERE/.github/workflows/publish.yml" "$R/.github/workflows/"
+cp "$HERE"/.github/workflows/*.yml "$R/.github/workflows/"
 cp "$HERE/tests/mutation/exemptions.txt" "$R/tests/mutation/" 2>/dev/null || true
 grep -v '^verify-debs-missing-signature	' "$HERE/tests/mutation/catalog.txt" > "$R/tests/mutation/catalog.txt"
 rc=0; bash "$CHECK" "$R" > "$WORK/out" 2>&1 || rc=$?

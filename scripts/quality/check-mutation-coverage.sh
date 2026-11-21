@@ -29,6 +29,11 @@
 # text may occur more than once, for two refusals written alike, and every
 # occurrence has to reach a refusal.
 #
+# An entry whose text is not in its file exactly once, or whose replacement is
+# the text itself, is a failure whatever file it names: the sweep cannot apply
+# it, and it would say so only after running every entry before it, which is
+# half an hour on a pull request and a week on the schedule.
+#
 # An exemption whose text is not in its file, one occurrence of which reaches no
 # refusal, that has no reason, or that names a refusal an entry already covers
 # is a failure: an exemption that outlived its premise keeps a hole open after
@@ -246,7 +251,22 @@ def entries():
             errors.append(f"{CATALOG}: a line does not hold five fields: {raw}")
             continue
         found.setdefault(fields[1], []).append((fields[0], fields[2]))
+        applies(*fields[:4])
     return found
+
+
+def applies(ident, rel, old, new):
+    """The runner's own conditions for applying an entry, checked without running it."""
+    try:
+        count = read(rel).count(old)
+    except OSError:
+        errors.append(f"{CATALOG}: {ident}: {rel} cannot be read, so the sweep cannot apply the entry")
+        return
+    if count != 1:
+        errors.append(f"{CATALOG}: {ident}: its text is in {rel} {count} time(s), not once, "
+                      "so the sweep cannot apply the entry")
+    elif old == new:
+        errors.append(f"{CATALOG}: {ident}: it replaces its text with itself, so the sweep cannot apply the entry")
 
 
 def exemptions():
