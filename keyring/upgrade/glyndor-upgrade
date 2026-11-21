@@ -64,7 +64,7 @@ for f in $index_files; do
 $(printf '%s\n' "$content" | awk '/^Package: /{print $2}')"
 done
 reject_invalid "the Glyndor index" "$names_raw"
-names="$(printf '%s\n' "$names_raw" | grep -v '^$' | sort -u || true)"
+names="$(printf '%s\n' "$names_raw" | grep -v '^$' | LC_ALL=C sort -u || true)"
 if [ -z "$names" ]; then
 	echo "glyndor-upgrade: no readable Glyndor package index, nothing to upgrade" >&2
 	exit 1
@@ -117,7 +117,7 @@ if ! sim="$(apt-get -s --only-upgrade install $installed)"; then
 fi
 plan_raw="$(printf '%s\n' "$sim" | awk '/^Inst / {print $2}')"
 reject_invalid "the upgrade plan" "$plan_raw"
-plan="$(printf '%s\n' "$plan_raw" | grep -v '^$' | sort -u || true)"
+plan="$(printf '%s\n' "$plan_raw" | grep -v '^$' | LC_ALL=C sort -u || true)"
 if [ -z "$plan" ]; then
 	echo "glyndor-upgrade: everything from the Glyndor archive is current"
 	exit 0

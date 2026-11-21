@@ -456,3 +456,5 @@ permissions-not-declared	.github/workflows/drift.yml	permissions:	x-permissions:
 permissions-workflow-write	.github/workflows/drift.yml	contents: read	contents: write	tests/ci/policy/permissions-declared.test.sh
 permissions-write-all	.github/workflows/commit-hygiene.yml	permissions: {}	permissions: write-all	tests/ci/policy/permissions-declared.test.sh
 permissions-secret-job-inherits	.github/workflows/publish.yml	    permissions:	    x-permissions:	tests/ci/policy/permissions-declared.test.sh
+upgrade-names-collation	keyring/upgrade/glyndor-upgrade	names="$(printf '%s\n' "$names_raw" | grep -v '^$' | LC_ALL=C sort -u || true)"	names="$(printf '%s\n' "$names_raw" | grep -v '^$' | sort -u || true)"	tests/ci/policy/locale-pinned.test.sh
+upgrade-plan-collation	keyring/upgrade/glyndor-upgrade	plan="$(printf '%s\n' "$plan_raw" | grep -v '^$' | LC_ALL=C sort -u || true)"	plan="$(printf '%s\n' "$plan_raw" | grep -v '^$' | sort -u || true)"	tests/ci/policy/locale-pinned.test.sh
