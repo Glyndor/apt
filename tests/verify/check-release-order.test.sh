@@ -60,6 +60,52 @@ snapshot arch-gap
 TAG=v2.5.0
 case_with_control 'a declared architecture with no Packages file is refused' 1 'lists no Packages file' arch
 
+# --- an index the signature covers and the reader cannot use is a refusal --------------------
+# Each one is signed with a key of its own, so the signature verifies and the refusal that fires is
+# the one about the content, which `check` tells apart by its message.
+ACTIVE="$VERIFY"
+snapshot no-sha256-section
+TAG=v2.0.0
+check 1 'declares no SHA256 section' 'a signed index with no SHA256 section is refused'
+snapshot no-packages-file
+check 1 'declares no per-architecture Packages file' 'a signed index whose SHA256 section lists no Packages file is refused'
+snapshot served-version-not-semver
+check 1 "the served version '1.0' of podup cannot be compared" 'a served version dpkg accepts and SemVer does not is refused'
+snapshot new
+check 0 'is not older' 'the same checks over an index with a SHA256 section and a SemVer version pass'
+
+# --- a tool that cannot run, or is not there, is a refusal ----------------------------------
+# dpkg-deb is found on PATH and then fails to start (its interpreter does not exist) or prints
+# what is not text, and is then left off PATH altogether. The script runs with a PATH of its own that
+# holds what it needs and nothing else, because a failing command placed before the real one is
+# skipped by the program that looks it up. The case with a working dpkg-deb in that PATH has to
+# pass: that is what shows it is whole and that the refusal is the tool.
+sandbox() { # <directory> [<command>]: the tools the script needs, and the command at its path in <directory>
+	local dir="$1" tool
+	mkdir -p "$dir"
+	for tool in bash tar gpg curl gpgv gpgconf python3 sha256sum cut stat mktemp chmod rm timeout sed dirname dpkg; do
+		ln -sf "$(command -v "$tool")" "$dir/$tool"
+	done
+	[ -z "${2:-}" ] || ln -sf "$2" "$dir/${2##*/}"
+}
+mkdir -p "$WORK/stub-cannot-start" "$WORK/stub-not-text"
+printf '%s\n' '#!/nonexistent/interpreter' > "$WORK/stub-cannot-start/dpkg-deb"
+printf '%s\n' '#!/usr/bin/env bash' "printf '\\377\\376'" > "$WORK/stub-not-text/dpkg-deb"
+chmod 755 "$WORK/stub-cannot-start/dpkg-deb" "$WORK/stub-not-text/dpkg-deb"
+sandbox "$WORK/whole" "$(command -v dpkg-deb)"
+sandbox "$WORK/no-deb"
+sandbox "$WORK/cannot-start" "$WORK/stub-cannot-start/dpkg-deb"
+sandbox "$WORK/not-text" "$WORK/stub-not-text/dpkg-deb"
+sandbox "$WORK/no-dpkg" "$(command -v dpkg-deb)"
+rm "$WORK/no-dpkg/dpkg"
+snapshot old
+TAG=v1.0.0
+SCRIPT_PATH="$WORK/whole" check 0 'is not older' 'a PATH with every tool the script needs passes'
+SCRIPT_PATH="$WORK/cannot-start" check 1 'cannot run dpkg-deb' 'a dpkg-deb that cannot start refuses the publish'
+SCRIPT_PATH="$WORK/not-text" check 1 'cannot run dpkg-deb' 'a dpkg-deb that prints what is not text refuses the publish'
+SCRIPT_PATH="$WORK/no-deb" check 1 'dpkg-deb is required' 'a PATH without dpkg-deb refuses the publish'
+SCRIPT_PATH="$WORK/no-dpkg" check 1 'dpkg is required' 'a PATH without dpkg refuses the publish'
+
 # --- a dpkg that cannot answer is a refusal, not a pass -------------------------
 # dpkg exits 2 when it cannot validate or compare a version. Reading that as "not older" would let
 # a rollback through, so each failure has to end the publish with its own message. The stub

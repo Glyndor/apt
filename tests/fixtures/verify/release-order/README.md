@@ -22,6 +22,13 @@ independent trust anchor for rejecting signatures from this other key.
   Packages file. These three are signed by a second ephemeral RSA-2048 key
   (the public half sits in each directory as `archive-key.asc`; the private
   half was not saved), with `gpg --clearsign`, on 2026-11-07.
+- `no-sha256-section`, `no-packages-file` and `served-version-not-semver`: signed indexes whose
+  content the script cannot use: no `SHA256:` section, a section that lists no
+  `main/binary-*/Packages` file while `Architectures:` declares amd64, and a Packages file whose
+  served Version is `1.0`, which dpkg validates and SemVer does not. The three are signed with a
+  fourth ephemeral RSA-2048 key (the public half sits in each directory as `archive-key.asc`; the
+  private half was not saved) with `gpg --clearsign`, on 2026-11-21, so the signature verifies and
+  the refusal that fires is the one about the content.
 - `oversized`: a valid signed body padded beyond 1 MiB. InRelease.gz is gzip
   compressed solely to keep the repository small; it is expanded before curl
   reads it. Raising the cap must make the real script accept its signature.
