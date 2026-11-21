@@ -19,6 +19,7 @@ an outcome read off a real run, with the date.
 | The packages in `pool/` | the same bucket, served immutable for a year | what `apt install` runs as root |
 | The archive signing key | a CI secret in this repository only | signs the index; its public half ships in `glyndor-archive-keyring` |
 | The organization's release key (public half) | `keyring/glyndor-release-ed25519.b64` | the trust anchor that admits a product's `.deb` into the archive |
+| The post-quantum release key (public half) and the products that must use it | `keyring/glyndor-release-mldsa65.b64`, which holds no key yet, and `keyring/pq-required-products`, empty | the second trust anchor, and the list that makes the second signature mandatory |
 | The bootstrap installer served at `install/<product>` | generated from one template, served from the bucket | a root shell one-liner every product's README points at |
 | The keyring package | rebuilt every run, filename follows the version, and the version follows its inputs | the one object in `pool/` where "same name, different bytes" is possible |
 
@@ -40,6 +41,7 @@ Not considered: an adversary holding the archive signing key, an adversary holdi
 |---|---|---|
 | An unsigned or tampered `.deb` is served | every `.deb` must carry a detached Ed25519 signature that verifies against the release key file; a missing, invalid, oversized or malformed signature fails the publish | test: `tests/verify/verify-debs.test.sh`, each refusal asserting which refusal |
 | A release of product A ships a `.deb` whose control field says it is product B | each product is downloaded into its own directory and verified against its own name: the control `Package:` field and the filename prefix must both match the product that released it | test: the control-field case uses a fixture that breaks only that rule, so the filename check cannot answer for it |
+| The Ed25519 release signature is forged, by a quantum computer or a flaw in the scheme | a second signature, ML-DSA-65 over the same bytes in `<deb>.mldsa65.sig`, checked after the Ed25519 one; when present both must verify, a product in the required list must carry it, and one present while no ML-DSA-65 key is configured, the wrong length, read past a 4096-byte cap, or from a library without ML-DSA is refused rather than skipped. The publish downloads it when a release has one, under the same caps as the `.sig` | test: `tests/verify/verify-debs-hybrid.test.sh` for the cases that need no ML-DSA library, `tests/verify/verify-debs-mldsa.test.sh` for real signatures, generated and one fixed vector made with OpenSSL, `tests/publication/publish/publish-workflow-pq-sidecar.test.sh` for the download. No product signs with it yet, so this row protects nothing today |
 | A product ships a package under the keyring's reserved name | `glyndor-archive-keyring` is refused by both the control field and the filename | test: two cases in the same suite |
 | A trust file with no key, or one that does not exist, verifies against nothing | both are refused as such, with the reason named | test: the two cases in `tests/verify/verify-debs.test.sh` for a trust file with no key and a missing one |
 | A keyring package with no usable key is built and served | the build refuses an armoured file that dearmors cleanly but carries no public key | test: `tests/build/build-keyring.test.sh`, fixture is a detached signature block |
@@ -147,6 +149,15 @@ bytes, and that is the case `tests/build/keyring/build-keyring-generator.test.sh
 - **The release key is shared across products.** Admission binds a package to
   the product that released it, so a compromised sibling cannot serve its
   package under another product's name here, but it can serve one under its own.
+- **The post-quantum signature is in the verifier, not yet in any release.** No
+  ML-DSA-65 key is configured and no product is required, so every package is
+  admitted on Ed25519 alone, and a release that attaches the second signature
+  is refused until the key is committed. A second signature that is optional
+  protects nothing, because whoever forges the first one leaves it out; the
+  protection for a product starts the day it enters
+  `keyring/pq-required-products`. It covers admission only: apt clients check
+  the index, which stays Ed25519 until the verifiers apt uses accept a
+  post-quantum signature.
 - **The single suite serves every Debian and Ubuntu from one build.** That is
   valid only while every package installs the same everywhere; a product built
   against a moving base image can acquire a glibc floor that bookworm and jammy
@@ -162,7 +173,8 @@ bytes, and that is the case `tests/build/keyring/build-keyring-generator.test.sh
   built; it would be the next control if the cost of a bad release grows.
 - **The signature libraries are not a validated cryptographic module.** Ed25519
   is an approved algorithm; `python3-cryptography` and `gpg` here are not
-  validated modules. An assessment that requires one needs a validated
+  validated modules, and neither is the `cryptography` wheel, with its own
+  OpenSSL, that ML-DSA-65 verification needs. An assessment that requires one needs a validated
   verifier in the path or a documented exception.
 - **Reproducibility is bounded by the packaging environment.** The keyring
   package is byte-for-byte reproducible for the same inputs *on the same
