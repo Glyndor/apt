@@ -7,7 +7,7 @@ name: Mutation
 #
 # Weekly and on demand, every entry. On a pull request, only the entries the
 # change can affect, and none when it can affect none: the whole sweep takes about
-# ten minutes, and a change that touches no mutated script, no suite an entry
+# half an hour, and a change that touches no mutated script, no suite an entry
 # names, nothing those suites read and not the catalogue cannot change whether a
 # catalogued guard is still noticed. scripts/quality/mutation-scope.sh decides,
 # from the copy in the base commit, and fails open to every entry. That a guard
@@ -45,7 +45,7 @@ jobs:
   decide:
     name: which entries this change can affect
     runs-on: ubuntu-latest
-    # Bound: under a second measured locally for the decision, plus the
+    # Bound: 0.07 seconds measured locally for the decision, plus the
     # checkout. Five minutes bounds a hang; the six-hour default is what a hang
     # would otherwise cost.
     timeout-minutes: 5
@@ -100,11 +100,15 @@ jobs:
     needs: decide
     if: needs.decide.outputs.run == 'true'
     runs-on: ubuntu-latest
-    # Bound: 10 minutes measured over the 76 entries the catalogue held then,
-    # each one a copy of the tree and the suites it names. Thirty leaves more
-    # than double that for a slower runner and still bounds a hang; the
-    # six-hour default is what a hang would otherwise cost.
-    timeout-minutes: 30
+    # Bound: about 30 minutes measured locally for every entry on 2026-11-21
+    # (19.6 for the 145 entries added with the coverage check, about 10 for the
+    # 76 before them), each one a copy of the tree and the suite it names. A
+    # pull request runs a fraction: 2.5 seconds for the 7 entries a README
+    # change selects, 6.3 minutes for the 36 a change to build-repo.sh
+    # selects. Sixty leaves double the whole sweep for a slower runner
+    # and still bounds a hang; the six-hour default is what a hang would
+    # otherwise cost.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

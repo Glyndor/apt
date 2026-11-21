@@ -2,7 +2,7 @@
 # Print the entries of the mutation catalogue a pull request can affect, one id
 # per line, `all` when every entry has to run, or nothing when none can.
 #
-# The whole sweep takes about ten minutes, so it does not run on every pull
+# The whole sweep takes about half an hour, so it does not run on every pull
 # request: a change that touches neither a mutated script, nor a suite an entry
 # names, nor anything those suites read, nor the catalogue, cannot change
 # whether a catalogued guard is still noticed, and a run would learn nothing.
