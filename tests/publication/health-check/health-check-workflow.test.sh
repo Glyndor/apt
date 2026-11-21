@@ -85,15 +85,17 @@ mkkey archive
 mkkey impostor
 
 # $1=archive dir  $2=signing uid or "-" for unsigned  $3=Date header value or
-# "-" to omit it entirely
+# "-" to omit it entirely  $4=Valid-Until value, "-" to omit it (default: two
+# weeks from now, the window build-repo.sh stamps)
 archive() {
-	local dir="$1" signer="$2" datev="$3"
+	local dir="$1" signer="$2" datev="$3" validv="${4:-$(date -u -R -d '14 days')}"
 	rm -rf "$dir"; mkdir -p "$dir/dists/stable" "$dir/keyring"
 	GNUPGHOME="$WORK/gnupg-archive" gpg --batch --armor --export archive \
 		> "$dir/keyring/glyndor-apt-key.asc"
 	{
 		echo "Origin: Glyndor"
 		[ "$datev" = "-" ] || echo "Date: $datev"
+		[ "$validv" = "-" ] || echo "Valid-Until: $validv"
 		echo "Suite: stable"
 	} > "$dir/body"
 	if [ "$signer" = "-" ]; then
@@ -185,6 +187,29 @@ check "the future control changed the step" "1" "$(cmp -s "$FRESH" "$WORK/fresh-
 A="$(archive "$WORK/future2" archive "$(date -u -R -d '30 days')")"
 rc=0; ( cd "$A" && BASE_URL="file://$A" MAX_AGE_HOURS=48 bash "$WORK/fresh-nofuture.sh" ) >"$WORK/out" 2>&1 || rc=$?
 check "without the future check the same index passes" "0" "$rc"
+
+# --- signed and young, but expired ------------------------------------------
+#
+# apt refuses an index past its Valid-Until whatever its Date says. The age
+# check alone called this one fresh.
+A="$(archive "$WORK/expired" archive "$NOW" "$(date -u -R -d '1 hour ago')")"
+rc=0; run_step "$A" 48 - || rc=$?
+check "a fresh index whose Valid-Until has passed fails" "1" "$rc"
+check "and says it expired" "1" "$(said 'InRelease expired at')"
+A="$(archive "$WORK/novalid" archive "$NOW" -)"
+rc=0; run_step "$A" 48 - || rc=$?
+check "an index with no Valid-Until fails" "1" "$rc"
+check "and says a client would trust it forever" "1" "$(said 'no Valid-Until field')"
+A="$(archive "$WORK/badvalid" archive "$NOW" "never")"
+rc=0; run_step "$A" 48 - || rc=$?
+check "an unparseable Valid-Until fails" "1" "$rc"
+check "and says it could not be read" "1" "$(said 'Valid-Until field in InRelease could not be read')"
+# shellcheck disable=SC2016 # the pattern names a shell variable; it must not expand
+sed 's/-le "$now_epoch" \]/-le 0 ]/' "$FRESH" > "$WORK/fresh-noexpiry.sh"
+check "the expiry control changed the step" "1" "$(cmp -s "$FRESH" "$WORK/fresh-noexpiry.sh" && echo 0 || echo 1)"
+A="$(archive "$WORK/expired2" archive "$NOW" "$(date -u -R -d '1 hour ago')")"
+rc=0; ( cd "$A" && BASE_URL="file://$A" MAX_AGE_HOURS=48 bash "$WORK/fresh-noexpiry.sh" ) >"$WORK/out" 2>&1 || rc=$?
+check "without the expiry check the expired index passes" "0" "$rc"
 
 # --- signed, but the Date cannot be parsed ----------------------------------
 #
