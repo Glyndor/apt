@@ -64,9 +64,32 @@ check "and before the archive is uploaded, so the .asc is uploaded with it" "1" 
 	"$(before "$build_repo" "$publish")"
 # One step holds the archive secret. A second import would need its own copy of
 # every check on the key, and a copy the first step always reaches before it is
-# a check nothing can watch fail.
-check "the archive secret is handed to one step only" "1" \
-	"$(grep -c '^ *GLYNDOR_APT_GPG_PRIVATE_KEY: ' "$WF")"
+# a check nothing can watch fail. Every place the workflow names the secret
+# counts, its env, its run and anything else, not only an `env:` key of that
+# name, and the one step that names it must be the one that runs build-repo.sh.
+secret_steps() { # <workflow> -> the names of the steps that mention the secret
+	python3 -I - "$1" <<'PY'
+import sys
+import yaml
+for job in yaml.safe_load(open(sys.argv[1]))["jobs"].values():
+    for step in job.get("steps", []):
+        if "GLYNDOR_APT_GPG_PRIVATE_KEY" in yaml.safe_dump(step):
+            print(step.get("name", step.get("uses", "?")))
+PY
+}
+check "the archive secret is named by one step only, the one that builds the repository" \
+	"$STEP" "$(secret_steps "$WF")"
+WORK_SEC="$(mktemp -d)"
+python3 -I - "$WF" "$WORK_SEC/leak.yml" <<'PY'
+import sys
+text = open(sys.argv[1]).read()
+old = '          ./scripts/build/build-installers.sh public/install $installers\n'
+assert text.count(old) == 1
+open(sys.argv[2], "w").write(text.replace(old, '          : "${{ secrets.GLYNDOR_APT_GPG_PRIVATE_KEY }}"\n' + old))
+PY
+check "the control: the secret named inside a later run block is seen" "2" \
+	"$(secret_steps "$WORK_SEC/leak.yml" | grep -c .)"
+rm -rf "$WORK_SEC"
 
 # --- the release tag survives the step boundary -----------------------------
 #
