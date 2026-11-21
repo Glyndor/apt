@@ -481,6 +481,20 @@ else
 	fail=$((fail + 1))
 fi
 
+# --- Case 18c: options are parsed as options. ---------------------------------
+#             --require-tag anywhere but first used to be read as a path, and
+# the refusal blamed the key file; an unknown option was read as the package
+# directory. Both are refused by name now, and two copies of the flag are one.
+assert_error 2 "comes after a positional argument" \
+	"--require-tag after a positional argument is refused as misplaced" \
+	-- "$VERIFY" "$WORK/case16" --require-tag "$WORK/key.b64" podup v5.4.0
+assert_error 2 "unknown option --require-tags" "an unknown option is refused by name" \
+	-- "$VERIFY" --require-tags "$WORK/case16" "$WORK/key.b64" podup v5.4.0
+assert 0 "the flag given twice is the flag" \
+	-- "$VERIFY" --require-tag --require-tag "$WORK/case16" "$WORK/key.b64" podup v5.4.0
+assert_error 1 "but the expected tag is empty" "and given twice it still refuses an empty tag" \
+	-- "$VERIFY" --require-tag --require-tag "$WORK/case16" "$WORK/key.b64" podup ""
+
 # --- Case 23: nothing opens a package before its signature verified. ---------
 #             dpkg-deb parses the archive, and every byte of a downloaded .deb
 # is chosen by whoever can attach a release asset, in a job that later holds the

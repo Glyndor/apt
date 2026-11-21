@@ -80,6 +80,8 @@ verify-debs-unreadable-control	scripts/verify/verify-debs.sh	if ! pkg="$(dpkg-de
 verify-debs-package-mismatch	scripts/verify/verify-debs.sh	if [ "$pkg" != "$EXPECTED_PACKAGE" ]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-filename-prefix	scripts/verify/verify-debs.sh	if [[ "$(basename "$deb")" != "${EXPECTED_PACKAGE}_"* ]]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-version-mismatch	scripts/verify/verify-debs.sh	if [ "$upstream" != "$want" ] && [ "${ver#*:}" != "$want" ]; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-unknown-option	scripts/verify/verify-debs.sh	-*) echo "::error::verify-debs.sh: unknown option $1" >&2; exit 2 ;;	-*) break ;;	tests/verify/verify-debs.test.sh
+verify-debs-misplaced-option	scripts/verify/verify-debs.sh	options go first" >&2; exit 2 ;;	options go first" >&2 ;;	tests/verify/verify-debs.test.sh
 verify-debs-require-tag	scripts/verify/verify-debs.sh	if [ "$REQUIRE_TAG" -eq 1 ] && [ -z "$EXPECTED_TAG" ]; then	if false; then	tests/verify/verify-debs.test.sh,tests/publication/publish/publish-workflow-verify-debs.test.sh
 publish-opened-before-signature	.github/workflows/publish.yml	echo "collected $count product package(s)"	dpkg-deb -f /dev/null Package >/dev/null 2>&1 || true; echo "collected $count product package(s)"	tests/publication/publish/publish-workflow.test.sh
 publish-verify-debs-require-tag	.github/workflows/publish.yml	./scripts/verify/verify-debs.sh --require-tag "debs/$p"	./scripts/verify/verify-debs.sh "debs/$p"	tests/publication/publish/publish-workflow-verify-debs.test.sh

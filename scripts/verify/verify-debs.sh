@@ -66,11 +66,24 @@
 
 set -euo pipefail
 
+# Options come first. One that is not known, or one that comes after a
+# positional argument, is refused by name: read as a path it would be blamed
+# on the key file or the package directory, and read as a value it would
+# shift every argument after it.
 REQUIRE_TAG=0
-if [ "${1:-}" = "--require-tag" ]; then
-	REQUIRE_TAG=1
-	shift
-fi
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--require-tag) REQUIRE_TAG=1; shift ;;
+		--) shift; break ;;
+		-*) echo "::error::verify-debs.sh: unknown option $1" >&2; exit 2 ;;
+		*) break ;;
+	esac
+done
+for arg in "$@"; do
+	case "$arg" in
+		--*) echo "::error::verify-debs.sh: the option $arg comes after a positional argument; options go first" >&2; exit 2 ;;
+	esac
+done
 DEBS_DIR="${1:?usage: verify-debs.sh [--require-tag] <debs-dir> [<pubkey-b64-file>] [<expected_package>] [<expected_tag>]}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 KEY_FILE="${2:-$HERE/keyring/glyndor-release-ed25519.b64}"
