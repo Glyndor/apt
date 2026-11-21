@@ -147,7 +147,7 @@ for entry in 'podup # required from now on' 'Podup' 'pod up' 'podup,epistle' '-p
 done
 refute "release may be tampered" "and it is not reported as a tampered release" \
 	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-bad"
-printf '  podup  \n\tepistle-panel\n' > "$WORK/required-spaced"
+printf '  podup  \n  epistle-panel\n' > "$WORK/required-spaced"
 assert_error 1 "no ML-DSA-65 signature" "an entry padded with blanks is still a name, and still required" \
 	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-spaced"
 

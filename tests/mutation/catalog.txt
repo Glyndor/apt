@@ -434,3 +434,7 @@ prune-installers-endpoint-overridden	scripts/publish/prune-installers.sh	if [ -n
 build-repo-key-out-of-env	scripts/build/build-repo.sh	unset GLYNDOR_APT_GPG_PRIVATE_KEY	:	tests/build/build-repo.test.sh
 by-hash-digest-clearsign	scripts/build/add-by-hash.sh	--digest-algo SHA512 --clearsign	--clearsign	tests/build/add-by-hash.test.sh
 by-hash-digest-detached	scripts/build/add-by-hash.sh	--digest-algo SHA512 --armor --detach-sign	--armor --detach-sign	tests/build/add-by-hash.test.sh
+verify-debs-anchor-bytes	scripts/verify/verify-debs.sh	[ "$stray" -eq 0 ] || {	[ "$stray" -eq 0 ] || true || {	tests/verify/verify-debs-anchor-bytes.test.sh
+verify-debs-anchor-checked	scripts/verify/verify-debs.sh	ascii_only "$anchor" || exit 1	ascii_only "$anchor" || true	tests/verify/verify-debs-anchor-bytes.test.sh
+verify-debs-anchor-three-files	scripts/verify/verify-debs.sh	for anchor in "$KEY_FILE" "$MLDSA_KEY_FILE" "$PQ_REQUIRED_FILE"; do	for anchor in "$KEY_FILE"; do	tests/verify/verify-debs-anchor-bytes.test.sh
+verify-debs-anchor-cr-counted	scripts/verify/verify-debs.sh	tr -d ' -~\n' < 	tr -d ' -~\n\r' < 	tests/verify/verify-debs-anchor-bytes.test.sh

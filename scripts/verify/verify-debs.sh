@@ -101,6 +101,27 @@ PQ_REQUIRED_FILE="${6:-$HERE/keyring/pq-required-products}"
 
 [ -f "$KEY_FILE" ] || { echo "::error::release public key $KEY_FILE not found" >&2; exit 1; }
 
+# The files read from keyring/ are the trust anchor, and a reader that strips
+# whitespace would admit a copy that another reader of the same file refuses:
+# a CRLF copy reads as one key here, a CR inside a comment line as none. So a
+# file that holds any byte other than printable ASCII and a line feed is refused
+# whole, before a key is read, and no package is admitted. The bytes are counted
+# with tr, not matched with grep: GNU grep takes a file with a NUL byte for
+# binary and does not see the byte on the line it is on. Glyndor/podman, which
+# publishes the packages, refuses a key file by the same rule.
+ascii_only() { # <file>: a file that is not there is the caller's business
+	local stray
+	[ -e "$1" ] || return 0
+	stray="$(LC_ALL=C tr -d ' -~\n' < "$1" | wc -c)"
+	[ "$stray" -eq 0 ] || {
+		echo "::error::$1 holds $stray byte(s) that are neither printable ASCII nor a line feed (a carriage return, a byte order mark, a tab, a NUL or a byte above 0x7f); refusing it as a broken trust anchor before reading any key, and no package is admitted" >&2
+		return 1
+	}
+}
+for anchor in "$KEY_FILE" "$MLDSA_KEY_FILE" "$PQ_REQUIRED_FILE"; do
+	ascii_only "$anchor" || exit 1
+done
+
 # One base64 key per non-empty, non-comment line. Strip whitespace per line so
 # the multi-key form (one key per line) is not flattened into a single blob.
 KEYS=()

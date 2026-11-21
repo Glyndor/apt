@@ -218,6 +218,11 @@ tests/verify/verify-debs-hybrid.test.sh
 	tests/verify/**
 	keyring/**
 
+tests/verify/verify-debs-anchor-bytes.test.sh
+	scripts/verify/**
+	tests/verify/**
+	keyring/**
+
 tests/verify/verify-debs-control-fields.test.sh
 	scripts/verify/**
 	tests/verify/**

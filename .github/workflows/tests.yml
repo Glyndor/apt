@@ -54,6 +54,7 @@ jobs:
         ./tests/ci/policy/mutation-workflow.test.sh
         ./tests/verify/verify-debs.test.sh
         ./tests/verify/verify-debs-hybrid.test.sh
+        ./tests/verify/verify-debs-anchor-bytes.test.sh
         ./tests/verify/verify-debs-control-fields.test.sh
         ./tests/verify/verify-published.test.sh
         ./tests/verify/verify-published/verify-published-bootstrap.test.sh
