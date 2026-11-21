@@ -128,6 +128,7 @@ jobs:
         ./tests/quality/scope/ci-job-scope.test.sh
         ./tests/quality/scope/ci-job-scope-suites.test.sh
         ./tests/quality/scope/ci-job-scope-suite-needed.test.sh
+        ./tests/quality/scope/ci-job-scope-packages.test.sh
         ./tests/ci/suites/mldsa-job-scope.test.sh
         ./tests/quality/scope/suite-scope-map.test.sh
         ./tests/ci/suites/ci-runs-every-test.test.sh

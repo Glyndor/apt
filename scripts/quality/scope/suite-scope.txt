@@ -706,6 +706,13 @@ tests/quality/scope/ci-job-scope-suite-needed.test.sh
 	scripts/quality/scope/ci-job-scope.sh
 	tests/quality/**
 
+# The packages mode of the same classifier. It builds its own repositories and
+# reads the classifier only.
+
+tests/quality/scope/ci-job-scope-packages.test.sh
+	scripts/quality/scope/ci-job-scope.sh
+	tests/quality/**
+
 tests/quality/scope/suite-scope-map.test.sh
 	scripts/quality/scope/suite-scope.txt
 	.github/workflows/tests.yml

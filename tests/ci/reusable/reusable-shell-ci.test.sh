@@ -265,9 +265,16 @@ package_repo() {
 	git -C "$R" add -A; git -C "$R" commit -qm base
 	git -C "$R" checkout -qb pr
 }
-package_merge() {
+# The pull request as GitHub checks it out: the branch holding the change merged
+# into main with a commit of its own, so HEAD has two parents and HEAD^1 is the
+# base. A checkout with one parent is answered "no usable PR diff" before the
+# resolver reads a single map, so a case built on one reaches no decision at all.
+package_merge() { # [branch holding the change, default pr]
+	local branch="${1:-pr}" parents
 	git -C "$R" add -A; git -C "$R" commit -qm change
-	git -C "$R" checkout -q main; git -C "$R" merge -q --no-ff pr -m merge
+	git -C "$R" checkout -q main; git -C "$R" merge -q --no-ff "$branch" -m merge
+	parents="$(git -C "$R" rev-list --parents -n1 HEAD | wc -w | awk '{print $1 - 1}')"
+	[ "$parents" = 2 ] || check "the fixture's pull request is a merge of two parents" "2" "$parents"
 }
 install_packages() { # [event] [test command] [shellcheck sha256]
 	: > "$WORK/apt.log"; : > "$WORK/path"; rm -rf "$WORK/rt-packages"; mkdir -p "$WORK/rt-packages"
@@ -363,6 +370,25 @@ check "committed dependency-policy change installs everything" "$FULL_INSTALL" "
 
 # Each defect is in BASE: the workflow must keep the full list when the
 # classifier fails, returns garbage/empty, or cannot supply the needed policy.
+# The install is the same whichever guard answers, so each case also names the
+# reason the base resolver gave: a case that is refused for another one has not
+# reached the guard it is named for. The first four replace the resolver, which
+# has no reason to give, and the step refuses what they print.
+declare -A WHY=(
+	[failed]="^$"
+	[empty]="^$"
+	[unknown]="^$"
+	[old]="^$"
+	[empty-suites]="no usable reduced suite decision"
+	[unknown-suites]="no usable reduced suite decision"
+	[missing-map]="HEAD\^1:scripts/quality/scope/suite-dependencies.txt"
+	[malformed-map]="invalid dependency entry: $EDITOR$"
+	[duplicate-map]="invalid dependency entry: $EDITOR -$"
+	[unknown-package]="invalid dependency entry: $EDITOR imaginary-package$"
+	[unmapped-suite]="suite dependencies not established$"
+	[missing-scope]="HEAD\^1:scripts/quality/scope/suite-scope.txt"
+	[bad-scope]="unusable suite map$"
+)
 for defect in failed empty unknown old empty-suites unknown-suites missing-map malformed-map duplicate-map unknown-package unmapped-suite missing-scope bad-scope; do
 	package_repo
 	case "$defect" in
@@ -383,8 +409,11 @@ for defect in failed empty unknown old empty-suites unknown-suites missing-map m
 	git -C "$R" add -A; git -C "$R" commit -qm "$defect"
 	git -C "$R" checkout -q main; git -C "$R" merge -q --ff-only pr
 	git -C "$R" checkout -qb change
-	echo more >> "$R/docs.md"; package_merge
+	echo more >> "$R/docs.md"; package_merge change
 	check "$defect decision installs every dependency" "$FULL_INSTALL" "$(install_packages)"
+	why="$(grep -h 'install all: ' "$WORK/install.out" | head -1 | sed 's/.*install all: //')"
+	check "and the base resolver's reason is the one the case names" "1" \
+		"$([[ "$why" =~ ${WHY[$defect]} ]] && echo 1 || echo 0)"
 done
 
 package_repo; echo more >> "$R/docs.md"

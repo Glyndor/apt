@@ -79,6 +79,7 @@ tests/quality/hygiene/check-commit-identity.test.sh -
 tests/quality/hygiene/check-secrets.test.sh -
 tests/quality/scope/ci-job-scope-suites.test.sh -
 tests/quality/scope/ci-job-scope-suite-needed.test.sh -
+tests/quality/scope/ci-job-scope-packages.test.sh -
 tests/quality/scope/ci-job-scope.test.sh -
 tests/quality/scope/suite-scope-map.test.sh -
 tests/verify/check-release-order.test.sh -
