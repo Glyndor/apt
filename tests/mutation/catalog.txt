@@ -352,3 +352,5 @@ release-order-no-packages-in-index	scripts/verify/check-release-order.sh	sys.exi
 prune-installers-usage	scripts/publish/prune-installers.sh	if [ -z "$BUILT_DIR" ] || [ -z "$BUCKET" ] || [ -z "$ENDPOINT" ]; then	if false; then	tests/publish/prune-installers.test.sh
 prune-installers-built-dir-missing	scripts/publish/prune-installers.sh	|| { echo "::error::no built installer directory at $BUILT_DIR" >&2; exit 1; }	|| true	tests/publish/prune-installers.test.sh
 verify-published-pool-cap	scripts/verify/verify-published.sh	if [ "$pool_count" -gt "$MAX_ENTRIES" ]; then	if false; then	tests/verify/verify-published/verify-published-budget.test.sh
+mutation-coverage-python-string	scripts/quality/check-mutation-coverage.sh	(?:[1-9][0-9]*\s*\)|[rRbBfFuU]{0,2}" + STRING + ")	[1-9][0-9]*\s*\)	tests/quality/check-mutation-coverage.test.sh
+mutation-coverage-python-string-prefix	scripts/quality/check-mutation-coverage.sh	[rRbBfFuU]{0,2}" + STRING	" + STRING	tests/quality/check-mutation-coverage.test.sh

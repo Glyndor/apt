@@ -13,9 +13,15 @@
 # WHAT IS A REFUSAL
 #
 # A line of code, comments and quoted text aside, that exits with a non-zero
-# status: `exit N`, a call of `fail` where the file defines that helper,
-# `sys.exit(N)` or `raise SystemExit(N)` in the Python a script carries. The
-# refusal is the statement that leads to it: the condition on the same line
+# status: `exit N`, a call of `fail` where the file defines that helper, or, in
+# the Python a script carries, `sys.exit(...)` or `raise SystemExit(...)` whose
+# argument is a non-zero integer or starts with a string: `sys.exit(3)`,
+# `sys.exit("no index")`, `sys.exit(f"cannot read {path}")`,
+# `raise SystemExit("no index")`. Python prints a string argument and exits
+# with status 1, which is how most of the Python in a script here refuses.
+# `sys.exit(0)`, `sys.exit()`, `sys.exit(None)` and a bare `raise SystemExit`
+# end the program well and are not refusals. The refusal is the statement that
+# leads to it: the condition on the same line
 # (`[ ... ] || exit 1`) and the lines it continues, or else the block that
 # holds it, from its header (`if`, `elif`, a `case` arm, `|| {`, a Python
 # `if`/`except`) down to the refusal. A refusal with no enclosing block reaches
@@ -39,8 +45,10 @@
 # is a failure: an exemption that outlived its premise keeps a hole open after
 # the reason for it is gone.
 #
-# Only a literal non-zero status counts: `exit "$rc"` and `return 1` are not
-# read, so a helper that refuses that way is invisible here.
+# Only a literal non-zero status or a string counts: `exit "$rc"`, `return 1`
+# and `sys.exit(message)`, whose value is not known without running the code (a
+# status that may be 0 as likely as a message), are not read, so a helper that
+# refuses that way is invisible here.
 #
 # WHAT IS READ
 #
@@ -63,7 +71,10 @@ WATCHED_DIRS = ("scripts", "keyring/upgrade")
 WATCHED_FILES = (".github/workflows/publish.yml",)
 SHEBANG = re.compile(r"^#!.*(/| )(sh|bash|dash)(\s|$)")
 EXIT = re.compile(r"(?<![\w$.-])exit\s+[1-9][0-9]*\b")
-PY_EXIT = re.compile(r"\b(?:sys\.exit|raise\s+SystemExit)\(\s*[1-9][0-9]*\s*\)")
+# A quote is read as STRING (see code_of) so a string argument can be told from
+# `sys.exit()`, whose parentheses hold nothing.
+STRING = "\x01"
+PY_EXIT = re.compile(r"\b(?:sys\.exit|raise\s+SystemExit)\(\s*(?:[1-9][0-9]*\s*\)|[rRbBfFuU]{0,2}" + STRING + ")")
 FAIL_CALL = re.compile(r"(?:^|[\s;&|{(])fail(?=\s|$)")
 FAIL_DEF = re.compile(r"^\s*fail\s*\(\)\s*\{?")
 # The first line of a block: a shell `if`, `elif`, `else`, loop, `case` arm or
@@ -111,8 +122,8 @@ def watched():
     return found
 
 
-def code_of(line):
-    """The line with quoted text and a trailing comment removed."""
+def code_of(line, mark=" "):
+    """The line with quoted text and a trailing comment removed; a quote leaves `mark`."""
     out, quote, i = [], None, 0
     while i < len(line):
         c = line[i]
@@ -126,7 +137,7 @@ def code_of(line):
             continue
         if c in "'\"":
             quote = c
-            out.append(" ")
+            out.append(mark)
         elif c == "#" and (i == 0 or line[i - 1] in " \t"):
             break
         else:
@@ -155,7 +166,7 @@ def refusals(rel, lines):
         code = code_of(line)
         if FAIL_DEF.match(line):
             continue
-        hit = EXIT.search(code) or PY_EXIT.search(code) \
+        hit = EXIT.search(code) or PY_EXIT.search(code_of(line, STRING)) \
             or (defines_fail and FAIL_CALL.search(code))
         if not hit:
             continue
