@@ -442,3 +442,5 @@ publish-checkout-keeps-no-token	.github/workflows/publish.yml	persist-credential
 freshness-reads-tests	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" tests.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 freshness-reads-line-limit	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" line-limit.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 freshness-reads-workflow-lint	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" workflow-lint.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
+commit-hygiene-identity	.github/workflows/commit-hygiene.yml	scripts/quality/hygiene/check-commit-identity.sh "$BASE" "$HEAD"	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
+commit-hygiene-secrets	.github/workflows/commit-hygiene.yml	scripts/quality/hygiene/check-secrets.sh "$BASE" "$HEAD"	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh

@@ -30,6 +30,10 @@ PINNED = {
         f'{SUITE_ON_MAIN} "$REPO" line-limit.yml main',
         f'{SUITE_ON_MAIN} "$REPO" workflow-lint.yml main',
     ],
+    "commit-hygiene.yml": [
+        'scripts/quality/hygiene/check-commit-identity.sh "$BASE" "$HEAD"',
+        'scripts/quality/hygiene/check-secrets.sh "$BASE" "$HEAD"',
+    ],
 }
 passed = failed = 0
 
