@@ -137,6 +137,85 @@ run "$R_AB" "$KEY_A" "$WORK/out5b" "$DEB"
 check "and a keyring carrying it among others admits it" "0" \
 	"$(said 'is not present in')"
 
+# --- Case 5b: the bootstrap package is signed by the key that signs the index --
+#
+# publish.yml serves the keyring package at the archive root with a detached
+# signature the bootstrap installer requires, and build-repo.sh makes it with
+# the key it has just imported and checked. reprepro and the landing page are
+# stubbed so the case runs where reprepro is not installed; what is under test
+# is which key signs and what it signs, not the index. The stubs sit on PATH
+# and in the throwaway root only for these runs.
+mkdir -p "$WORK/stubbin"
+printf '#!/bin/sh\nexit 0\n' > "$WORK/stubbin/reprepro"
+chmod +x "$WORK/stubbin/reprepro"
+stub_root() { # $1=name $2...=uids: mkroot with a landing page that does nothing
+	local root
+	root="$(mkroot "$@")"
+	printf '#!/bin/sh\nexit 0\n' > "$root/scripts/build/build-index-page.sh"
+	chmod +x "$root/scripts/build/build-index-page.sh"
+	echo "$root"
+}
+run_stubbed() { PATH="$WORK/stubbin:$PATH" run "$@"; }
+verifies_with() { # $1=uid $2=asc $3=data -> 1 when the signature verifies against uid's key
+	local home="$WORK/verify-$1"
+	rm -rf "$home"; mkdir -p "$home"; chmod 700 "$home"
+	pubof "$1" | GNUPGHOME="$home" gpg --batch --quiet --import 2>/dev/null
+	GNUPGHOME="$home" gpg --batch --verify "$2" "$3" >/dev/null 2>&1 && echo 1 || echo 0
+}
+mkpkg() { # $1=Package $2=output path: a minimal real package
+	local root="$WORK/pkg-$RANDOM"
+	mkdir -p "$root/DEBIAN"
+	printf 'Package: %s\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' "$1" > "$root/DEBIAN/control"
+	mkdir -p "$(dirname "$2")"
+	dpkg-deb --root-owner-group --build "$root" "$2" >/dev/null 2>&1
+}
+KEYRING_DEB="$WORK/keyring/glyndor-archive-keyring.deb"
+mkpkg glyndor-archive-keyring "$KEYRING_DEB"
+
+R_BOOT="$(stub_root r5c alpha)"
+rc=0; run_stubbed "$R_BOOT" "$KEY_A" --bootstrap "$KEYRING_DEB" "$WORK/out5c" "$DEB" || rc=$?
+check "with --bootstrap the build succeeds" "0" "$rc"
+[ "$rc" -eq 0 ] || { echo "        --- build-repo.sh said ---"; sed 's/^/        /' "$WORK/out"; }
+check "and the keyring package is served at the root, byte for byte" "1" \
+	"$(cmp -s "$KEYRING_DEB" "$WORK/out5c/glyndor-archive-keyring.deb" && echo 1 || echo 0)"
+check "and its detached signature verifies against the archive key" "1" \
+	"$(verifies_with alpha "$WORK/out5c/glyndor-archive-keyring.deb.asc" "$WORK/out5c/glyndor-archive-keyring.deb")"
+check "and not against another key" "0" \
+	"$(verifies_with bravo "$WORK/out5c/glyndor-archive-keyring.deb.asc" "$WORK/out5c/glyndor-archive-keyring.deb")"
+check "and the signature is a detached one, not the data with it" "1" \
+	"$(head -1 "$WORK/out5c/glyndor-archive-keyring.deb.asc" | grep -c -- '-----BEGIN PGP SIGNATURE-----')"
+printf 'tampered\n' >> "$WORK/out5c/glyndor-archive-keyring.deb"
+check "and a tampered package no longer verifies against it" "0" \
+	"$(verifies_with alpha "$WORK/out5c/glyndor-archive-keyring.deb.asc" "$WORK/out5c/glyndor-archive-keyring.deb")"
+
+# The two-key refusal of case 4 holds for the bootstrap signature too: it is
+# the same import, so a secret carrying two keys signs neither the index nor the
+# package. Without this, the guard would protect only the index.
+R_BOOT2="$(stub_root r5d alpha bravo)"
+rc=0; run_stubbed "$R_BOOT2" "$(printf '%s\n%s' "$KEY_A" "$KEY_B")" \
+	--bootstrap "$KEYRING_DEB" "$WORK/out5d" "$DEB" || rc=$?
+check "with --bootstrap, two secret keys are refused" "1" \
+	"$(said 'expected exactly one secret key')"
+check "and no bootstrap signature is written" "0" \
+	"$([ -e "$WORK/out5d/glyndor-archive-keyring.deb.asc" ] && echo 1 || echo 0)"
+
+rc=0; run_stubbed "$R_BOOT" "$KEY_A" --bootstrap "$WORK/absent-keyring.deb" "$WORK/out5e" "$DEB" || rc=$?
+check "a --bootstrap package that does not exist is refused" "1" \
+	"$(said 'no such keyring package')"
+
+# Whatever --bootstrap is given is served as the keyring and signed, so it has
+# to be the keyring package, by name and by control field. Each refusal is
+# paired with the other half right, so it is that half that refuses.
+mkpkg glyndor-archive-keyring "$WORK/misnamed/keyring.deb"
+rc=0; run_stubbed "$R_BOOT" "$KEY_A" --bootstrap "$WORK/misnamed/keyring.deb" "$WORK/out5f" "$DEB" || rc=$?
+check "a --bootstrap file not named glyndor-archive-keyring.deb is refused" "1" \
+	"$(said 'takes glyndor-archive-keyring.deb, not keyring.deb')"
+mkpkg podup "$WORK/impostor/glyndor-archive-keyring.deb"
+rc=0; run_stubbed "$R_BOOT" "$KEY_A" --bootstrap "$WORK/impostor/glyndor-archive-keyring.deb" "$WORK/out5g" "$DEB" || rc=$?
+check "a package under the keyring's name that is another package is refused" "1" \
+	"$(said 'is not the glyndor-archive-keyring package')"
+check "and nothing is served for it" "0" "$([ -e "$WORK/out5g/glyndor-archive-keyring.deb.asc" ] && echo 1 || echo 0)"
+
 # --- Case 6: the whole path, when the machine can run it --------------------
 #
 # Everything above stops before reprepro. This case is the only one that proves
@@ -153,7 +232,7 @@ if command -v reprepro >/dev/null 2>&1; then
 	printf 'Package: testpkg\nVersion: 1.0\nArchitecture: amd64\nSection: utils\nPriority: optional\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' \
 		> "$pkg/DEBIAN/control"
 	dpkg-deb --root-owner-group --build "$pkg" "$REAL" >/dev/null 2>&1
-	rc=0; run "$R" "$KEY_A" "$WORK/out6" "$REAL" || rc=$?
+	rc=0; run "$R" "$KEY_A" --bootstrap "$KEYRING_DEB" "$WORK/out6" "$REAL" || rc=$?
 	check "a valid build succeeds end to end" "0" "$rc"
 	# This is the only case that runs the real tool chain, so when it fails the
 	# reason has to reach whoever reads the log. Without this the failure is a
@@ -164,6 +243,8 @@ if command -v reprepro >/dev/null 2>&1; then
 		  [ -f "$WORK/out6/dists/stable/InRelease" ] && echo 1 || echo 0)"
 	check "and reprepro bookkeeping is not left to be served" "0" \
 		"$(find "$WORK/out6" -maxdepth 1 \( -name conf -o -name db \) | wc -l)"
+	check "and the bootstrap package is signed by the key that signed the index" "1" \
+		"$(verifies_with alpha "$WORK/out6/glyndor-archive-keyring.deb.asc" "$WORK/out6/glyndor-archive-keyring.deb")"
 else
 	echo "NOTE  reprepro is not installed here, so the end-to-end case did not"
 	echo "      run. The guard cases above ran; nothing was counted for this one."

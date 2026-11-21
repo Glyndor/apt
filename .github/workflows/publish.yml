@@ -339,36 +339,6 @@ jobs:
           fi
           echo "collected $count product package(s)"
 
-      - name: Refuse a release older than the one served
-        run: |
-          set -euo pipefail
-          # "Latest" is a pointer GitHub keeps, not a version: an older release
-          # that is re-marked as the latest one is still the latest release,
-          # and its .deb is still validly signed by the release key, so every
-          # other check in this workflow passes it and the archive moves
-          # backwards for every client that runs `apt upgrade` (issue #360).
-          #
-          # The other two channels refuse the same release: the homebrew tap
-          # compares the candidate with the version its formula serves and the
-          # scoop bucket with the version its manifest serves, both with SemVer
-          # precedence. This is the apt channel's copy of that decision, and it
-          # reads the served version out of the archive's own signed index, so
-          # it compares against what the clients are actually served.
-          #
-          # It fails closed: an index it cannot read is an error, not a pass.
-          # One statement per call and one call per product, and the curl that
-          # reads the index lives in the script rather than here.
-          for spec in $PRODUCTS; do
-            p="${spec%%:*}"
-            # The tag the download step pinned, read back rather than resolved
-            # again: resolving "latest" here could hand this step a different
-            # release than the one the .deb files came from.
-            pinned="$(cat "tags/$p" 2>/dev/null || true)"
-            [ -n "$pinned" ] \
-              || { echo "::error::no release tag was pinned for $p; refusing to check a release that cannot be named"; exit 1; }
-            bash ./scripts/verify/check-release-order.sh "$p" "$pinned" "$ARCHIVE_URL"
-          done
-
       - name: Verify product .deb release signatures
         run: |
           set -euo pipefail
@@ -390,12 +360,15 @@ jobs:
             # recomputed: resolving "latest" again here could hand this step a
             # newer release than the one the .deb files actually came from.
             #
-            # Missing is a hard error, never a skip. verify-debs.sh treats an
-            # empty tag as "do not check", which is right for the suite and
-            # would be a silently disabled gate here.
+            # Missing is a hard error, never a skip. Without --require-tag,
+            # verify-debs.sh reads an empty tag as "do not check", which is
+            # right for the suite and would be a silently disabled gate here.
+            # The refusal lives in the verifier and not in a check of this
+            # step: a check here could be deleted with every suite staying
+            # green, because the verifier would then skip the binding without
+            # saying so. tests/publication/publish/publish-workflow-verify-debs.test.sh
+            # runs this step with no tag recorded and requires the refusal.
             tag="$(cat "tags/$p" 2>/dev/null || true)"
-            [ -n "$tag" ] \
-              || { echo "::error::no pinned tag was recorded for $p; refusing to admit packages that cannot be bound to a release"; exit 1; }
             # The ML-DSA-65 key and the required products are the verifier's
             # defaults, keyring/glyndor-release-mldsa65.b64 and
             # keyring/pq-required-products. With a key committed the install
@@ -403,10 +376,54 @@ jobs:
             # without one this runs on the distribution's python3-cryptography,
             # which has no ML-DSA, and a release that attaches a .mldsa65.sig
             # is refused before the library is needed.
-            ./scripts/verify/verify-debs.sh "debs/$p" keyring/glyndor-release-ed25519.b64 "$p" "$tag"
+            ./scripts/verify/verify-debs.sh --require-tag "debs/$p" keyring/glyndor-release-ed25519.b64 "$p" "$tag"
           done
+
+      - name: Refuse a release older than the one served
+        run: |
+          set -euo pipefail
+          # "Latest" is a pointer GitHub keeps, not a version: an older release
+          # that is re-marked as the latest one is still the latest release,
+          # and its .deb is still validly signed by the release key, so every
+          # other check in this workflow passes it and the archive moves
+          # backwards for every client that runs `apt upgrade` (issue #360).
+          #
+          # The other two channels refuse the same release: the homebrew tap
+          # compares the candidate with the version its formula serves and the
+          # scoop bucket with the version its manifest serves, both with SemVer
+          # precedence. This is the apt channel's copy of that decision, and it
+          # reads the served version out of the archive's own signed index, so
+          # it compares against what the clients are actually served.
+          #
+          # It fails closed: an index it cannot read is an error, not a pass.
+          #
+          # It runs after the signatures are verified, not before: it reads the
+          # control fields of each downloaded .deb with dpkg-deb, and a package
+          # nobody has vouched for must not be parsed in a job that later holds
+          # the archive signing key and the bucket credentials. The verified
+          # files are still in debs/<product>, which is where it reads them.
+          # tests/publication/publish/publish-workflow.test.sh fails when any
+          # step before the verification runs dpkg-deb, itself or through a
+          # script it calls.
+          # One statement per call and one call per product, and the curl that
+          # reads the index lives in the script rather than here.
+          for spec in $PRODUCTS; do
+            p="${spec%%:*}"
+            # The tag the download step pinned, read back rather than resolved
+            # again: resolving "latest" here could hand this step a different
+            # release than the one the .deb files came from.
+            pinned="$(cat "tags/$p" 2>/dev/null || true)"
+            [ -n "$pinned" ] \
+              || { echo "::error::no release tag was pinned for $p; refusing to check a release that cannot be named"; exit 1; }
+            bash ./scripts/verify/check-release-order.sh "$p" "$pinned" "$ARCHIVE_URL"
+          done
+
+      - name: Gather the verified packages for the build
+        run: |
+          set -euo pipefail
           # Flatten the per-product, now-verified .deb files into a single
-          # directory for reprepro and the keyring build below.
+          # directory for reprepro and the keyring build below. Only after the
+          # release-order check, which reads each product's own directory.
           find debs -mindepth 2 -maxdepth 2 -name '*.deb' -exec mv -t debs {} +
 
       - name: Build keyring package
@@ -421,56 +438,22 @@ jobs:
             echo "::error::GLYNDOR_APT_GPG_PRIVATE_KEY secret is not configured."
             exit 1
           fi
-          ./scripts/build/build-repo.sh public debs/*.deb
           # The keyring package is also offered at the repo root for first-time
-          # bootstrap (curl + dpkg -i before apt knows the repo).
-          cp debs/glyndor-archive-keyring.deb public/glyndor-archive-keyring.deb
-
-      - name: Sign the keyring package
-        env:
-          GLYNDOR_APT_GPG_PRIVATE_KEY: ${{ secrets.GLYNDOR_APT_GPG_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          # This signature is demanded by the bootstrap installer: it verifies
+          # bootstrap (curl + dpkg -i before apt knows the repo), with a
+          # detached signature the bootstrap installer demands: it verifies
           # glyndor-archive-keyring.deb against the key the package carries and
           # stops before installing anything if the check fails, and the
           # published-archive verification reads it again afterwards. The .asc
-          # therefore has to be served before an installer can require it, which
-          # is why this step sits where it does in the deploy.
-          if [ -z "$GLYNDOR_APT_GPG_PRIVATE_KEY" ]; then
-            echo "::error::GLYNDOR_APT_GPG_PRIVATE_KEY secret is not configured."
-            exit 1
-          fi
-          # Same import and same key selection as scripts/build/build-repo.sh,
-          # re-run here because that script imported into its own ephemeral
-          # GNUPGHOME and unset the secret afterwards. This is one more use of
-          # the existing key, not a second way to get at it.
-          GNUPGHOME="$(mktemp -d)"
-          export GNUPGHOME
-          chmod 700 "$GNUPGHOME"
-          cleanup() { timeout 10 gpgconf --kill all 2>/dev/null || true; rm -rf "$GNUPGHOME"; }
-          trap cleanup EXIT
-          printf '%s' "$GLYNDOR_APT_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
-          unset GLYNDOR_APT_GPG_PRIVATE_KEY
-          SEC_COUNT="$(gpg --batch --with-colons --list-secret-keys | { grep -c '^sec:' || true; })"
-          [ "$SEC_COUNT" -eq 1 ] || { echo "::error::expected exactly one secret key, found $SEC_COUNT"; exit 1; }
-          FPR="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/{print $10; exit}')"
-          [ -n "$FPR" ] || { echo "could not determine signing key fingerprint"; exit 1; }
-          # build-repo.sh already checked this in the preceding build step.
-          # Keep the check here too: this step imports the secret independently.
-          if ! gpg --batch --with-colons --show-keys keyring/glyndor-apt-key.asc \
-            | awk -F: '/^fpr:/{print $10}' | grep -qxF "$FPR"; then
-            echo "::error::signing key ($FPR) is not present in keyring/glyndor-apt-key.asc"
-            exit 1
-          fi
-          # Sign the SERVED copy, not the debs/ one: a mismatch between the
-          # two is exactly what a future installer must be able to catch, and
-          # signing one and serving the other would make that mismatch
-          # invisible. --armor + --detach-sign = a standalone .asc that is the
-          # signature only, not the data plus signature.
-          gpg --batch --local-user "$FPR" --armor --detach-sign \
-            --output public/glyndor-archive-keyring.deb.asc \
-            public/glyndor-archive-keyring.deb
+          # therefore has to be served before an installer can require it,
+          # which is why it is made here, ahead of the upload.
+          #
+          # build-repo.sh makes that signature with the key it imported and
+          # checked for the index (exactly one secret key, and that key in
+          # keyring/glyndor-apt-key.asc), so the secret is imported once and the
+          # signing key is chosen once. A second step used to import the secret
+          # again and repeat both checks; this step always reached them first,
+          # so the copies could be deleted with every suite green.
+          ./scripts/build/build-repo.sh --bootstrap debs/glyndor-archive-keyring.deb public debs/*.deb
 
       - name: Build the bootstrap installers
         run: |

@@ -354,13 +354,62 @@ assert_error 1 "malformed release public key" \
 	"a key with a character outside the base64 alphabet is refused" \
 	-- "$VERIFY" "$d" "$WORK/key-stray.b64" podup v5.9.2
 
-# --- Case 18: with no tag given the binding is skipped, which is why the ------
-#             workflow must never pass an empty one.
+# A rotation file pasted badly: a key that is valid base64 but not 32 bytes,
+# before the good one. Admit-if-any is a rule over keys, so a line that is not a
+# key refuses the whole file as our own configuration error, never skipped to
+# reach the next line, and never reported as a tampered release.
 #
-# tests/publication/publish/publish-workflow.test.sh is where that half is asserted; this case only
-# pins the script's own contract so the two cannot drift apart silently.
+# The length is checked before the key reaches the library, which refuses it
+# too, with its own wording and its own exception type. The check is what keeps
+# the refusal in the malformed-trust-file branch whatever the library raises,
+# and the needle is its wording, so this case is what fails when it is removed.
+python3 - "$WORK/key.b64" "$WORK" <<'PYEOF'
+import base64
+import os
+import sys
+
+good = open(sys.argv[1]).read().strip()
+work = sys.argv[2]
+for size in (31, 33):
+	short = base64.b64encode(os.urandom(size)).decode()
+	with open(os.path.join(work, f"keys-rotation-{size}.b64"), "w") as f:
+		f.write(short + "\n" + good + "\n")
+PYEOF
+for size in 31 33; do
+	assert_error 1 "not a 32-byte Ed25519 key" \
+		"a $size-byte key before a good one refuses the trust file for its length" \
+		-- "$VERIFY" "$d" "$WORK/keys-rotation-$size.b64" podup v5.9.2
+	assert_error 1 "local release trust file is malformed" \
+		"and it is reported as our trust file, not as a tampered release" \
+		-- "$VERIFY" "$d" "$WORK/keys-rotation-$size.b64" podup v5.9.2
+done
+
+# --- Case 18: with no tag given the binding is skipped, which is why the ------
+#             workflow passes --require-tag.
+#
+# tests/publication/publish/publish-workflow-verify-debs.test.sh runs the
+# workflow step with no tag recorded; this case only pins the script's own
+# contract so the two cannot drift apart silently.
 assert 0 "no expected tag means the binding is not applied" \
 	-- "$VERIFY" "$WORK/case16" "$WORK/key.b64" podup
+
+# --- Case 18b: --require-tag makes the binding mandatory. ----------------------
+#             An empty tag is how a publish loses the binding without anything
+# saying so, so with the flag it is refused by the verifier itself. The same
+# bytes are admitted with the flag and their own tag, so the refusal belongs to
+# the empty tag and not to the flag, and with a wrong tag the version binding
+# still fires under the flag.
+assert_error 1 "but the expected tag is empty" \
+	"with --require-tag an empty tag is refused" \
+	-- "$VERIFY" --require-tag "$WORK/case16" "$WORK/key.b64" podup ""
+assert_error 1 "but the expected tag is empty" \
+	"with --require-tag an absent tag is refused" \
+	-- "$VERIFY" --require-tag "$WORK/case16" "$WORK/key.b64" podup
+assert 0 "with --require-tag the package is admitted under its own tag" \
+	-- "$VERIFY" --require-tag "$WORK/case16" "$WORK/key.b64" podup v5.4.0
+assert_error 1 "version mismatch" \
+	"with --require-tag a package from another release is still refused for its version" \
+	-- "$VERIFY" --require-tag "$WORK/case16" "$WORK/key.b64" podup v5.9.2
 
 # --- Case 19: an amd64 .deb attached under an arm64 asset name is refused ---
 #             because the filename is chosen by whoever uploads the asset
@@ -430,6 +479,55 @@ if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -qF "architecture mismatch: epis
 else
 	echo "FAIL - an amd64 package under the _all.deb name is refused, naming both (rc=$rc: $out)"
 	fail=$((fail + 1))
+fi
+
+# --- Case 18c: options are parsed as options. ---------------------------------
+#             --require-tag anywhere but first used to be read as a path, and
+# the refusal blamed the key file; an unknown option was read as the package
+# directory. Both are refused by name now, and two copies of the flag are one.
+assert_error 2 "comes after a positional argument" \
+	"--require-tag after a positional argument is refused as misplaced" \
+	-- "$VERIFY" "$WORK/case16" --require-tag "$WORK/key.b64" podup v5.4.0
+assert_error 2 "unknown option --require-tags" "an unknown option is refused by name" \
+	-- "$VERIFY" --require-tags "$WORK/case16" "$WORK/key.b64" podup v5.4.0
+assert 0 "the flag given twice is the flag" \
+	-- "$VERIFY" --require-tag --require-tag "$WORK/case16" "$WORK/key.b64" podup v5.4.0
+assert_error 1 "but the expected tag is empty" "and given twice it still refuses an empty tag" \
+	-- "$VERIFY" --require-tag --require-tag "$WORK/case16" "$WORK/key.b64" podup ""
+
+# --- Case 23: nothing opens a package before its signature verified. ---------
+#             dpkg-deb parses the archive, and every byte of a downloaded .deb
+# is chosen by whoever can attach a release asset, in a job that later holds the
+# archive signing key. A dpkg-deb on PATH that leaves a mark when it is called
+# shows whether the verifier opened the package: with an invalid signature it
+# must not have, and with a valid one it must have, so the mark is shown to be
+# reachable and its absence to mean something.
+mkdir -p "$WORK/spy"
+cat > "$WORK/spy/dpkg-deb" <<SPY
+#!/bin/sh
+: > "$WORK/spy/opened"
+exec $(command -v dpkg-deb) "\$@"
+SPY
+chmod +x "$WORK/spy/dpkg-deb"
+d="$WORK/case23"; mkdir -p "$d"
+deb="$(make_deb unopened podup 1.0.0)"; cp "$deb" "$d/podup_1.0.0_amd64.deb"
+head -c 64 /dev/zero > "$d/podup_1.0.0_amd64.deb.sig"
+rm -f "$WORK/spy/opened"
+assert_error 1 "invalid signature for" "a package with an invalid signature is refused for its signature" \
+	-- env PATH="$WORK/spy:$PATH" "$VERIFY" "$d" "$WORK/key.b64" podup v1.0.0
+if [ -e "$WORK/spy/opened" ]; then
+	echo "FAIL - and dpkg-deb was never called on it (it was)"; fail=$((fail + 1))
+else
+	echo "ok   - and dpkg-deb was never called on it"; pass=$((pass + 1))
+fi
+sign "$d/podup_1.0.0_amd64.deb"
+rm -f "$WORK/spy/opened"
+assert 0 "the same package with a valid signature is admitted" \
+	-- env PATH="$WORK/spy:$PATH" "$VERIFY" "$d" "$WORK/key.b64" podup v1.0.0
+if [ -e "$WORK/spy/opened" ]; then
+	echo "ok   - and only then is it opened with dpkg-deb"; pass=$((pass + 1))
+else
+	echo "FAIL - and only then is it opened with dpkg-deb (the spy was not reached)"; fail=$((fail + 1))
 fi
 
 echo "passed $pass, failed $fail"

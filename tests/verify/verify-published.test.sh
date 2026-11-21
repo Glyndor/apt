@@ -114,6 +114,20 @@ gpg --batch --quiet --pinentry-mode loopback --passphrase '' \
 	--local-user "$TRUSTED_KEY" --armor --detach-sign --yes --output "$DIST/Release.gpg" "$DIST/Release"
 assert_error 1 "not a plain relative path" "a traversal path in the signed index is rejected" -- run
 
+build_archive
+# An absolute path is refused by the same rule, and by its own arm of it: a
+# traversal needs `..`, this needs nothing but the leading slash.
+{
+	echo "Origin: Glyndor"
+	echo "SHA256:"
+	echo " 00 1 /etc/passwd"
+} > "$DIST/Release"
+gpg --batch --quiet --pinentry-mode loopback --passphrase '' \
+	--local-user "$TRUSTED_KEY" --clearsign --yes --output "$DIST/InRelease" "$DIST/Release"
+gpg --batch --quiet --pinentry-mode loopback --passphrase '' \
+	--local-user "$TRUSTED_KEY" --armor --detach-sign --yes --output "$DIST/Release.gpg" "$DIST/Release"
+assert_error 1 "not a plain relative path" "an absolute path in the signed index is rejected" -- run
+
 # The bug this script exists for: a file that is missing when the publish
 # finishes and appears moments later. The restore is scheduled before the run
 # so the first pass reliably misses it and a later pass reliably finds it, which

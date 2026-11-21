@@ -1,33 +1,38 @@
 #!/usr/bin/env bash
 #
-# The keyring signature of publish.yml: which step signs, when it runs, what
-# it signs, and whether the gpg pipeline it names actually produces a
-# signature that verifies.
+# The keyring signature of publish.yml: which step makes it, when it runs, what
+# it signs, and with which key.
 #
-# The keyring package has to exist (Build signed apt repository has copied it
-# into public/) and the upload must not have happened yet (Publish to R2). The
-# file checks below assert WHICH file is signed and WHERE the .asc is written;
-# the step-order check asserts only WHEN.
+# The bootstrap installer downloads glyndor-archive-keyring.deb from the archive
+# root and refuses it without a detached signature by the archive key, so the
+# publish has to serve both before the upload. Both come from the step that
+# builds the signed repository: scripts/build/build-repo.sh, given --bootstrap,
+# copies the keyring package to the root of public/ and signs that served copy
+# with the key it imported and checked for the index. A second step used to
+# import the secret again and repeat those checks; build-repo.sh always reached
+# them first, so the copies could be deleted with every suite green.
 #
-# The structural cases prove the workflow step NAMES the right paths. They do
-# NOT prove the gpg pipeline produces a .asc that verifies against the same
-# key and not against a different one. Asserting the shape of a control is not
-# asserting the control, and this file has been bitten by exactly that before.
-# The last block runs the same import + fingerprint-select + sign gpg commands
-# against throwaway keys in a private GNUPGHOME and proves the mechanism
-# works, so a future regression in the gpg flags is caught here even if the
-# workflow file is left untouched.
+# The structural cases below say WHERE: the build step runs before the upload,
+# and it is the only step that holds the archive secret. The last block runs the
+# build step as shipped, with the real build-repo.sh and throwaway keys, and
+# only reprepro and the landing page stubbed: the served package and its
+# signature have to come out of it, signed by the key in
+# keyring/glyndor-apt-key.asc, and a copy of the workflow without --bootstrap
+# must serve no signature, so the signature is shown to come from that call.
 #
-# The order of the steps around the signature is in
+# The order of the other steps is in
 # tests/publication/publish/publish-workflow.test.sh; the sync policy is in
 # tests/publication/publish/publish-workflow-sync.test.sh and the download in
-# tests/publication/publish/publish-workflow-assets.test.sh.
+# tests/publication/publish/publish-workflow-assets.test.sh. What build-repo.sh
+# does with --bootstrap on its own is in tests/build/build-repo.test.sh.
 #
 # Requires: gpg.
 set -u
 
 cd "$(dirname "$0")/../../.." || exit 1
+HERE="$PWD"
 WF=".github/workflows/publish.yml"
+STEP="Build signed apt repository"
 pass=0; fail=0
 
 check() { # <description> <expected> <actual>
@@ -48,47 +53,43 @@ before() { # <a> <b> -> 1 when both exist and a comes first
 	[ -n "$1" ] && [ -n "$2" ] && [ "$1" -lt "$2" ] && echo 1 || echo 0
 }
 
-build_repo="$(step_line 'Build signed apt repository')"
-sign_keyring="$(step_line 'Sign the keyring package')"
+build_keyring="$(step_line 'Build keyring package')"
+build_repo="$(step_line "$STEP")"
 publish="$(step_line 'Publish to R2')"
 
-# --- the keyring-signing step runs in the right place ----------------------
-#
-# The keyring has to exist (Build signed apt repository has copied it into
-# public/) and the upload must not have happened yet (Publish to R2). The
-# file checks below assert WHICH file is signed and WHERE the .asc is
-# written; this one asserts only WHEN.
-check "the keyring-signing step runs after the keyring is built" "1" \
-	"$(before "$build_repo" "$sign_keyring")"
-check "the keyring-signing step runs before the archive is uploaded" "1" \
-	"$(before "$sign_keyring" "$publish")"
-
-# --- the keyring-signing step signs the SERVED copy -------------------------
-#
-# The body of the step: from its `- name:` line up to the next `- name:` or
-# `- uses:` line, with comment lines removed so a mention of `debs/` in the
-# step's own comment cannot satisfy the wrong-path check below.
-all_step_lines="$(grep -n '^      - name:\|^      - uses:' "$WF" | cut -d: -f1)"
-sign_end="$(printf '%s\n' "$all_step_lines" | awk -v s="$sign_keyring" '$1 > s {print; exit}')"
-[ -n "$sign_end" ] || sign_end="$(wc -l <"$WF")"
-sign_body="$(sed -n "${sign_keyring},${sign_end}p" "$WF" | grep -v '^[[:space:]]*#')"
-
-# The .asc must land under public/ so the existing upload (which syncs the
-# whole public/ tree) picks it up. A signature dropped next to debs/ would
-# never reach the served archive and the deploy split fails its purpose.
-check "the keyring-signing step writes the .asc under public/" "1" \
-	"$(printf '%s\n' "$sign_body" | grep -q 'public/glyndor-archive-keyring.deb.asc' && echo 1 || echo 0)"
-
-# The signature must sign the SERVED copy. A signature over debs/.../X.deb
-# is not a signature over public/.../X.deb; signing one and serving the
-# other is exactly the silent mismatch this guard exists to catch, because
-# the comment in the step says "not the debs/ one" and the assertion below
-# reads commands, not prose.
-check "the keyring-signing step signs the served copy, not the debs/ one" "1" \
-	"$(printf '%s\n' "$sign_body" | grep -q 'public/glyndor-archive-keyring.deb' && \
-	   printf '%s\n' "$sign_body" | grep -qE 'public/glyndor-archive-keyring\.deb([[:space:]]*$|\\)' && \
-	   ! printf '%s\n' "$sign_body" | grep -qE 'debs/glyndor-archive-keyring' && \
-	   echo 1 || echo 0)"
+# --- the bootstrap signature is made before the upload ----------------------
+check "the repository is built after the keyring package" "1" \
+	"$(before "$build_keyring" "$build_repo")"
+check "and before the archive is uploaded, so the .asc is uploaded with it" "1" \
+	"$(before "$build_repo" "$publish")"
+# One step holds the archive secret. A second import would need its own copy of
+# every check on the key, and a copy the first step always reaches before it is
+# a check nothing can watch fail. Every place the workflow names the secret
+# counts, its env, its run and anything else, not only an `env:` key of that
+# name, and the one step that names it must be the one that runs build-repo.sh.
+secret_steps() { # <workflow> -> the names of the steps that mention the secret
+	python3 -I - "$1" <<'PY'
+import sys
+import yaml
+for job in yaml.safe_load(open(sys.argv[1]))["jobs"].values():
+    for step in job.get("steps", []):
+        if "GLYNDOR_APT_GPG_PRIVATE_KEY" in yaml.safe_dump(step):
+            print(step.get("name", step.get("uses", "?")))
+PY
+}
+check "the archive secret is named by one step only, the one that builds the repository" \
+	"$STEP" "$(secret_steps "$WF")"
+WORK_SEC="$(mktemp -d)"
+python3 -I - "$WF" "$WORK_SEC/leak.yml" <<'PY'
+import sys
+text = open(sys.argv[1]).read()
+old = '          ./scripts/build/build-installers.sh public/install $installers\n'
+assert text.count(old) == 1
+open(sys.argv[2], "w").write(text.replace(old, '          : "${{ secrets.GLYNDOR_APT_GPG_PRIVATE_KEY }}"\n' + old))
+PY
+check "the control: the secret named inside a later run block is seen" "2" \
+	"$(secret_steps "$WORK_SEC/leak.yml" | grep -c .)"
+rm -rf "$WORK_SEC"
 
 # --- the release tag survives the step boundary -----------------------------
 #
@@ -96,11 +97,13 @@ check "the keyring-signing step signs the served copy, not the debs/ one" "1" \
 # tag as an argument. The download step resolves it; the verification step runs
 # in a different shell and cannot see the variable. An empty fourth argument
 # means "do not check", which is right for the suite and would be a silently
-# disabled gate here, so the workflow has to persist the tag and refuse when it
-# is absent.
+# disabled gate here, so the workflow has to persist the tag and call the
+# verifier with --require-tag, which refuses an empty one.
 #
 # Asserted on the workflow text because the failure is a shell-scope one that no
-# amount of running verify-debs.sh in isolation can surface.
+# amount of running verify-debs.sh in isolation can surface. That the refusal
+# fires is asserted by running the step itself, with no tag on disk, in
+# tests/publication/publish/publish-workflow-verify-debs.test.sh.
 # shellcheck disable=SC2016  # these patterns are the literal shell text in the
 # workflow, so `$p` and `$tag` must stay unexpanded; expanding them here would
 # search for this test's own empty variables and match nothing, which is a
@@ -110,83 +113,16 @@ check "the download step records the pinned tag for the next step" "1" \
 # shellcheck disable=SC2016  # same reason as above: literal workflow text.
 check "the verification step reads that recorded tag back" "1" \
 	"$(grep -c 'tag="\$(cat "tags/\$p"' "$WF")"
-check "and refuses when no tag was recorded, rather than skipping the binding" "1" \
-	"$(grep -c 'no pinned tag was recorded' "$WF")"
 # shellcheck disable=SC2016  # same reason as above: literal workflow text.
-check "the admission gate is called with the tag as its fourth argument" "1" \
-	"$(grep -c 'verify-debs.sh "debs/\$p" keyring/glyndor-release-ed25519.b64 "\$p" "\$tag"' "$WF")"
+check "the admission gate requires the tag, which it gets as its fourth argument" "1" \
+	"$(grep -c 'verify-debs.sh --require-tag "debs/\$p" keyring/glyndor-release-ed25519.b64 "\$p" "\$tag"' "$WF")"
 
-# The guard has to be able to fire. Run the same two lines the workflow runs,
-# in a directory with no recorded tag, and require the refusal.
-guard_dir="$(mktemp -d)"
-guard_out="$(cd "$guard_dir" && p=podup; tag="$(cat "tags/$p" 2>/dev/null || true)"; \
-	[ -n "$tag" ] || { echo "::error::no pinned tag was recorded for $p"; exit 1; }; echo "reached the gate" )" \
-	&& guard_rc=0 || guard_rc=$?
-rm -rf "$guard_dir"
-check "the recorded-tag guard exits non-zero with no tag on disk" "1" "$guard_rc"
-check "and says which product had none" "1" \
-	"$(printf '%s' "$guard_out" | grep -c 'no pinned tag was recorded for podup')"
+# --- the build step, as shipped, serves and signs the keyring package -------
+WORK="$(mktemp -d)"
+trap 'timeout 10 gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK"' EXIT
 
-# --- the same gpg commands actually sign and verify end to end -------------
-#
-# The structural cases above prove the workflow step NAMES the right paths.
-# They do NOT prove the gpg pipeline produces a .asc that verifies against
-# the same key and not against a different one. Asserting the shape of a
-# control is not asserting the control, and this file has been bitten by
-# exactly that before. This block runs the same import + fingerprint-select
-# + sign gpg commands against throwaway keys in a private GNUPGHOME and
-# proves the mechanism works, so a future regression in the gpg flags is
-# caught here even if the workflow file is left untouched.
-#
-# Requires: gpg.
-WORK_PW="$(mktemp -d)"
-trap 'timeout 10 gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK_PW"' EXIT
-
-mkkey_pw() { # $1=uid -> prints the armored secret key
-	local home="$WORK_PW/gnupg-$1"
-	mkdir -p "$home"; chmod 700 "$home"
-	GNUPGHOME="$home" gpg --batch --quiet --passphrase '' \
-		--quick-generate-key "$1 <$1@test.invalid>" default default never \
-		>/dev/null 2>&1
-	GNUPGHOME="$home" gpg --batch --armor --export-secret-keys "$1"
-}
-pubof_pw() { # $1=uid -> prints the armored public key
-	GNUPGHOME="$WORK_PW/gnupg-$1" gpg --batch --armor --export "$1"
-}
-
-# Only alpha's secret half is imported anywhere: bravo exists to prove the
-# signature does NOT verify against a key that did not sign it, and for that
-# only its public half is needed. Generated for its side effect, so the
-# secret is not bound to a name nothing reads.
-KEY_A_PW="$(mkkey_pw alpha)"
-mkkey_pw bravo >/dev/null
-PUB_A_PW="$(pubof_pw alpha)"
-PUB_B_PW="$(pubof_pw bravo)"
-
-# A fixture standing in for the served keyring .deb. What is being tested is
-# the gpg pipeline, not the .deb's contents.
-DEB_PW="$WORK_PW/glyndor-archive-keyring.deb"
-printf 'fake keyring package body\n' > "$DEB_PW"
-
-# Same import + fingerprint-select path build-repo.sh and the new step use.
-SIGNHOME_PW="$WORK_PW/sign"
-mkdir -p "$SIGNHOME_PW"; chmod 700 "$SIGNHOME_PW"
-printf '%s' "$KEY_A_PW" | GNUPGHOME="$SIGNHOME_PW" gpg --batch --quiet --import
-sec_count_pw="$(GNUPGHOME="$SIGNHOME_PW" gpg --batch --with-colons --list-secret-keys \
-	| { grep -c '^sec:' || true; })"
-check "the import guard admits exactly one secret key" "1" \
-	"$( [ "$sec_count_pw" -eq 1 ] && echo 1 || echo 0 )"
-fpr_pw="$(GNUPGHOME="$SIGNHOME_PW" gpg --batch --with-colons --list-secret-keys \
-	| awk -F: '/^fpr:/{print $10; exit}')"
-check "the fingerprint extract reads the only key (40 hex chars)" "40" "${#fpr_pw}"
-
-# Read the signing step body, dedented to the columning it would have
-# inside a workflow (same shape as the helper that extracts the download
-# step body above). The cut point -- immediately before the line that
-# imports a GitHub Actions secret the test has no source for -- is the
-# documented exception, not a stubbed gpg. Everything after the cut runs
-# against our pre-imported keyring and the pre-computed fingerprint.
-python3 - "$WF" "Sign the keyring package" > "$WORK_PW/sign_step.sh" <<'PY'
+extract() { # $1=workflow file -> the run: body of the step, dedented
+	python3 -I - "$1" "$STEP" <<'PY'
 import sys
 lines = open(sys.argv[1]).read().splitlines()
 start = next(i for i, l in enumerate(lines) if "name: " + sys.argv[2] in l)
@@ -201,109 +137,93 @@ for line in lines[run + 1:]:
 	body.append(line[10:])
 print("\n".join(body))
 PY
-awk '/^unset GLYNDOR_APT_GPG_PRIVATE_KEY$/{found=1} found' \
-	"$WORK_PW/sign_step.sh" > "$WORK_PW/sign_body.sh"
+}
 
-# A scratch tree mirroring what the step sees at run time: a served
-# keyring .deb under public/, and keyring/glyndor-apt-key.asc carrying
-# alpha's public key so the step's fingerprint-membership check (the
-# "signing key is not present in keyring/glyndor-apt-key.asc" guard)
-# passes against the same key the body just selected.
-SIGN_TREE="$WORK_PW/tree"
-mkdir -p "$SIGN_TREE/public" "$SIGN_TREE/keyring"
-cp "$DEB_PW" "$SIGN_TREE/public/glyndor-archive-keyring.deb"
-printf '%s' "$PUB_A_PW" > "$SIGN_TREE/keyring/glyndor-apt-key.asc"
+mkkey() { # $1=uid -> prints the armored secret key
+	local home="$WORK/gnupg-$1"
+	mkdir -p "$home"; chmod 700 "$home"
+	GNUPGHOME="$home" gpg --batch --quiet --passphrase '' \
+		--quick-generate-key "$1 <$1@test.invalid>" default default never \
+		>/dev/null 2>&1
+	GNUPGHOME="$home" gpg --batch --armor --export-secret-keys "$1"
+}
+pubof() { GNUPGHOME="$WORK/gnupg-$1" gpg --batch --armor --export "$1"; }
+verifies_with() { # $1=uid $2=asc $3=data -> 1 when the signature verifies against uid's key
+	local home="$WORK/verify-$1"
+	rm -rf "$home"; mkdir -p "$home"; chmod 700 "$home"
+	pubof "$1" | GNUPGHOME="$home" gpg --batch --quiet --import 2>/dev/null
+	GNUPGHOME="$home" gpg --batch --verify "$2" "$3" >/dev/null 2>&1 && echo 1 || echo 0
+}
 
-(
-	cd "$SIGN_TREE" || exit 1
-	GNUPGHOME="$SIGNHOME_PW" FPR="$fpr_pw" \
-		bash "$WORK_PW/sign_body.sh"
-)
+KEY_A="$(mkkey alpha)"
+KEY_B="$(mkkey bravo)"
 
-ASC="$SIGN_TREE/public/glyndor-archive-keyring.deb.asc"
-DEB="$SIGN_TREE/public/glyndor-archive-keyring.deb"
+# reprepro is not what is under test and may not be installed, and the landing
+# page reads the index reprepro would have written. Both are stubbed, nothing
+# else is.
+mkdir -p "$WORK/stubbin"
+printf '#!/bin/sh\nexit 0\n' > "$WORK/stubbin/reprepro"
+chmod +x "$WORK/stubbin/reprepro"
 
-# All crypto cases below read $ASC, the artifact the step produced. Gate
-# them on a real .asc existing: without the gate, the file-reading
-# assertions would error out (counted as red) while the verify-fails
-# assertions would pass by accident, because verifying a missing .asc
-# always fails for the wrong reason.
-if [ ! -s "$ASC" ]; then
-	check "the sign command produces a non-empty .asc (no .asc written)" "1" "0"
-	check "the .asc is detached (does not embed the signed data) (no .asc written)" "1" "0"
-	check "and it carries the armoured PGP signature header (no .asc written)" "1" "0"
-	check "the .asc verifies against the matching public key (no .asc written)" "1" "0"
-	check "the .asc does not verify against a non-matching public key (no .asc written)" "1" "0"
-	check "the .asc does not verify against a tampered .deb (no .asc written)" "1" "0"
-	check "the extracted signing step produces a signature gpgv accepts (no .asc written)" "1" "0"
-else
-	check "the sign command produces a non-empty .asc" "1" \
-		"$( [ -s "$ASC" ] && echo 1 || echo 0 )"
+sandbox() { # $1=name -> prints a tree laid out as the step sees it
+	local d="$WORK/$1"
+	mkdir -p "$d/scripts/build" "$d/keyring" "$d/debs"
+	cp "$HERE/scripts/build/build-repo.sh" "$d/scripts/build/"
+	printf '#!/bin/sh\nexit 0\n' > "$d/scripts/build/build-index-page.sh"
+	chmod +x "$d/scripts/build/build-index-page.sh"
+	pubof alpha > "$d/keyring/glyndor-apt-key.asc"
+	mkdir -p "$d/pkg/DEBIAN"
+	printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' > "$d/pkg/DEBIAN/control"
+	dpkg-deb --root-owner-group --build "$d/pkg" "$d/debs/glyndor-archive-keyring.deb" >/dev/null 2>&1
+	printf 'product package body\n' > "$d/debs/podup_1.0.0_amd64.deb"
+	echo "$d"
+}
 
-	# Detached check: --armor + --detach-sign gives a standalone signature, not
-	# the data plus signature. A fixture whose first line appears in the .asc
-	# means the sign was made without --detach-sign.
-	check "the .asc is detached (does not embed the signed data)" "0" \
-		"$( grep -q 'fake keyring package body' "$ASC" && echo 1 || echo 0 )"
-	check "and it carries the armoured PGP signature header" "1" \
-		"$( head -1 "$ASC" | grep -q -- '-----BEGIN PGP SIGNATURE-----' && echo 1 || echo 0 )"
+run_step() { # $1=sandbox $2=step file $3=secret -> rc
+	(cd "$1" && PATH="$WORK/stubbin:$PATH" GLYNDOR_APT_GPG_PRIVATE_KEY="$3" \
+		bash "$2" >"$WORK/out" 2>&1)
+}
 
-	# Verify with the matching public key: must succeed. Use a separate GNUPGHOME
-	# so the signing keyring never leaks into the verifier and a passing check
-	# here is the verifier alone admitting the signature.
-	VRF_PW="$WORK_PW/vrf"
-	mkdir -p "$VRF_PW"; chmod 700 "$VRF_PW"
-	printf '%s' "$PUB_A_PW" | GNUPGHOME="$VRF_PW" gpg --batch --quiet --import
-	if GNUPGHOME="$VRF_PW" gpg --batch --verify "$ASC" "$DEB" >/dev/null 2>&1; then
-		echo "ok    the .asc verifies against the matching public key"
-		pass=$((pass + 1))
-	else
-		echo "FAIL  the .asc did not verify against the matching public key"
-		fail=$((fail + 1))
-	fi
+extract "$WF" > "$WORK/step.sh"
+check "the step was extracted from the workflow" "1" \
+	"$(grep -v '^[[:space:]]*#' "$WORK/step.sh" | grep -c 'build-repo.sh --bootstrap debs/glyndor-archive-keyring.deb public ')"
 
-	# Verify with a different public key: must fail (the whole point).
-	VRF2_PW="$WORK_PW/vrf2"
-	mkdir -p "$VRF2_PW"; chmod 700 "$VRF2_PW"
-	printf '%s' "$PUB_B_PW" | GNUPGHOME="$VRF2_PW" gpg --batch --quiet --import
-	if GNUPGHOME="$VRF2_PW" gpg --batch --verify "$ASC" "$DEB" >/dev/null 2>&1; then
-		echo "FAIL  the .asc verified against a non-matching public key"
-		fail=$((fail + 1))
-	else
-		echo "ok    the .asc does not verify against a non-matching public key"
-		pass=$((pass + 1))
-	fi
+D="$(sandbox good)"; rc=0; run_step "$D" "$WORK/step.sh" "$KEY_A" || rc=$?
+check "the build step succeeds with one archive key" "0" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/        /' "$WORK/out"
+check "and serves the keyring package at the root of public/, byte for byte" "1" \
+	"$(cmp -s "$D/debs/glyndor-archive-keyring.deb" "$D/public/glyndor-archive-keyring.deb" && echo 1 || echo 0)"
+check "and its .asc verifies against the archive key" "1" \
+	"$(verifies_with alpha "$D/public/glyndor-archive-keyring.deb.asc" "$D/public/glyndor-archive-keyring.deb")"
+check "and not against another key" "0" \
+	"$(verifies_with bravo "$D/public/glyndor-archive-keyring.deb.asc" "$D/public/glyndor-archive-keyring.deb")"
+check "and the .asc is an armoured detached signature" "1" \
+	"$(head -1 "$D/public/glyndor-archive-keyring.deb.asc" 2>/dev/null | grep -c -- '-----BEGIN PGP SIGNATURE-----')"
 
-	# Tampered .deb must fail verification against the matching key. The
-	# fingerprint check stops an attacker who swapped the key; this is the
-	# separate property that the .asc catches an attacker who swapped the
-	# bytes after the signature was made.
-	cp "$DEB" "$DEB.tampered"
-	printf 'injected bytes\n' >> "$DEB.tampered"
-	if GNUPGHOME="$VRF_PW" gpg --batch --verify "$ASC" "$DEB.tampered" >/dev/null 2>&1; then
-		echo "FAIL  the .asc verified against a tampered .deb"
-		fail=$((fail + 1))
-	else
-		echo "ok    the .asc does not verify against a tampered .deb"
-		pass=$((pass + 1))
-	fi
+D="$(sandbox twokeys)"; rc=0
+run_step "$D" "$WORK/step.sh" "$(printf '%s\n%s' "$KEY_A" "$KEY_B")" || rc=$?
+check "a secret carrying two keys stops the step" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+check "and says it found more than one secret key" "1" "$(grep -c 'expected exactly one secret key' "$WORK/out")"
+check "and nothing is signed for the bootstrap" "0" \
+	"$([ -e "$D/public/glyndor-archive-keyring.deb.asc" ] && echo 1 || echo 0)"
 
-	# The structural grep cases above prove the workflow step NAMES the right
-	# paths; the gpg cases above prove the same gpg flags produce a verifying
-	# signature. The closing case proves the step's body, as written, actually
-	# produces one. A regression that drops --detach-sign, swaps --local-user
-	# for --default-key, or writes the .asc next to debs/ instead of public/
-	# changes the body the step runs and this assertion goes red, regardless
-	# of whether the typed copy still looks correct.
-	if GNUPGHOME="$VRF_PW" gpgv --keyring "$VRF_PW/pubring.kbx" \
-		"$ASC" "$DEB" >/dev/null 2>&1; then
-		echo "ok    the extracted signing step produces a signature gpgv accepts"
-		pass=$((pass + 1))
-	else
-		echo "FAIL  the extracted signing step produces a signature gpgv accepts"
-		fail=$((fail + 1))
-	fi
-fi
+# The secret is one key, but not one clients were told to trust: the keyring
+# file holds bravo and the secret is alpha.
+D="$(sandbox stranger)"; pubof bravo > "$D/keyring/glyndor-apt-key.asc"; rc=0
+run_step "$D" "$WORK/step.sh" "$KEY_A" || rc=$?
+check "a key absent from keyring/glyndor-apt-key.asc stops the step" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+check "and says the signing key is not in the keyring" "1" "$(grep -c 'is not present in' "$WORK/out")"
+check "and nothing is signed for the bootstrap with it" "0" \
+	"$([ -e "$D/public/glyndor-archive-keyring.deb.asc" ] && echo 1 || echo 0)"
+
+# --- the control: without --bootstrap, no signature is served ---------------
+sed 's|build-repo\.sh --bootstrap debs/glyndor-archive-keyring\.deb |build-repo.sh |' "$WF" > "$WORK/publish-cut.yml"
+check "the sabotage changed the workflow" "1" "$(cmp -s "$WF" "$WORK/publish-cut.yml" && echo 0 || echo 1)"
+extract "$WORK/publish-cut.yml" > "$WORK/step-cut.sh"
+D="$(sandbox cut)"; rc=0; run_step "$D" "$WORK/step-cut.sh" "$KEY_A" || rc=$?
+check "without --bootstrap the build still succeeds" "0" "$rc"
+check "and no keyring signature is served (the .asc is that call's)" "0" \
+	"$([ -e "$D/public/glyndor-archive-keyring.deb.asc" ] && echo 1 || echo 0)"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

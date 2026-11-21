@@ -80,17 +80,24 @@ verify-debs-unreadable-control	scripts/verify/verify-debs.sh	if ! pkg="$(dpkg-de
 verify-debs-package-mismatch	scripts/verify/verify-debs.sh	if [ "$pkg" != "$EXPECTED_PACKAGE" ]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-filename-prefix	scripts/verify/verify-debs.sh	if [[ "$(basename "$deb")" != "${EXPECTED_PACKAGE}_"* ]]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-version-mismatch	scripts/verify/verify-debs.sh	if [ "$upstream" != "$want" ] && [ "${ver#*:}" != "$want" ]; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-unknown-option	scripts/verify/verify-debs.sh	-*) echo "::error::verify-debs.sh: unknown option $1" >&2; exit 2 ;;	-*) break ;;	tests/verify/verify-debs.test.sh
+verify-debs-misplaced-option	scripts/verify/verify-debs.sh	options go first" >&2; exit 2 ;;	options go first" >&2 ;;	tests/verify/verify-debs.test.sh
+verify-debs-require-tag	scripts/verify/verify-debs.sh	if [ "$REQUIRE_TAG" -eq 1 ] && [ -z "$EXPECTED_TAG" ]; then	if false; then	tests/verify/verify-debs.test.sh,tests/publication/publish/publish-workflow-verify-debs.test.sh
+publish-opened-before-signature	.github/workflows/publish.yml	echo "collected $count product package(s)"	dpkg-deb -f /dev/null Package >/dev/null 2>&1 || true; echo "collected $count product package(s)"	tests/publication/publish/publish-workflow.test.sh
+publish-verify-debs-require-tag	.github/workflows/publish.yml	./scripts/verify/verify-debs.sh --require-tag "debs/$p"	./scripts/verify/verify-debs.sh "debs/$p"	tests/publication/publish/publish-workflow-verify-debs.test.sh
 verify-debs-revision-strip	scripts/verify/verify-debs.sh	if [ "$revision" != "$upstream" ] && [[ "$revision" =~ ^[0-9][0-9A-Za-z.+~]*$ ]]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-architecture	scripts/verify/verify-debs.sh	if [ -n "$claimed_arch" ] && [ "$claimed_arch" != "$ctrl_arch" ]; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-opened-before-signature	scripts/verify/verify-debs.sh	sig="$deb.sig"	dpkg-deb -f "$deb" Package >/dev/null 2>&1 || true; sig="$deb.sig"	tests/verify/verify-debs.test.sh
 verify-debs-missing-signature	scripts/verify/verify-debs.sh	if [ ! -f "$sig" ]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-signature-length	scripts/verify/verify-debs.sh	if len(sig) != 64:	if False:	tests/verify/verify-debs.test.sh
+verify-debs-key-length	scripts/verify/verify-debs.sh	if len(key_bytes) != 32:	if False:	tests/verify/verify-debs.test.sh
 verify-debs-signature-size	scripts/verify/verify-debs.sh	if len(sig) > MAX_SIG_BYTES:	if False:	tests/verify/verify-debs.test.sh
 verify-debs-key-file-missing	scripts/verify/verify-debs.sh	[ -f "$KEY_FILE" ] || { echo "::error::release public key $KEY_FILE not found" >&2; exit 1; }	[ -f "$KEY_FILE" ] || true	tests/verify/verify-debs.test.sh
 verify-debs-no-keys	scripts/verify/verify-debs.sh	[ "${#KEYS[@]}" -ge 1 ] || { echo "::error::release public key $KEY_FILE has no keys" >&2; exit 1; }	[ "${#KEYS[@]}" -ge 1 ] || true	tests/verify/verify-debs.test.sh
 verify-debs-no-debs	scripts/verify/verify-debs.sh	[ "${#debs[@]}" -ge 1 ] || { echo "::error::no .deb files to verify in $DEBS_DIR" >&2; exit 1; }	[ "${#debs[@]}" -ge 1 ] || true	tests/verify/verify-debs.test.sh
-verify-debs-pq-required	scripts/verify/verify-debs.sh	if [ "$required" -eq 1 ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-required	scripts/verify/verify-debs.sh	if [ "$required" -eq 1 ] && [ ! -e "$pq_sig" ] && [ ! -L "$pq_sig" ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
 verify-debs-pq-required-match	scripts/verify/verify-debs.sh	[ "$name" = "$pkg" ] && required=1	true	tests/verify/verify-debs-hybrid.test.sh
-verify-debs-pq-sidecar-present	scripts/verify/verify-debs.sh	if [ ! -e "$pq_sig" ] && [ ! -L "$pq_sig" ]; then	if true; then	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-sidecar-present	scripts/verify/verify-debs.sh	if [ -e "$pq_sig" ] || [ -L "$pq_sig" ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
 verify-debs-pq-no-key	scripts/verify/verify-debs.sh	if [ "${#MLDSA_KEYS[@]}" -eq 0 ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
 verify-debs-pq-key-file-check	scripts/verify/verify-debs.sh	if [ "${#MLDSA_KEYS[@]}" -ge 1 ] && ! mldsa check-keys "${MLDSA_KEYS[@]}"; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
 verify-debs-pq-key-length	scripts/verify/verify-debs.sh	if len(raw) != PUBLIC_KEY_BYTES:	if False:	tests/verify/verify-debs-hybrid.test.sh
@@ -143,6 +150,14 @@ release-order-dpkg-validate	scripts/verify/check-release-order.sh	if not version
 release-order-semver-validity	scripts/verify/check-release-order.sh	if not match:	if False:	tests/verify/check-release-order.test.sh
 release-order-arch-coverage	scripts/verify/check-release-order.sh	if declared - listed:	if False:	tests/verify/check-release-order.test.sh
 release-order-index-sha	scripts/verify/check-release-order.sh	if [ "$(sha256_of "$dest")" != "$digest" ]; then	if false; then	tests/verify/check-release-order.test.sh
+build-repo-secret-key-count	scripts/build/build-repo.sh	[ "$SEC_COUNT" -eq 1 ] || { echo "::error::expected exactly one secret key in GLYNDOR_APT_GPG_PRIVATE_KEY, found $SEC_COUNT" >&2; exit 1; }	[ "$SEC_COUNT" -eq 1 ] || true	tests/build/build-repo.test.sh,tests/publication/publish/publish-workflow-bootstrap.test.sh
+build-repo-key-in-keyring	scripts/build/build-repo.sh	if ! gpg --batch --with-colons --show-keys "$PUBKEY_ASC" \	if false && gpg --batch --with-colons --show-keys "$PUBKEY_ASC" \	tests/build/build-repo.test.sh,tests/publication/publish/publish-workflow-bootstrap.test.sh
+build-repo-bootstrap-name	scripts/build/build-repo.sh	[ "$(basename "$BOOTSTRAP")" = glyndor-archive-keyring.deb ] \	true \	tests/build/build-repo.test.sh
+build-repo-bootstrap-package	scripts/build/build-repo.sh	[ "$(dpkg-deb -f "$BOOTSTRAP" Package 2>/dev/null)" = glyndor-archive-keyring ] \	true \	tests/build/build-repo.test.sh
+build-repo-bootstrap-signature	scripts/build/build-repo.sh	gpg --batch --local-user "$FPR" --armor --detach-sign \	true \	tests/build/build-repo.test.sh,tests/publication/publish/publish-workflow-bootstrap.test.sh
+publish-build-bootstrap	.github/workflows/publish.yml	build-repo.sh --bootstrap debs/glyndor-archive-keyring.deb public	build-repo.sh public	tests/publication/publish/publish-workflow-bootstrap.test.sh
+verify-published-absolute-path	scripts/verify/verify-published.sh	. | .. | ./* | */./* | */. | */../* | ../* | */.. | /* | *//*)	. | .. | ./* | */./* | */. | */../* | ../* | */.. | *//*)	tests/verify/verify-published/verify-published-packages.test.sh,tests/verify/verify-published.test.sh
+verify-published-empty-segment	scripts/verify/verify-published.sh	. | .. | ./* | */./* | */. | */../* | ../* | */.. | /* | *//*)	. | .. | ./* | */./* | */. | */../* | ../* | */.. | /*)	tests/verify/verify-published/verify-published-packages.test.sh
 verify-published-index-cap	scripts/verify/verify-published.sh	if [ "$index_count" -gt "$MAX_ENTRIES" ]; then	if false; then	tests/verify/verify-published/verify-published-budget.test.sh
 verify-published-bootstrap-sig	scripts/verify/verify-published.sh	if [ "$bootstrap_sig_ok" -ne 1 ]; then	if false; then	tests/verify/verify-published/verify-published-bootstrap.test.sh
 quality-test-coverage	scripts/quality/check-test-coverage.sh	[ -f "$root/tests/$rel.test.sh" ] || missing+=("scripts/$rel.sh")	true || missing+=("scripts/$rel.sh")	tests/quality/check-test-coverage.test.sh

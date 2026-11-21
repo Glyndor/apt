@@ -5,16 +5,42 @@
 # the current release of each product, so it always carries exactly the latest
 # version of every package; Glyndor ships no old-version support.
 #
-# Requires: reprepro, gpg.
+# Requires: reprepro, gpg, and dpkg-deb with --bootstrap.
 # Reads the armored private signing key from $GLYNDOR_APT_GPG_PRIVATE_KEY.
 #
 # Usage:
 #   GLYNDOR_APT_GPG_PRIVATE_KEY="$(cat priv.asc)" \
-#     build-repo.sh <output-dir> <deb> [<deb> ...]
+#     build-repo.sh [--bootstrap <keyring-deb>] <output-dir> <deb> [<deb> ...]
+#
+# With --bootstrap, the keyring package is also served at the root of the
+# output directory as glyndor-archive-keyring.deb, for the first install that
+# happens before apt knows the archive, with a detached signature beside it,
+# glyndor-archive-keyring.deb.asc, which the bootstrap installer requires. The
+# signature is made here, with the key imported and checked below for the index,
+# so the secret is imported once and the key that signs is chosen once: a second
+# import elsewhere would need its own copy of every check on the key, and a
+# copy that nothing reaches is a check that can be deleted with every suite
+# green.
 
 set -euo pipefail
 
-OUT_DIR="${1:?usage: build-repo.sh <output-dir> <deb> [<deb> ...]}"
+BOOTSTRAP=""
+if [ "${1:-}" = "--bootstrap" ]; then
+	BOOTSTRAP="${2:?--bootstrap needs the keyring package to serve}"
+	shift 2
+	[ -f "$BOOTSTRAP" ] || { echo "no such keyring package: $BOOTSTRAP" >&2; exit 1; }
+	# Whatever is given is served under the keyring's name and signed with the
+	# archive key, so it has to be the keyring package: by its file name, the
+	# one build-keyring.sh writes, and by its control field. The package is
+	# built locally a step earlier, so reading it is not reading a download.
+	[ "$(basename "$BOOTSTRAP")" = glyndor-archive-keyring.deb ] \
+		|| { echo "::error::--bootstrap takes glyndor-archive-keyring.deb, not $(basename "$BOOTSTRAP")" >&2; exit 1; }
+	[ "$(dpkg-deb -f "$BOOTSTRAP" Package 2>/dev/null)" = glyndor-archive-keyring ] \
+		|| { echo "::error::$BOOTSTRAP is not the glyndor-archive-keyring package" >&2; exit 1; }
+	BOOTSTRAP="$(cd "$(dirname "$BOOTSTRAP")" && pwd)/$(basename "$BOOTSTRAP")"
+fi
+
+OUT_DIR="${1:?usage: build-repo.sh [--bootstrap <keyring-deb>] <output-dir> <deb> [<deb> ...]}"
 shift
 [ "$#" -ge 1 ] || { echo "no .deb files given" >&2; exit 1; }
 
@@ -50,7 +76,8 @@ unset GLYNDOR_APT_GPG_PRIVATE_KEY
 
 # Require exactly one secret key. If the secret ever carried more than one (e.g.
 # old + new pasted in during a rotation), the first-fingerprint pick below would
-# sign with whichever imported first, not necessarily the intended active key.
+# sign with whichever imported first, not necessarily the intended active key,
+# and the index and the bootstrap package would both be signed by it.
 # `grep -c` exits 1 on zero matches, which pipefail would turn into a silent
 # death inside the substitution, so guard it and let the count (0) reach the
 # diagnostic below instead.
@@ -98,5 +125,17 @@ rm -rf "$OUT_DIR/conf" "$OUT_DIR/db"
 # reprepro; see scripts/build/build-index-page.sh and tests/build/build-index-page.test.sh.
 "$(dirname "$0")/build-index-page.sh" "$OUT_DIR"
 
+if [ -n "$BOOTSTRAP" ]; then
+	# Sign the SERVED copy, not the one the caller passed: a mismatch between
+	# the two is exactly what an installer must be able to catch, and signing
+	# one while serving the other would make that mismatch invisible. --armor
+	# with --detach-sign writes the signature only, not the data and the
+	# signature together.
+	cp "$BOOTSTRAP" "$OUT_DIR/glyndor-archive-keyring.deb"
+	gpg --batch --local-user "$FPR" --armor --detach-sign \
+		--output "$OUT_DIR/glyndor-archive-keyring.deb.asc" \
+		"$OUT_DIR/glyndor-archive-keyring.deb"
+	echo "bootstrap keyring package served at $OUT_DIR/glyndor-archive-keyring.deb (signed by $FPR)"
+fi
 
 echo "apt repository built at $OUT_DIR (signed by $FPR)"
