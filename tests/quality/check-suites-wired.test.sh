@@ -150,6 +150,36 @@ check "a workflow whose default shell is another does not count" "1" "$(said 'te
 gate "$(tree bash-shell "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.sh' '        shell: bash')")"
 check "control: shell: bash still counts" "0" "$rc"
 
+# A skip list that matches the workflow, a script or a suite lets the pull
+# request that widens it skip the suite that would have refused it.
+# The match is the reusable's: bash, where `[^x]` is a negated class, extglob
+# is on and `*` crosses a `/`. fnmatch reads the last three as matching
+# nothing here, which is the gap a second grammar would leave.
+for skip in '*' 'tests/**' '.github/*' 'docs/** scripts/*' '[^x]*' '@(.github|tests)/*' '*(?)' 'docs/*.md scripts*'; do
+	dir="$(tree skip "$SUITES" "      skip-suite-paths: \"$skip\"
+")"; mkdir -p "$dir/scripts"; : > "$dir/scripts/x.sh"
+	gate "$dir"
+	check "a caller whose skip-suite-paths is '$skip' counts no suite" "3" \
+		"$(said 'tests.yml#shell: its skip-suite-paths')"
+done
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "and the message names the pattern that matched and a file it matches" "3" \
+	"$(said 'skip-suite-paths `scripts*` matches scripts/x.sh')"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "and not the pattern of the list that matched nothing" "0" "$(said 'skip-suite-paths `docs/*.md`')"
+# The list reaches bash as data: a pattern that reads like a command is a
+# pattern, and runs nothing.
+# shellcheck disable=SC2016 # the command text is the literal pattern under test
+dir="$(tree skip-inject "$SUITES" '      skip-suite-paths: "$(touch${IFS}injected) `touch${IFS}injected`"
+')"
+# Run from inside the tree, so a command that did run would leave its file there.
+out="$(cd "$dir" && bash "$GATE" "$dir" 2>&1)"; rc=$?
+check "a skip pattern is never run as a command" "0" "$(find "$dir" -name injected | wc -l)"
+check "and, matching nothing, leaves every suite counted" "0" "$rc"
+gate "$(tree skip-docs "$SUITES" '      skip-suite-paths: "docs/** README.md"
+')"
+check "control: a skip list of prose only still counts every suite" "0" "$rc"
+
 gate "$(tree wd "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.sh' '        working-directory: sub')")"
 check "a suite run from another working directory is not the top-level one" "1" \
 	"$(said 'tests/area/b.test.sh is not run')"

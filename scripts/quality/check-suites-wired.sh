@@ -32,6 +32,19 @@
 # reading of the script, and a check that pretended to have it would be
 # worse than one that says where it stops.
 #
+# A caller of reusable-shell-ci.yml may list `skip-suite-paths`: a pull
+# request whose changed files all match them skips the whole suite, and the
+# job still reports green. tests/ci/suites/shell-ci-scope.test.sh holds the
+# list to files the suite does not read, but it runs inside that job, so a
+# pull request that widens the list to `*` skips the suite that would have
+# refused it. A pull request that widens the list changes the workflow that
+# carries it, so the suites of a caller count only when no pattern matches a
+# file under .github/, scripts/ or tests/: then the change that widens the
+# list is never one the list skips, and its own run judges it. The match is
+# made by bash, with the same loop as the reusable's scope step, because a
+# second grammar (fnmatch reads `[^x]` and `@(a|b)` differently) would let a
+# pattern skip the suite while the check read it as matching nothing.
+#
 # In both places the job must carry no `needs:` either. A job whose
 # dependency is skipped is skipped too, so `needs:` on a job that GitHub skips
 # for an `if: false` switches the suites off one job away, and the skipped
@@ -65,6 +78,7 @@ root="${1:-$PWD}"
 python3 -I - "$root" <<'PY'
 import os
 import re
+import subprocess
 import sys
 
 import yaml
@@ -101,6 +115,41 @@ def every_pull_request(spec):
     return isinstance(on, dict) and "pull_request" in on and not on["pull_request"]
 
 
+def never_skipped():
+    # The files a skip pattern must not match.
+    found = []
+    for top in (".github", "scripts", "tests"):
+        for dirpath, _, names in os.walk(os.path.join(root, top)):
+            found += [os.path.relpath(os.path.join(dirpath, n), root).replace(os.sep, "/")
+                      for n in names]
+    return sorted(found)
+
+
+# The reusable's own matching loop: `set -f`, the list split by the shell on
+# whitespace, and `[[ "$f" == $pattern ]]`, where bash reads the pattern with
+# extglob on and `*` crosses a `/`. The list arrives in the environment and
+# the paths on stdin, never in the text of the script, and the first match is
+# printed as pattern NUL path.
+SKIP_MATCH = r"""
+set -f
+while IFS= read -r -d '' f; do
+  for pattern in $SKIP_PATHS; do
+    if [[ "$f" == $pattern ]]; then printf '%s\0%s' "$pattern" "$f"; exit 0; fi
+  done
+done
+"""
+
+
+def skipped_by(patterns, files):
+    if not patterns.split():
+        return None
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "SKIP_PATHS": patterns}
+    done = subprocess.run(["bash", "--noprofile", "--norc", "-c", SKIP_MATCH], env=env,
+                          input="".join(f + "\0" for f in files).encode(),
+                          stdout=subprocess.PIPE, check=True)
+    return tuple(done.stdout.decode().split("\0", 1)) if done.stdout else None
+
+
 def resolve(directory, path):
     return os.path.normpath(os.path.join(directory or ".", path)).replace(os.sep, "/")
 
@@ -130,6 +179,7 @@ def read_workflows():
 
 def wiring(specs):
     wired, weak = set(), {}
+    guarded = never_skipped()
 
     def note(path, gate, where):
         # A suite named where a pull request can skip it is kept with the
@@ -155,11 +205,15 @@ def wiring(specs):
             if isinstance(uses, str) and os.path.basename(uses.split("@")[0]) == REUSABLE:
                 with_block = job.get("with") if isinstance(job.get("with"), dict) else {}
                 command = with_block.get("test-command")
+                hit = skipped_by(str(with_block.get("skip-suite-paths") or ""), guarded)
+                skip_gate = job_gate or (
+                    f"its skip-suite-paths `{hit[0]}` matches {hit[1]}, so a pull request that "
+                    "changes only such files, this list included, skips every suite" if hit else "")
                 for word in str(command or "").split():
                     match = WORD_RE.match(word)
                     if match:
                         note(resolve(with_block.get("working-directory"), match.group(1)),
-                             job_gate, where)
+                             skip_gate, where)
                 continue
             defaults = (job.get("defaults") or {}).get("run") or {}
             shell_default = defaults.get("shell", workflow_shell)
