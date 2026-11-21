@@ -30,10 +30,6 @@ on:
         description: Fail when a job that holds a secret also installs third-party tooling
         type: boolean
         default: true
-      suite-exemptions:
-        description: "Suites under tests/ that no workflow runs on a pull request, one per line as `tests/<path>.test.sh: <reason>`; empty means every suite must be run"
-        type: string
-        default: ""
 
 permissions:
   contents: read
@@ -77,23 +73,31 @@ jobs:
       # The checker is taken from the base commit on a pull request, as the
       # scope helper below is, so a pull request cannot weaken the checker
       # that judges it. A base without it (first adoption) or another event
-      # uses the checkout's copy, and a checkout without it fails.
+      # uses the checkout's copy, and a checkout without it fails. The list
+      # of exempt suites is a file of the repository and is read from the
+      # base commit too, so the pull request cannot exempt what it unwires;
+      # the checker counts an exemption only when both copies carry it.
       - name: Every suite is run by a workflow
         env:
           EVENT: ${{ github.event_name }}
-          SUITE_EXEMPTIONS: ${{ inputs.suite-exemptions }}
         run: |
           set -euo pipefail
           checker=scripts/quality/check-suites-wired.sh
+          exemptions=scripts/quality/suite-exemptions.txt
           script="$(mktemp "$RUNNER_TEMP/suites-wired.XXXXXX")"
-          trap 'rm -f "$script"' EXIT
+          trap 'rm -f "$script" "$script.exempt"' EXIT
           if [ "$EVENT" = pull_request ] \
             && git show "HEAD^1:$checker" > "$script" 2>/dev/null; then
             echo "Checker read from the base commit."
           else
             cp "$checker" "$script"
           fi
-          bash "$script" "$PWD"
+          base_exemptions=""
+          if [ "$EVENT" = pull_request ] \
+            && git show "HEAD^1:$exemptions" > "$script.exempt" 2>/dev/null; then
+            base_exemptions="$script.exempt"
+          fi
+          SUITE_EXEMPTIONS_BASE="$base_exemptions" bash "$script" "$PWD"
 
       # Keep the required check present. Read the classifier from the PR base,
       # so a changed helper cannot skip its own validation. First adoption (no
@@ -434,6 +438,17 @@ jobs:
                               "Success and does not block a merge. Move the "
                               "condition into the called workflow's steps, or "
                               "delete it."
+                          ))
+                          continue
+                      # Rule: `needs:` is the same switch one job away. A
+                      # caller that needs a skipped job is skipped too.
+                      if "needs" in job:
+                          violations.append((
+                              path, job_id,
+                              f"job `{job_id}` in {path} calls `{REUSABLE}` "
+                              "and carries `needs:`. A job whose dependency is "
+                              "skipped is skipped too, and a skipped required "
+                              "check reports Success. Delete it."
                           ))
                           continue
                       # Rule: the test-command must invoke at least one suite.

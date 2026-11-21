@@ -1,0 +1,17 @@
+# Suites under tests/ that no workflow runs on a pull request, and why.
+#
+# scripts/quality/check-suites-wired.sh, run by the workflow-lint check, fails
+# when a tests/**/*.test.sh is not run by a workflow on every pull request.
+# A suite that cannot run there is listed here instead, one per line:
+#
+#   tests/<path>.test.sh: <why it cannot run on a pull request>
+#
+# The reason is required. An entry for a file that no longer exists fails the
+# check, and one for a suite that runs after all is reported as a warning.
+#
+# On a pull request the list is read from the base commit as well, and an
+# entry counts only when both copies carry it. Adding an exemption therefore
+# takes effect from the pull request after the one that adds it: the suite
+# keeps being required until the entry is on the base branch.
+#
+# None today: every suite of this repository runs on every pull request.
