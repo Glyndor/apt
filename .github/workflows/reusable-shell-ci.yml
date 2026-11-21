@@ -220,7 +220,7 @@ jobs:
           # workflows. Paths are relative to the repo root, which is where the
           # runner starts, so that is what the mode is checked against.
           refs="$(grep -rhoE '\./[A-Za-z0-9_./-]+\.(sh|bash)' .github/workflows/ 2>/dev/null \
-                  | sed 's|^\./||' | sort -u || true)"
+                  | sed 's|^\./||' | LC_ALL=C sort -u || true)"
           if [ -z "$refs" ]; then
             echo "No script is invoked as ./path by any workflow; nothing to check."
             exit 0

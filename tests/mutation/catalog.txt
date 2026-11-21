@@ -479,3 +479,9 @@ netflags-comment-skipped	tests/ci/policy/workflow-network-calls-are-bounded.test
 netflags-empty-scan	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	if curls == 0:	if False:	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
 grace-deepen	.github/workflows/reusable-schedule-freshness.yml	git fetch --quiet --unshallow --no-tags origin >/dev/null 2>&1 || true	true	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
 grace-checkout-depth	.github/workflows/reusable-schedule-freshness.yml	fetch-depth: 1	fetch-depth: 0	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
+sort-pinned-shell-ci-1	.github/workflows/reusable-shell-ci.yml	LC_ALL=C sort -u || true)"	sort -u || true)"	tests/ci/policy/locale-pinned.test.sh
+sort-pinned-dependabot-freshness-2	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -u \	sort -u \	tests/ci/policy/locale-pinned.test.sh
+sort-pinned-dependabot-freshness-3	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -V | tail -n 1 || true)"	sort -V | tail -n 1 || true)"	tests/ci/policy/locale-pinned.test.sh
+sort-pinned-dependabot-freshness-4	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -V | tail -n 1)" != "$tag" ]; then	sort -V | tail -n 1)" != "$tag" ]; then	tests/ci/policy/locale-pinned.test.sh
+sort-pinned-dependabot-freshness-5	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -V | tail -n 1)" != "$version" ]; then	sort -V | tail -n 1)" != "$version" ]; then	tests/ci/policy/locale-pinned.test.sh
+sort-pinned-dependabot-freshness-6	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -u | wc -l | tr -d ' ')"	sort -u | wc -l | tr -d ' ')"	tests/ci/policy/locale-pinned.test.sh
