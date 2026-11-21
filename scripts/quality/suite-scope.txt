@@ -669,3 +669,13 @@ tests/keyring/release-key.test.sh
 
 tests/mutation/run-mutations.test.sh
 	tests/mutation/**
+
+# The decider calls the suite resolver, so a change to either can change it.
+tests/quality/mutation-scope.test.sh
+	scripts/quality/mutation-scope.sh
+	scripts/quality/ci-job-scope.sh
+	tests/quality/mutation-scope.test.sh
+
+tests/ci/policy/mutation-workflow.test.sh
+	.github/workflows/mutation.yml
+	tests/ci/policy/mutation-workflow.test.sh
