@@ -66,7 +66,7 @@ KEY_B="$(mkkey bravo)"
 mkroot() { # $1=name $2...=uids whose public keys go in the keyring
 	local root="$WORK/$1"; shift
 	mkdir -p "$root/scripts/build" "$root/keyring"
-	cp "$HERE/scripts/build/build-repo.sh" "$HERE/scripts/build/build-index-page.sh" \
+	cp "$HERE/scripts/build/build-repo.sh" "$HERE/scripts/build/build-index-page.sh" "$HERE/scripts/build/add-by-hash.sh" \
 		"$root/scripts/build/"
 	: > "$root/keyring/glyndor-apt-key.asc"
 	local u
@@ -143,10 +143,20 @@ check "and a keyring carrying it among others admits it" "0" \
 # signature the bootstrap installer requires, and build-repo.sh makes it with
 # the key it has just imported and checked. reprepro and the landing page are
 # stubbed so the case runs where reprepro is not installed; what is under test
-# is which key signs and what it signs, not the index. The stubs sit on PATH
-# and in the throwaway root only for these runs.
+# is which key signs and what it signs. The stubs sit on PATH and in the
+# throwaway root only for these runs. The reprepro stub exports the smallest
+# unsigned distribution (one Packages and the Release that declares it), so the
+# real add-by-hash.sh signs it here as it does after a real export.
 mkdir -p "$WORK/stubbin"
-printf '#!/bin/sh\nexit 0\n' > "$WORK/stubbin/reprepro"
+cat > "$WORK/stubbin/reprepro" <<'STUB'
+#!/usr/bin/env bash
+# reprepro -b <dir> includedeb ...
+d="$2/dists/stable"
+mkdir -p "$d/main/binary-amd64"
+printf 'Package: testpkg\nVersion: 1.0\n\n' > "$d/main/binary-amd64/Packages"
+printf 'Suite: stable\nSHA256:\n %s %s main/binary-amd64/Packages\n' \
+	"$(sha256sum < "$d/main/binary-amd64/Packages" | cut -d' ' -f1)" "$(stat -c%s "$d/main/binary-amd64/Packages")" > "$d/Release"
+STUB
 chmod +x "$WORK/stubbin/reprepro"
 stub_root() { # $1=name $2...=uids: mkroot with a landing page that does nothing
 	local root
@@ -184,6 +194,9 @@ check "and not against another key" "0" \
 	"$(verifies_with bravo "$WORK/out5c/glyndor-archive-keyring.deb.asc" "$WORK/out5c/glyndor-archive-keyring.deb")"
 check "and the signature is a detached one, not the data with it" "1" \
 	"$(head -1 "$WORK/out5c/glyndor-archive-keyring.deb.asc" | grep -c -- '-----BEGIN PGP SIGNATURE-----')"
+check "and the index is signed with the same key" "1" \
+	"$(verifies_with alpha "$WORK/out5c/dists/stable/Release.gpg" "$WORK/out5c/dists/stable/Release")"
+check "and offers itself by hash" "1" "$(grep -c '^Acquire-By-Hash: yes$' "$WORK/out5c/dists/stable/Release")"
 printf 'tampered\n' >> "$WORK/out5c/glyndor-archive-keyring.deb"
 check "and a tampered package no longer verifies against it" "0" \
 	"$(verifies_with alpha "$WORK/out5c/glyndor-archive-keyring.deb.asc" "$WORK/out5c/glyndor-archive-keyring.deb")"

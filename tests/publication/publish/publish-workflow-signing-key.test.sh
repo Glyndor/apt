@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# The archive key signs two things in a publish: the index, through reprepro's
-# SignWith, and the bootstrap keyring package, with a detached signature. Both
+# The archive key signs two things in a publish: the index, through
+# scripts/build/add-by-hash.sh, and the bootstrap keyring package, with a
+# detached signature. Both
 # are made by scripts/build/build-repo.sh from one import of the secret, and
 # both have to come after the two checks on that key: exactly one secret key,
 # and that key present in keyring/glyndor-apt-key.asc.
@@ -26,7 +27,7 @@ def first(fragment):
 
 count = first('[ "$SEC_COUNT" -eq 1 ] || {')
 membership = first("| awk -F: '/^fpr:/{print $10}' | grep -qxF \"$FPR\"; then")
-index_sig = first("SignWith: $FPR")
+index_sig = first('"$(dirname "$0")/add-by-hash.sh" "$OUT_DIR/dists/stable" "$FPR" "$PUBKEY_ASC"')
 bootstrap_sig = first('gpg --batch --local-user "$FPR" --armor --detach-sign \\')
 
 

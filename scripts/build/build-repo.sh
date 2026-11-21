@@ -5,7 +5,7 @@
 # the current release of each product, so it always carries exactly the latest
 # version of every package; Glyndor ships no old-version support.
 #
-# Requires: reprepro, gpg, and dpkg-deb with --bootstrap.
+# Requires: reprepro, gpg, gpgv, and dpkg-deb with --bootstrap.
 # Reads the armored private signing key from $GLYNDOR_APT_GPG_PRIVATE_KEY.
 #
 # Usage:
@@ -113,10 +113,14 @@ Description: Glyndor apt repository
 # list. The window is wider than the daily cadence so a few missed builds
 # don't break clients.
 ValidFor: 14d
-SignWith: $FPR
 EOF
+# No SignWith: reprepro exports the distribution unsigned, and add-by-hash.sh
+# adds `Acquire-By-Hash: yes` and the by-hash copies of every index file, then
+# signs InRelease and Release.gpg with the key checked above. reprepro has no
+# option for either, and the field has to be inside the signature.
 
 reprepro -b "$OUT_DIR" includedeb stable "${DEBS[@]}"
+"$(dirname "$0")/add-by-hash.sh" "$OUT_DIR/dists/stable" "$FPR" "$PUBKEY_ASC"
 
 # reprepro bookkeeping must not be served publicly.
 rm -rf "$OUT_DIR/conf" "$OUT_DIR/db"

@@ -159,8 +159,8 @@ KEY_A="$(mkkey alpha)"
 KEY_B="$(mkkey bravo)"
 
 # reprepro is not what is under test and may not be installed, and the landing
-# page reads the index reprepro would have written. Both are stubbed, nothing
-# else is.
+# page and the by-hash step read the index reprepro would have written. The
+# three are stubbed, nothing else is; tests/build/ covers the by-hash step.
 mkdir -p "$WORK/stubbin"
 printf '#!/bin/sh\nexit 0\n' > "$WORK/stubbin/reprepro"
 chmod +x "$WORK/stubbin/reprepro"
@@ -170,7 +170,8 @@ sandbox() { # $1=name -> prints a tree laid out as the step sees it
 	mkdir -p "$d/scripts/build" "$d/keyring" "$d/debs"
 	cp "$HERE/scripts/build/build-repo.sh" "$d/scripts/build/"
 	printf '#!/bin/sh\nexit 0\n' > "$d/scripts/build/build-index-page.sh"
-	chmod +x "$d/scripts/build/build-index-page.sh"
+	printf '#!/bin/sh\nexit 0\n' > "$d/scripts/build/add-by-hash.sh"
+	chmod +x "$d/scripts/build/build-index-page.sh" "$d/scripts/build/add-by-hash.sh"
 	pubof alpha > "$d/keyring/glyndor-apt-key.asc"
 	mkdir -p "$d/pkg/DEBIAN"
 	printf 'Package: glyndor-archive-keyring\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@test.invalid>\nDescription: fixture\n' > "$d/pkg/DEBIAN/control"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # APT-11: exercise the signed artifact, not the ValidFor source line.
+# The same real export also has to be offered by hash, which a client reads.
 # Removing ValidFor from build-repo.sh must fail the interval assertion and
 # must stop the expired replica from being rejected by apt for expiry.
 # Requires real reprepro, gpg, gpgv, dpkg-deb, apt-get and python3; no root/network.
@@ -35,7 +36,7 @@ done
 gpg --batch --quiet --pinentry-mode loopback --passphrase '' \
 	--quick-generate-key 'APT expiry test <expiry@test.invalid>' rsa3072 sign 0
 mkdir -p "$WORK/root/scripts/build" "$WORK/root/keyring" "$WORK/pkg/DEBIAN"
-cp "$HERE/scripts/build/build-repo.sh" "$HERE/scripts/build/build-index-page.sh" "$WORK/root/scripts/build/"
+cp "$HERE/scripts/build/build-repo.sh" "$HERE/scripts/build/build-index-page.sh" "$HERE/scripts/build/add-by-hash.sh" "$WORK/root/scripts/build/"
 gpg --batch --armor --export > "$WORK/root/keyring/glyndor-apt-key.asc"
 gpg --batch --export > "$WORK/archive-key.gpg"
 gpg --batch --pinentry-mode loopback --passphrase '' --armor --export-secret-keys > "$WORK/secret.asc"
@@ -79,6 +80,28 @@ PY
 # Shift BOTH dates back 15 days, preserving the actual production window.
 # If ValidFor is removed, do not invent a Valid-Until: apt must expose that
 # regression by accepting the stale replica, and the interval check fails too.
+# The index reprepro exported is offered by hash (scripts/build/add-by-hash.sh):
+# the signed Release says so, and every file it declares has its copy.
+check "the real reprepro Release offers Acquire-By-Hash" grep -qx 'Acquire-By-Hash: yes' "$WORK/fresh/dists/stable/Release"
+check "and every file it declares under SHA256 has a by-hash copy with its bytes" \
+	python3 - "$WORK/fresh/dists/stable" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+dist = pathlib.Path(sys.argv[1])
+lines = (dist / 'Release').read_text().splitlines()
+start = lines.index('SHA256:') + 1
+entries = [line.split() for line in lines[start:] if line.startswith(' ')]
+missing = [path for sha, _, path in entries
+           if hashlib.sha256((dist / path).parent.joinpath('by-hash', 'SHA256', sha).read_bytes()).hexdigest() != sha]
+print(f'{len(entries)} declared file(s), {len(missing)} without a matching copy: {missing}')
+sys.exit(bool(missing) or not entries)
+PY
+# A replica whose amd64 index is served ONLY under its by-hash names: apt can
+# update from it only by asking for the copies.
+cp -a "$WORK/fresh" "$WORK/by-hash-only"
+rm "$WORK/by-hash-only/dists/stable/main/binary-amd64/Packages" "$WORK/by-hash-only/dists/stable/main/binary-amd64/Packages.gz"
 cp -a "$WORK/fresh" "$WORK/expired"
 python3 - "$WORK/expired/dists/stable/Release" <<'PY'
 import datetime
@@ -137,6 +160,10 @@ EOF
 }
 
 fresh_rc=0; apt_update fresh || fresh_rc=$?
+by_hash_rc=0; apt_update by-hash-only || by_hash_rc=$?
+check "isolated apt updates from an index served only by hash" test "$by_hash_rc" -eq 0
+check "and offers the fixture package from it" grep -q 'Candidate: 1.0$' \
+	<<< "$(APT_CONFIG="$WORK/apt-by-hash-only/config" apt-cache policy expiry-fixture)"
 expired_rc=0; apt_update expired || expired_rc=$?
 cat "$WORK/apt-fresh.log" "$WORK/apt-expired.log"
 check "isolated apt admits the current signed archive" test "$fresh_rc" -eq 0

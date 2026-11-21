@@ -426,3 +426,4 @@ by-hash-copy-written	scripts/build/add-by-hash.sh	cp "$file" "$dir/$sha"	:	tests
 verify-published-by-hash-value	scripts/verify/verify-published.sh	echo "::error::the signed index says 'Acquire-By-Hash: $by_hash', and this archive writes only 'yes'" >&2	exit 0	tests/verify/verify-published/verify-published-by-hash.test.sh
 verify-published-by-hash-leg	scripts/verify/verify-published.sh	verify_set "by-hash index file(s)" "$WORK/by-hash-entries" "$DIST_PATH" "$MAX_INDEX_BYTES" ""	:	tests/verify/verify-published/verify-published-by-hash.test.sh
 sync-by-hash-before-index	scripts/publish/sync-archive.sh	--include "dists/*/by-hash/*"	--include "dists/*/by-hash/none"	tests/publish/sync-archive.test.sh,tests/publication/publish/publish-workflow-sync.test.sh
+build-repo-offers-by-hash	scripts/build/build-repo.sh	"$(dirname "$0")/add-by-hash.sh" "$OUT_DIR/dists/stable" "$FPR" "$PUBKEY_ASC"	:	tests/build/build-repo.test.sh
