@@ -104,8 +104,10 @@ jobs:
             fi
             # `#` starts a comment only in hash-comment languages; in Rust it
             # begins an attribute (#[...]/#![...]), so don't drop those lines.
+            # A `.txt` here is a list or a map that a tool of the repository
+            # reads, and its `#` lines are comments too.
             case "$f" in
-              *.sh|*.bash|*.py|*.rb|*.pl|*.yml|*.yaml|*.toml) hash_comment=1 ;;
+              *.sh|*.bash|*.py|*.rb|*.pl|*.yml|*.yaml|*.toml|*.txt) hash_comment=1 ;;
               *) hash_comment=0 ;;
             esac
             n="$(awk -v hc="$hash_comment" '

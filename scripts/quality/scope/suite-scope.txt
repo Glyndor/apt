@@ -549,6 +549,7 @@ tests/ci/reusable/reusable-empty-diff.test.sh
 
 tests/ci/reusable/reusable-line-limit.test.sh
 	.github/workflows/reusable-line-limit.yml
+	.github/workflows/line-limit.yml
 
 tests/ci/reusable/reusable-shell-ci.test.sh
 	.github/workflows/reusable-shell-ci.yml
@@ -703,6 +704,13 @@ tests/quality/scope/ci-job-scope-suites.test.sh
 # and reads the classifier only.
 
 tests/quality/scope/ci-job-scope-suite-needed.test.sh
+	scripts/quality/scope/ci-job-scope.sh
+	tests/quality/**
+
+# The packages mode of the same classifier. It builds its own repositories and
+# reads the classifier only.
+
+tests/quality/scope/ci-job-scope-packages.test.sh
 	scripts/quality/scope/ci-job-scope.sh
 	tests/quality/**
 
