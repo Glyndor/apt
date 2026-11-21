@@ -152,6 +152,7 @@ suites-wired-watcher-dropped	.github/workflows/tests.yml	./tests/ci/suites/ci-ru
 suites-wired-unwired	scripts/quality/check-suites-wired.sh	for path in sorted(suites - wired - set(exempt)):	for path in []:	tests/quality/check-suites-wired.test.sh
 suites-wired-needs	scripts/quality/check-suites-wired.sh	                    if "needs" in job else "") \	                    if False else "") \	tests/quality/check-suites-wired.test.sh
 lint-caller-needs	scripts/quality/check-test-job-not-switchable.sh	            if "needs" in job:	            if False:	tests/quality/check-test-job-not-switchable.test.sh
+lint-caller-continue	scripts/quality/check-test-job-not-switchable.sh	            if "continue-on-error" in job:	            if False:	tests/quality/check-test-job-not-switchable.test.sh
 lint-callers-none	scripts/quality/check-test-job-not-switchable.sh	    if callers == 0:	    if False:	tests/quality/check-test-job-not-switchable.test.sh
 lint-callers-verdict	scripts/quality/check-test-job-not-switchable.sh	    if violations:	    if False:	tests/quality/check-test-job-not-switchable.test.sh
 lint-tooling-verdict	scripts/quality/check-tooling-isolation.sh	    if violations:	    if False:	tests/quality/check-tooling-isolation.test.sh

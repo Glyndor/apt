@@ -179,6 +179,14 @@ check "a caller with needs: is refused" "1" "$rc"
 check "and the message names the needs: defect" "1" "$(said "$out" 'carries `needs:`')"
 check "and not the if: one" "0" "$(said "$out" 'job-level `if:`')"
 
+# --- `continue-on-error:` on a caller is refused, for that reason ---------
+d="$(new)"; caller_if "$d" './tests/one.test.sh' 'false'
+sed -i 's/^    if: false$/    continue-on-error: true/' "$d/.github/workflows/tests.yml"
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "a caller with continue-on-error: is refused" "1" "$rc"
+check "and the message names the continue-on-error: defect" "1" "$(said "$out" 'carries `continue-on-error:`')"
+check "and not the if: or needs: ones" "0" "$(said "$out" 'job-level `if:`\|carries `needs:`')"
+
 # --- a test-command whose first token is not a suite is refused ------------
 d="$(new)"; caller "$d" 'echo tests are elsewhere'
 out="$(run_in "$d" "$SCRIPT")"; rc=$?

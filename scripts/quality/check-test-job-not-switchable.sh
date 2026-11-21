@@ -15,8 +15,9 @@
 # naming the file, the job and the reason:
 #
 #   - a caller of reusable-shell-ci.yml that carries a job-level `if:` of any
-#     value, or `needs:`. Any conditional on a caller of a required job is a
-#     switch; a skipped required check reports Success.
+#     value, `needs:` or `continue-on-error:`. Any conditional on a caller of a
+#     required job is a switch: a skipped required check reports Success, and
+#     a job allowed to fail lets a red suite through.
 #   - a test-command whose first non-blank token is not a suite invocation.
 #     The accepted grammar is a list of `./tests/<name>.test.sh` or
 #     `bash ./tests/<name>.test.sh` invocations joined by `&&`, or the suite
@@ -232,6 +233,20 @@ def main():
                     "and carries `needs:`. A job whose dependency is "
                     "skipped is skipped too, and a skipped required "
                     "check reports Success. Delete it."
+                ))
+                continue
+            # Rule: `continue-on-error:` is a switch of another kind: the
+            # job may fail and the run still succeeds, so a red suite does
+            # not hold the merge back. GitHub does not accept the key on a
+            # job that calls a reusable today; the rule refuses it anyway,
+            # because the day it does, nothing else here would.
+            if "continue-on-error" in job:
+                violations.append((
+                    path, job_id,
+                    f"job `{job_id}` in {path} calls `{REUSABLE}` "
+                    "and carries `continue-on-error:`. A job that may fail "
+                    "without failing the run lets a red suite through. "
+                    "Delete it."
                 ))
                 continue
             # Rule: the test-command must invoke at least one suite.
