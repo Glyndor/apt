@@ -497,6 +497,11 @@ tests/ci/policy/freshness-pr-scope.test.sh
 	.github/workflows/reusable-dependabot-freshness.yml
 	.github/workflows/reusable-schedule-freshness.yml
 
+# Every scheduled workflow, and the freshness jobs that watch them.
+
+tests/ci/policy/scheduled-workflows-are-watched.test.sh
+	.github/workflows/**
+
 tests/ci/policy/freshness-job-scope.test.sh
 	.github/workflows/freshness.yml
 

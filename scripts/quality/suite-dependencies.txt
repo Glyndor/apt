@@ -104,6 +104,7 @@ tests/verify/verify-debs-hybrid.test.sh python3-cryptography
 # python3-yaml
 tests/ci/policy/freshness-job-scope.test.sh python3-yaml
 tests/ci/policy/freshness-pr-scope.test.sh python3-yaml
+tests/ci/policy/scheduled-workflows-are-watched.test.sh python3-yaml
 tests/ci/policy/jobs-are-bounded.test.sh python3-yaml
 tests/ci/policy/mutation-workflow.test.sh python3-yaml
 tests/ci/policy/publish-workflow-triggers.test.sh python3-yaml

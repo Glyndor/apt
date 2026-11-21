@@ -96,6 +96,7 @@ doc = yaml.safe_load(open(sys.argv[1]))
 want = {"dependabot-freshness": "dependabot", "freshness-publish": "schedule",
         "freshness-distro-floor": "schedule", "freshness-health-check": "schedule",
         "freshness-itself": "schedule", "freshness-drift": "schedule",
+        "freshness-mutation": "schedule",
         "suite-on-main": "suite", "tool-versions": "tools"}
 jobs = doc["jobs"]
 bad = []

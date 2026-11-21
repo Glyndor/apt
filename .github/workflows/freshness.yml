@@ -146,6 +146,19 @@ jobs:
     with:
       max-age-days: 15
 
+  # HOW THE LIMIT OF A DAILY OR WEEKLY CRON IS CHOSEN
+  #
+  # Two periods plus one day: three days for a daily cron, fifteen for a
+  # weekly one, the rule reusable-schedule-freshness.yml states for its
+  # max-age-days input. One dropped firing passes and a second does not, and
+  # the extra day absorbs GitHub starting a schedule hours late, which is the
+  # ordinary case here (measured lateness of three to six hours below). Every
+  # daily and weekly watcher in this file uses it, so two crons of the same
+  # cadence cannot be held to limits that differ for no written reason.
+  # A cron that fires more than once a day keeps a limit of its own instead,
+  # because the cadence GitHub delivers is far from the one it asks for.
+  #
+  # publish.yml is daily, so three days.
   freshness-publish:
     needs: scope
     if: ${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}
@@ -157,8 +170,10 @@ jobs:
       workflow: publish.yml
       max-age-days: 3
 
-  # Weekly cron, so ten days: one missed Monday firing plus the usual lateness
-  # still passes, two do not. Added once the workflow had a run history to
+  # Weekly cron, so fifteen days by the rule above: one missed Monday firing
+  # plus the usual lateness still passes, two do not. It was ten, which the
+  # first missed Monday already exceeded, so the sentence before this one was
+  # not true of it. Added once the workflow had a run history to
   # measure against; before that the watcher would have opened red with
   # nothing wrong.
   freshness-distro-floor:
@@ -170,7 +185,7 @@ jobs:
     uses: ./.github/workflows/reusable-schedule-freshness.yml
     with:
       workflow: distro-floor.yml
-      max-age-days: 10
+      max-age-days: 15
 
   freshness-health-check:
     needs: scope
@@ -231,12 +246,9 @@ jobs:
   # cron stops, drift stops being reported and nothing says so. That is the
   # same silence every job above exists to break.
   #
-  # Three days rather than one. The cron asks for 09:41Z and the last five
-  # firings started between 13:00Z and 13:50Z, so three to four hours late is
-  # ordinary here; a one-day threshold on a daily job would trip on lateness
-  # rather than on failure. Three tolerates two skipped firings, and drift is a
-  # slow fault: it harms nobody today, it harms the day somebody fixes a bug in
-  # one copy and not the others.
+  # Three days, by the rule above for a daily cron. The cron asks for 09:41Z
+  # and the last five firings started between 13:00Z and 13:50Z, so three to
+  # four hours late is ordinary here, which the day of margin covers.
   freshness-drift:
     needs: scope
     if: ${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}
@@ -247,6 +259,26 @@ jobs:
     with:
       workflow: drift.yml
       max-age-days: 3
+
+  # mutation.yml runs the catalogue every Monday and on demand, never on a
+  # pull request, so its cron is the only thing that asks whether the guards
+  # still die under their mutations. A cron that stops takes that question
+  # with it, and nothing says so.
+  #
+  # Fifteen days, by the rule above for a weekly cron. Like every watcher here
+  # it needs a successful scheduled run on record or it opens red; the cron
+  # landed on 2026-11-16, so its first Monday firing must have succeeded before
+  # this job is merged.
+  freshness-mutation:
+    needs: scope
+    if: ${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/reusable-schedule-freshness.yml
+    with:
+      workflow: mutation.yml
+      max-age-days: 15
 
   # Reports the verdict of the suite on main, which nothing else does.
   #

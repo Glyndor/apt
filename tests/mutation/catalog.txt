@@ -166,6 +166,7 @@ tools-unreadable	scripts/monitoring/check-tool-versions.sh	        problems.appe
 tools-no-release	scripts/monitoring/check-tool-versions.sh	    if not found:	    if False:	tests/monitoring/check-tool-versions.test.sh
 tools-pins-disagree	scripts/monitoring/check-tool-versions.sh	    if len(shellcheck) != 1:	    if False:	tests/monitoring/check-tool-versions.test.sh
 tools-verdict	scripts/monitoring/check-tool-versions.sh	if problems or behind:	if False:	tests/monitoring/check-tool-versions.test.sh
+fresh-mutation-watched	.github/workflows/freshness.yml	      workflow: mutation.yml	      workflow: unwatched.yml	tests/ci/policy/scheduled-workflows-are-watched.test.sh
 suites-wired-base-exemptions	scripts/quality/check-suites-wired.sh	    return {path: why for path, why in exempt.items() if path in base}	    return exempt	tests/quality/check-suites-wired.test.sh
 lint-base-exemptions	.github/workflows/reusable-workflow-lint.yml	            && git show "HEAD^1:$exemptions" > "$script.exempt" 2>/dev/null; then	            && cp "$exemptions" "$script.exempt" 2>/dev/null; then	tests/quality/check-suites-wired.test.sh
 suites-wired-operators	scripts/quality/check-suites-wired.sh	OPERATOR_RE = re.compile(r"[|&;<>`]|\$\(")	OPERATOR_RE = re.compile(r"(?!)")	tests/quality/check-suites-wired.test.sh
