@@ -25,6 +25,17 @@
 #
 # The suites left out on the machine this catalogue was measured on, and why,
 # are named in the catalogue.
+#
+# A KILL THAT SHOWS NO REASON
+#
+# A suite that goes red prints the FAIL lines it was written to print, and the
+# runner shows up to five of them. A suite that goes red without any died
+# instead of failing an assertion, and a crash is a kill the guard may not have
+# earned: the mutation may have removed something the script needed. The runner
+# says so for each such kill and counts them at the end of the sweep. It does
+# not refuse them, because some suites report a failure another way (the prune
+# suite asserts in python and leaves a traceback), so the count is the thing to
+# read: an entry that appears in it should show a reason by hand.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -320,6 +331,7 @@ done
 survivors=0
 errors=0
 entries=0
+quiet=0
 
 run_entry() { # <index> -> 0 when a test killed it, 1 when it survived, 2 when it could not be run
 	local idx="$1"
@@ -373,6 +385,14 @@ run_entry() { # <index> -> 0 when a test killed it, 1 when it survived, 2 when i
 			# The reason the suite went red, not only the colour: a suite that
 			# fails for another reason is a kill that never happened.
 			grep -m 5 -E '^[[:space:]]*FAIL' "$WORK/test.log" | sed 's/^/    /' || true
+			# A suite that goes red without printing one FAIL line did not fail an
+			# assertion: it died, and a crash is a kill that may not be the guard's.
+			# Some suites report failures another way, so this is counted and said
+			# at the end of the sweep, not refused.
+			if ! grep -qE '^[[:space:]]*FAIL' "$WORK/test.log"; then
+				echo "mutation $id: warning: $t went red without a FAIL line, so no reason is shown for it"
+				quiet=$((quiet + 1))
+			fi
 			killed=$((killed + 1))
 		fi
 	done
@@ -398,5 +418,7 @@ for i in "${SELECTED[@]}"; do
 	esac
 done
 
+[ "$quiet" -eq 0 ] \
+	|| echo "$quiet kill(s) with no FAIL line in the suite output: the suite died, or it reports failures another way"
 echo "$entries entries, $survivors survived, $errors could not be run"
 [ "$survivors" -eq 0 ] && [ "$errors" -eq 0 ]

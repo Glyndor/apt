@@ -40,6 +40,21 @@ mkdir -p "$F/scripts/area" "$F/keyring/upgrade" "$F/tests/mutation" "$F/.github/
 	printf '%s\n' 'python3 - "$value" <<'"'"'PY'"'"'' 'import sys' 'if len(sys.argv[1]) > 9:' '    sys.exit(3)' 'PY'
 	printf '%s\n' 'fail "not a helper here, so not a refusal"' 'echo ok'
 } > "$F/scripts/area/guard.sh"
+# Python that refuses with a message instead of a number, and the exits that are not refusals.
+{
+	printf '%s\n' '#!/usr/bin/env bash' "python3 - \"\$1\" <<'PY'" 'import sys'
+	printf '%s\n' 'if sys.argv[1] == "a":' '    sys.exit("a plain string")'
+	printf '%s\n' 'if sys.argv[1] == "b":' '    sys.exit(f"an f-string {sys.argv[1]}")'
+	printf '%s\n' 'if sys.argv[1] == "c":' '    raise SystemExit("raised")'
+	printf '%s\n' 'if sys.argv[1] == "d":' '    raise SystemExit(f"raised {sys.argv[1]}")'
+	printf '%s\n' 'if sys.argv[1] == "e":' '    sys.exit("joined " + " ".join(sys.argv))'
+	printf '%s\n' 'if sys.argv[1] == "zero":' '    sys.exit(0)'
+	printf '%s\n' 'if sys.argv[1] == "empty":' '    sys.exit()'
+	printf '%s\n' 'if sys.argv[1] == "none":' '    sys.exit(None)'
+	printf '%s\n' 'if sys.argv[1] == "bare":' '    raise SystemExit'
+	printf '%s\n' 'if sys.argv[1] == "name":' '    code = 2' '    sys.exit(code)'
+	printf '%s\n' 'PY'
+} > "$F/scripts/area/messages.sh"
 {
 	printf '%s\n' '#!/bin/sh' 'fail() {' '	echo "$*" >&2' '	exit 1' '}'
 	printf '%s\n' '[ -f /etc/hostname ] || fail "no hostname"'
@@ -58,6 +73,9 @@ entry() { printf '%s\t%s\t%s\t%s\t%s\n' "$@"; }
 	entry guard-dots scripts/area/guard.sh '*..*)' '__never__)' tests/a.test.sh
 	entry guard-python scripts/area/guard.sh 'if len(sys.argv[1]) > 9:' 'if False:' tests/a.test.sh
 	entry publish-token .github/workflows/publish.yml 'if [ -z "$TOKEN" ]; then' 'if false; then' tests/b.test.sh
+	for letter in a b c d e; do
+		entry "message-$letter" scripts/area/messages.sh "if sys.argv[1] == \"$letter\":" 'if False:' tests/a.test.sh
+	done
 } > "$F/tests/mutation/catalog.txt"
 printf '%s\t%s\t%s\n' keyring/upgrade/tool '|| fail "no hostname"' 'the fixture exempts it' > "$F/tests/mutation/exemptions.txt"
 cp -r "$F" "$WORK/pristine"
@@ -75,8 +93,8 @@ line_of() { grep -nF -- "$2" "$F/$1" | head -1 | cut -d: -f1; }
 # --- the control: everything covered ------------------------------------------
 rc=0; run || rc=$?
 check "a fixture whose every refusal is covered passes" "0" "$rc"
-check "and counts the seven refusals, not the comment, the string, the text file or the undefined fail" "1" \
-	"$(said '7 refusal(s) in 3 script(s): 6 catalogued, 1 exempt.')"
+check "and counts the twelve refusals, not the comment, the string, the text file, the undefined fail or the Python exits that end well" "1" \
+	"$(said '12 refusal(s) in 4 script(s): 11 catalogued, 1 exempt.')"
 
 # --- each shape of refusal is found once its cover is gone ------------------------
 for case in "guard-argument:scripts/area/guard.sh:no argument" \
@@ -84,7 +102,12 @@ for case in "guard-argument:scripts/area/guard.sh:no argument" \
 	"guard-unreadable:scripts/area/guard.sh:value=\"\$(cat" \
 	"guard-dots:scripts/area/guard.sh:*..*)" \
 	"guard-python:scripts/area/guard.sh:if len(sys.argv[1]) > 9:" \
-	"publish-token:.github/workflows/publish.yml:if [ -z"; do
+	"publish-token:.github/workflows/publish.yml:if [ -z" \
+	"message-a:scripts/area/messages.sh:if sys.argv[1] == \"a\":" \
+	"message-b:scripts/area/messages.sh:if sys.argv[1] == \"b\":" \
+	"message-c:scripts/area/messages.sh:if sys.argv[1] == \"c\":" \
+	"message-d:scripts/area/messages.sh:if sys.argv[1] == \"d\":" \
+	"message-e:scripts/area/messages.sh:if sys.argv[1] == \"e\":"; do
 	id="${case%%:*}"; rest="${case#*:}"; file="${rest%%:*}"; first="${rest#*:}"
 	reset; drop "$id"
 	rc=0; run || rc=$?
@@ -92,6 +115,21 @@ for case in "guard-argument:scripts/area/guard.sh:no argument" \
 	check "and names the refusal from its first line" "1" \
 		"$(said "$file:$(line_of "$file" "$first")-")"
 done
+
+# A message is a refusal, and the exits that end well are not: the same line
+# becomes one the moment its argument is a string, so each was passed over for
+# its argument and not by accident of where it sits.
+for form in 'sys.exit(0)' 'sys.exit()' 'sys.exit(None)' 'raise SystemExit'; do
+	reset; awk -v form="    $form" '$0 == form { print "    sys.exit(\"now a message\")"; next } { print }' \
+		"$F/scripts/area/messages.sh" > "$WORK/messages" && mv "$WORK/messages" "$F/scripts/area/messages.sh"
+	rc=0; run || rc=$?
+	check "$form is not a refusal, and becomes one as sys.exit(\"...\")" "1" "$rc"
+	check "naming the line it is on" "1" "$(said 'now a message')"
+done
+reset; awk '$0 == "    sys.exit(code)" { print "    sys.exit(\"now a message\")"; next } { print }' \
+	"$F/scripts/area/messages.sh" > "$WORK/messages" && mv "$WORK/messages" "$F/scripts/area/messages.sh"
+rc=0; run || rc=$?
+check "a status held in a variable is not read, and a message in its place is" "1" "$rc"
 
 reset; : > "$F/tests/mutation/exemptions.txt"
 rc=0; run || rc=$?

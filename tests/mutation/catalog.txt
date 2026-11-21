@@ -63,7 +63,7 @@
 # Run: tests/mutation/run-mutations.sh [--list] [<id>]
 verify-debs-reserved-filename	scripts/verify/verify-debs.sh	if [[ "$(basename "$deb")" == glyndor-archive-keyring* ]]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-reserved-control	scripts/verify/verify-debs.sh	if [ "$pkg" = "glyndor-archive-keyring" ]; then	if false; then	tests/verify/verify-debs.test.sh
-verify-debs-unreadable-control	scripts/verify/verify-debs.sh	if ! pkg="$(dpkg-deb -f "$deb" Package)"; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-unreadable-control	scripts/verify/verify-debs.sh	if ! pkg="$(dpkg-deb -f "$deb" Package)"; then	if pkg="$(dpkg-deb -f "$deb" Package)"; false; then	tests/verify/verify-debs.test.sh
 verify-debs-package-mismatch	scripts/verify/verify-debs.sh	if [ "$pkg" != "$EXPECTED_PACKAGE" ]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-filename-prefix	scripts/verify/verify-debs.sh	if [[ "$(basename "$deb")" != "${EXPECTED_PACKAGE}_"* ]]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-version-mismatch	scripts/verify/verify-debs.sh	if [ "$upstream" != "$want" ] && [ "${ver#*:}" != "$want" ]; then	if false; then	tests/verify/verify-debs.test.sh
@@ -208,8 +208,8 @@ publish-glyndor-tag-release-carries-pq	.github/workflows/publish.yml	if [ "${#pq
 publish-glyndor-tag-release-carries-sig	.github/workflows/publish.yml	if [ "${#sig_names[@]}" -ne 1 ]; then	if false; then	tests/publication/publish/publish-workflow-assets.test.sh
 publish-no-release-tag-was-pinned	.github/workflows/publish.yml	|| { echo "::error::no release tag was pinned for $p; refusing to check a release that cannot be named"; exit 1; }	|| true || { echo "::error::no release tag was pinned for $p; refusing to check a release that cannot be named"; exit 1; }	tests/publication/publish/publish-workflow-release-order.test.sh
 publish-undeclared-architecture	.github/workflows/publish.yml	echo "::error::Glyndor/$p declares architecture $a, which is not in ARCHITECTURES ($ARCHITECTURES)"	continue	tests/publication/publish/publish-workflow-assets.test.sh
-glyndor-upgrade-glyndor-upgrade-apt-could-not	keyring/upgrade/glyndor-upgrade	if ! sim="$(apt-get -s --only-upgrade install $installed)"; then	if false; then	tests/keyring/glyndor-upgrade-errors.test.sh
-glyndor-upgrade-glyndor-upgrade-cannot-read-glyndor	keyring/upgrade/glyndor-upgrade	if ! content="$("$APT_HELPER" cat-file "$f" 2>/dev/null)"; then	if false; then	tests/keyring/glyndor-upgrade-errors.test.sh
+glyndor-upgrade-glyndor-upgrade-apt-could-not	keyring/upgrade/glyndor-upgrade	if ! sim="$(apt-get -s --only-upgrade install $installed)"; then	if sim="$(apt-get -s --only-upgrade install $installed)"; false; then	tests/keyring/glyndor-upgrade-errors.test.sh
+glyndor-upgrade-glyndor-upgrade-cannot-read-glyndor	keyring/upgrade/glyndor-upgrade	if ! content="$("$APT_HELPER" cat-file "$f" 2>/dev/null)"; then	if content="$("$APT_HELPER" cat-file "$f" 2>/dev/null)"; false; then	tests/keyring/glyndor-upgrade-errors.test.sh
 glyndor-upgrade-glyndor-upgrade-dpkg-could-not	keyring/upgrade/glyndor-upgrade	if [ "$query_rc" -ne 0 ]; then	if false; then	tests/keyring/glyndor-upgrade.test.sh
 glyndor-upgrade-glyndor-upgrade-no-readable-glyndor	keyring/upgrade/glyndor-upgrade	if [ -z "$names" ]; then	if false; then	tests/keyring/glyndor-upgrade.test.sh
 glyndor-upgrade-glyndor-upgrade-refusing-run-invalid	keyring/upgrade/glyndor-upgrade	if [ -n "$_bad" ]; then	if false; then	tests/keyring/glyndor-upgrade.test.sh
@@ -285,7 +285,7 @@ check-test-coverage-missing-script-have-no-test	scripts/quality/check-test-cover
 check-test-coverage-no-scripts-directory-under-root	scripts/quality/check-test-coverage.sh	[ -d "$root/scripts" ] || { echo "no scripts/ directory under $root" >&2; exit 1; }	[ -d "$root/scripts" ] || true || { echo "no scripts/ directory under $root" >&2; exit 1; }	tests/quality/check-test-coverage.test.sh
 lint-workflow-shell-found-no-run-blocks-under	scripts/quality/lint-workflow-shell.sh	if [ "$blocks" -eq 0 ]; then	if false; then	tests/quality/lint-workflow-shell.test.sh
 lint-workflow-shell-shellcheck-severity-severity-found-problems	scripts/quality/lint-workflow-shell.sh	if [ "$failed" -ne 0 ]; then	if false; then	tests/quality/lint-workflow-shell.test.sh
-check-release-order-could-not-compare-product-candidate	scripts/verify/check-release-order.sh	if ! verdict="$(release_order "$PRODUCT" "$candidate" "$DEBS_DIR" "${packages[@]}")"; then	if false; then	tests/verify/check-release-order.test.sh
+check-release-order-could-not-compare-product-candidate	scripts/verify/check-release-order.sh	if ! verdict="$(release_order "$PRODUCT" "$candidate" "$DEBS_DIR" "${packages[@]}")"; then	if verdict="$(release_order "$PRODUCT" "$candidate" "$DEBS_DIR" "${packages[@]}")"; false; then	tests/verify/check-release-order.test.sh
 check-release-order-could-not-fetch-served-index	scripts/verify/check-release-order.sh	if ! fetch "$BASE_URL/$DIST_PATH/InRelease" "$WORK/InRelease" "$MAX_INRELEASE_BYTES"; then	if false; then	tests/verify/check-release-order.test.sh
 check-release-order-could-not-fetch-served-index-2	scripts/verify/check-release-order.sh	if ! fetch "$url" "$dest" "$MAX_INDEX_BYTES"; then	if false; then	tests/verify/check-release-order.test.sh
 check-release-order-refusing-publish-product-tag-archive	scripts/verify/check-release-order.sh	older\ *)	__mutation_never_matches__)	tests/verify/check-release-order.test.sh
@@ -301,8 +301,8 @@ distro-floor-installer-was-refused-but-refusal	scripts/verify/distro-floor.sh	||
 distro-floor-product-on-path-but-does	scripts/verify/distro-floor.sh	|| fail "$product is on PATH but does not start; the installer did not notice"	|| true || fail "$product is on PATH but does not start; the installer did not notice"	tests/verify/distro-floor.test.sh
 published-roster-published-commit	scripts/verify/published-roster.sh	echo "::error::the published commit ${sha:0:7} has no PRODUCTS list this script can read in $workflow; this check cannot tell which installers to ask for" >&2	exit 0	tests/verify/published-roster.test.sh
 roster-has-releases-no-products-or-architectures-list	scripts/verify/roster-has-releases.sh	if [ -z "$specs" ] || [ -z "$archs_all" ]; then	if false; then	tests/verify/roster-has-releases.test.sh
-verify-debs-cannot-read-architecture-control-field	scripts/verify/verify-debs.sh	if ! ctrl_arch="$(dpkg-deb -f "$deb" Architecture)"; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
-verify-debs-cannot-read-version-control-field	scripts/verify/verify-debs.sh	if ! ver="$(dpkg-deb -f "$deb" Version)"; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-cannot-read-architecture-control-field	scripts/verify/verify-debs.sh	if ! ctrl_arch="$(dpkg-deb -f "$deb" Architecture)"; then	if ctrl_arch="$(dpkg-deb -f "$deb" Architecture)"; false; then	tests/verify/verify-debs-control-fields.test.sh
+verify-debs-cannot-read-version-control-field	scripts/verify/verify-debs.sh	if ! ver="$(dpkg-deb -f "$deb" Version)"; then	if ver="$(dpkg-deb -f "$deb" Version)"; false; then	tests/verify/verify-debs-control-fields.test.sh
 verify-debs-except-oserror-as-exc-sys	scripts/verify/verify-debs.sh	except OSError as exc:	except ZeroDivisionError as exc:	tests/verify/verify-debs-hybrid.test.sh
 verify-debs-except-valueerror-base64-binascii-as	scripts/verify/verify-debs.sh	except (ValueError, base64.binascii.Error) as exc:	except ZeroDivisionError as exc:	tests/verify/verify-debs.test.sh
 verify-debs-local-release-trust-file-malformed	scripts/verify/verify-debs.sh	if [ "$python_rc" -ne 0 ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
@@ -338,3 +338,19 @@ mutation-gate-decide	.github/workflows/mutation.yml	if [ "$DECIDE" != success ];
 mutation-scope-global-inputs	scripts/quality/mutation-scope.sh	if paths & GLOBAL_INPUTS:	if False:	tests/quality/mutation-scope.test.sh
 mutation-coverage-errors	scripts/quality/check-mutation-coverage.sh	if errors:	if False:	tests/quality/check-mutation-coverage.test.sh
 mutation-coverage-entry-applies	scripts/quality/check-mutation-coverage.sh	applies(*fields[:4])	pass	tests/quality/check-mutation-coverage.test.sh
+release-order-package-twice-refused	scripts/verify/check-release-order.sh	if len(fields["Package"]) != 1:	if False:	tests/verify/check-release-order.test.sh
+release-order-version-not-once	scripts/verify/check-release-order.sh	if len(fields.get("Version", [])) != 1:	if False:	tests/verify/check-release-order.test.sh
+release-order-tool-cannot-run	scripts/verify/check-release-order.sh	sys.exit(f"cannot run {args[0]} to read/compare package versions: {error}")	return subprocess.CompletedProcess(args, 0, "", "")	tests/verify/check-release-order.test.sh
+release-order-candidate-not-semver	scripts/verify/check-release-order.sh	sys.exit(f"the release version {candidate!r} cannot be compared: {error}")	new = (0, 0, 0, True, ())	tests/verify/check-release-order.test.sh
+release-order-tool-missing	scripts/verify/check-release-order.sh	if not shutil.which(tool):	if False:	tests/verify/check-release-order.test.sh
+release-order-no-candidate-debs	scripts/verify/check-release-order.sh	if not debs:	if False:	tests/verify/check-release-order.test.sh
+release-order-candidate-unreadable	scripts/verify/check-release-order.sh	if package.returncode != 0 or package.stdout.strip() != product or version.returncode != 0:	if False:	tests/verify/check-release-order.test.sh
+release-order-served-version-not-semver	scripts/verify/check-release-order.sh	sys.exit(f"the served version {version!r} of {product} cannot be compared: {error}")	orders.append(((0, 0, 0, True, ()), version))	tests/verify/check-release-order.test.sh
+release-order-dpkg-cannot-compare	scripts/verify/check-release-order.sh	if comparison.returncode != 1:	if False:	tests/verify/check-release-order.test.sh
+release-order-no-sha256-section	scripts/verify/check-release-order.sh	sys.exit("the served index declares no SHA256 section")	section = re.match("()", "")	tests/verify/check-release-order.test.sh
+release-order-no-packages-in-index	scripts/verify/check-release-order.sh	sys.exit("the served index declares no per-architecture Packages file")	pass	tests/verify/check-release-order.test.sh
+prune-installers-usage	scripts/publish/prune-installers.sh	if [ -z "$BUILT_DIR" ] || [ -z "$BUCKET" ] || [ -z "$ENDPOINT" ]; then	if false; then	tests/publish/prune-installers.test.sh
+prune-installers-built-dir-missing	scripts/publish/prune-installers.sh	|| { echo "::error::no built installer directory at $BUILT_DIR" >&2; exit 1; }	|| true	tests/publish/prune-installers.test.sh
+verify-published-pool-cap	scripts/verify/verify-published.sh	if [ "$pool_count" -gt "$MAX_ENTRIES" ]; then	if false; then	tests/verify/verify-published/verify-published-budget.test.sh
+mutation-coverage-python-string	scripts/quality/check-mutation-coverage.sh	(?:[1-9][0-9]*\s*\)|[rRbBfFuU]{0,2}" + STRING + ")	[1-9][0-9]*\s*\)	tests/quality/check-mutation-coverage.test.sh
+mutation-coverage-python-string-prefix	scripts/quality/check-mutation-coverage.sh	[rRbBfFuU]{0,2}" + STRING	" + STRING	tests/quality/check-mutation-coverage.test.sh

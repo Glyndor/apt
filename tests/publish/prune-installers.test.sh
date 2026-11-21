@@ -184,6 +184,30 @@ with tempfile.TemporaryDirectory() as temp:
     check(keys() == before and not any(c[1] == 'delete-object' for c in records()),
           'the refused bucket name makes no delete call')
 
+    # The workflow passes the endpoint from a secret, and a secret that arrives empty
+    # has to stop the run before anything is read or removed. Each of the three
+    # arguments is emptied in turn; the run that passes all three succeeds above.
+    for position, name in ((0, 'built directory'), (1, 'bucket'), (2, 'endpoint')):
+        reset()
+        before = keys()
+        arguments = [str(built), 'glyndor-apt', 'https://r2.invalid', str(journal)]
+        arguments[position] = ''
+        result = subprocess.run(['bash', str(root / 'scripts/publish/prune-installers.sh')] + arguments,
+                                env=env, capture_output=True, text=True)
+        check(result.returncode == 2 and 'usage: prune-installers.sh' in result.stderr,
+              'an empty ' + name + ' is refused with the usage and exit 2')
+        check(keys() == before and not records(), 'and the refusal reads and removes nothing')
+
+    # A built directory that is not there is a broken build, not an empty one.
+    reset()
+    before = keys()
+    result = subprocess.run(['bash', str(root / 'scripts/publish/prune-installers.sh'),
+                             str(work / 'no-such-directory'), 'glyndor-apt', 'https://r2.invalid', str(journal)],
+                            env=env, capture_output=True, text=True)
+    check(result.returncode == 1 and 'no built installer directory at' in result.stderr,
+          'a built directory that does not exist is refused for it')
+    check(keys() == before and not records(), 'and the refusal reads and removes nothing')
+
 print(f'{passed} passed, 0 failed')
 print(f'DONE prune-installers.test.sh {passed} 0')
 PY

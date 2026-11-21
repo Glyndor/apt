@@ -1,0 +1,4 @@
+Package: podup
+Version: 1.0
+Architecture: amd64
+Description: a version dpkg accepts and SemVer does not

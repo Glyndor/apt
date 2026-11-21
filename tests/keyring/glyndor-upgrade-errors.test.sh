@@ -28,7 +28,9 @@ case "$1" in
 	update)
 		[ ! -f "$WORK/update-fails" ] || { echo 'E: update fixture failed' >&2; exit 100; } ;;
 	indextargets) echo "$WORK/Packages" ;;
-	-s) echo 'Inst podup [1] (2 stable)' ;;
+	-s)
+		[ ! -f "$WORK/plan-fails" ] || { echo 'E: could not get the dpkg lock' >&2; exit 100; }
+		echo 'Inst podup [1] (2 stable)' ;;
 	*) exit 2 ;;
 esac
 STUB
@@ -91,6 +93,16 @@ check "a failed apt-get update exits 100" "100" "$rc"
 check "the update error reaches the journal" "1" "$(says 'E: update fixture failed')"
 check "a failed update prevents the engine from running" "0" "$(ran)"
 rm "$WORK/update-fails"
+
+# A simulation that fails is not an empty plan: reading it as one would report
+# everything current while nothing was upgraded.
+touch "$WORK/plan-fails"
+run_upgrade; rc=$?
+check "a failed upgrade simulation exits 1" "1" "$rc"
+check "and says apt could not plan the upgrade" "1" "$(says 'apt could not plan the upgrade')"
+check "and does not report everything current" "0" "$(says 'is current')"
+check "a failed simulation prevents the engine from running" "0" "$(ran)"
+rm "$WORK/plan-fails"
 
 # A regular file as the parent is uncreatable even with root's DAC override.
 # chmod 000 would make this case dependent on the runner's privileges.

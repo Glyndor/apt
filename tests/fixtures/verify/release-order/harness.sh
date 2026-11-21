@@ -103,7 +103,9 @@ candidates() {
 		"${CAND_PACKAGE:-$PRODUCT}" "$version" > "$root/DEBIAN/control"
 	dpkg-deb --root-owner-group --build "$root" "$dir/c.deb" >/dev/null
 }
-run() { candidates; bash "$ACTIVE" "$PRODUCT" "$TAG" "$BASE" "$KEY" "$WORK/debs/$PRODUCT"; }
+# SCRIPT_PATH, when a case sets it, is the PATH the script under test runs with; the candidate is
+# built and the archive served with the ordinary one.
+run() { candidates; PATH="${SCRIPT_PATH:-$PATH}" "$BASH" "$ACTIVE" "$PRODUCT" "$TAG" "$BASE" "$KEY" "$WORK/debs/$PRODUCT"; }
 check() { # expected status, distinguishing output, label
 	local want="$1" needle="$2" label="$3" got=0 out
 	out="$(run 2>&1)" || got=$?

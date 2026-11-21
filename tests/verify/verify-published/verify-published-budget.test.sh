@@ -217,6 +217,21 @@ assert_error 1 "bytes of packages, over the 1 cap" "indices declaring more packa
 	env VERIFY_PUBLISHED_MAX_POOL_BYTES=1 "$VERIFY" "$BASE" "$TRUSTED_ASC" 1 0
 assert 0 "the caps at their defaults accept the same archive" -- run
 
+# The cap on the packages the indices declare is not the cap on the index files. The
+# fixture declares three packages in four index files, so lowering the cap below
+# either trips the index cap first; an archive with more packages than index files
+# is what reaches this one.
+build_archive
+for extra in 1 2; do
+	printf 'extra podup %s\n' "$extra" > "$SITE/$PODUP_POOL/podup_1.12.${extra}_amd64.deb"
+	stanza podup amd64 "$PODUP_POOL/podup_1.12.${extra}_amd64.deb" >> "$DIST/main/binary-amd64/Packages"
+done
+write_release "$TRUSTED_KEY"
+assert_error 1 "the verified indices declare 5 packages, over the 4 cap" "an archive declaring more packages than the entry cap is rejected for its packages" -- \
+	env VERIFY_PUBLISHED_MAX_ENTRIES=4 "$VERIFY" "$BASE" "$TRUSTED_ASC" 1 0
+assert 0 "and the same archive at a cap of five is accepted" -- \
+	env VERIFY_PUBLISHED_MAX_ENTRIES=5 "$VERIFY" "$BASE" "$TRUSTED_ASC" 1 0
+
 # --- Result ------------------------------------------------------------------
 
 # The three numbers that bound the retry loop are checked before anything is fetched: a typo in a
