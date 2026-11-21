@@ -309,10 +309,20 @@ jobs:
             echo "Only files the suite does not read changed, so the test suite was skipped." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # Which suites run is decided before anything is installed: the base
+      # commit's resolver reads the suite map and scripts/quality/
+      # suite-dependencies.txt and answers with the packages the selected
+      # suites use, so a pull request that selects no suite needing a package
+      # does not pay for it. A repository without the map, or any answer the
+      # step cannot use, installs the whole list. The note lives here and not
+      # inside the script because the drift check compares the lines of a run
+      # block, comments included.
       - name: Install test dependencies
         if: steps.scope.outputs.docs_only != 'true'
         env:
           EVENT: ${{ github.event_name }}
+          SHELLCHECK_VERSION: ${{ inputs.shellcheck-version }}
+          SHELLCHECK_SHA256: ${{ inputs.shellcheck-sha256 }}
         run: |
           set -euo pipefail
           # Decide before apt, using the BASE resolver and dependency map.
@@ -328,10 +338,36 @@ jobs:
               packages="${decision#packages=}"
             fi
           fi
-          if [ -n "$packages" ]; then
+          # The suites share one tool with the shellcheck job, which installs
+          # the pinned release of shellcheck. A suite that plants a
+          # violation and asks the linter to report it has to ask the same
+          # linter the gate uses, so `shellcheck` in the list means that
+          # release, verified the same way, and apt never installs it.
+          wanted=""
+          shellcheck_needed=false
+          # shellcheck disable=SC2086 # intentional word-splitting of the package list
+          for package in $packages; do
+            if [ "$package" = shellcheck ]; then
+              shellcheck_needed=true
+            else
+              wanted="${wanted:+$wanted }$package"
+            fi
+          done
+          if [ "$shellcheck_needed" = true ]; then
+            dir="$RUNNER_TEMP/shellcheck-bin"
+            tarball="$RUNNER_TEMP/shellcheck.tar.xz"
+            mkdir -p "$dir"
+            curl -sSfL -o "$tarball" \
+              "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+            printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -
+            tar -xJ -f "$tarball" -C "$dir" --strip-components=1 "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
+            chmod +x "$dir/shellcheck"
+            echo "$dir" >> "$GITHUB_PATH"
+          fi
+          if [ -n "$wanted" ]; then
             sudo apt-get update -qq
             # shellcheck disable=SC2086 # intentional word-splitting of the package list
-            sudo apt-get install -y -qq $packages
+            sudo apt-get install -y -qq $wanted
           fi
 
       # The guard in reusable-workflow-lint.yml already refuses a

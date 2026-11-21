@@ -167,6 +167,8 @@ tools-no-release	scripts/monitoring/check-tool-versions.sh	    if not found:	   
 tools-pins-disagree	scripts/monitoring/check-tool-versions.sh	    if len(shellcheck) != 1:	    if False:	tests/monitoring/check-tool-versions.test.sh
 tools-verdict	scripts/monitoring/check-tool-versions.sh	if problems or behind:	if False:	tests/monitoring/check-tool-versions.test.sh
 fresh-mutation-watched	.github/workflows/freshness.yml	      workflow: mutation.yml	      workflow: unwatched.yml	tests/ci/policy/scheduled-workflows-are-watched.test.sh
+shell-pinned-shellcheck	.github/workflows/reusable-shell-ci.yml	            if [ "$package" = shellcheck ]; then	            if false; then	tests/ci/reusable/reusable-shell-ci.test.sh
+shell-pinned-sha256	.github/workflows/reusable-shell-ci.yml	            printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -	            true	tests/ci/reusable/reusable-shell-ci.test.sh
 suites-wired-base-exemptions	scripts/quality/check-suites-wired.sh	    return {path: why for path, why in exempt.items() if path in base}	    return exempt	tests/quality/check-suites-wired.test.sh
 lint-base-exemptions	.github/workflows/reusable-workflow-lint.yml	            && git show "HEAD^1:$exemptions" > "$script.exempt" 2>/dev/null; then	            && cp "$exemptions" "$script.exempt" 2>/dev/null; then	tests/quality/check-suites-wired.test.sh
 suites-wired-operators	scripts/quality/check-suites-wired.sh	OPERATOR_RE = re.compile(r"[|&;<>`]|\$\(")	OPERATOR_RE = re.compile(r"(?!)")	tests/quality/check-suites-wired.test.sh
