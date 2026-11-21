@@ -2,6 +2,12 @@ name: Line limit
 
 # Enforces the org file-size standard (soft 300 / hard 500 code lines) via the
 # repository-local reusable. Keep its policy aligned with the sibling channels.
+#
+# The push trigger is not decoration. The limit is a property of the tree, so
+# the run on a push to main is the run that answers for main. The `suite on
+# main` watcher in freshness.yml reads that verdict and says it out loud, and
+# it is the only reader of it: without that, a push that left a file over the
+# hard limit would leave main over it with nothing saying so.
 
 on:
   pull_request:

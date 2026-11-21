@@ -4,6 +4,12 @@ name: Workflow lint
 # per-repo logic in the org) with the shared actionlint reusable, so a broken
 # expression or a shellcheck-visible bug in a run: block fails the PR instead
 # of the next scheduled publish.
+#
+# The push trigger is not decoration. The lint is a property of the tree, so
+# the run on a push to main is the run that answers for main. The `suite on
+# main` watcher in freshness.yml reads that verdict and says it out loud, and
+# it is the only reader of it: without that, a push that broke the lint would
+# leave main broken with nothing saying so.
 
 on:
   pull_request:
