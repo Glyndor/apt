@@ -15,6 +15,15 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: commit-hygiene-${{ github.workflow }}-${{ github.ref }}
+  # A newer push to the same pull request supersedes the earlier run: the
+  # earlier one answers a question about a commit that no longer exists, and
+  # both jobs check out the whole history to answer it. The expression is the
+  # one the rest of this repository uses, so a push trigger added here later
+  # would not cancel a commit that has to be judged on its own.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   commit-identity:
     name: commit identity
