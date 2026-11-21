@@ -104,13 +104,16 @@ gpg --batch --yes --local-user "$FPR" --digest-algo SHA512 --armor --detach-sign
 # Read the signatures back with the key clients are given, not the keyring that
 # made them: a signature only the signing keyring accepts is one no client does.
 gpg --batch --quiet --dearmor --output "$WORK/archive-key.gpg" "$PUBKEY_ASC"
-if ! gpgv --keyring "$WORK/archive-key.gpg" --quiet --output "$WORK/body" "$WORK/InRelease" 2>/dev/null \
+# What gpgv says is kept and added to the refusal, since it is what tells a
+# signature by another key from a public key file that cannot be read.
+gpgv_said() { tr '\n' ' ' < "$WORK/gpgv.err" | sed 's/ *$//'; }
+if ! gpgv --keyring "$WORK/archive-key.gpg" --quiet --output "$WORK/body" "$WORK/InRelease" 2>"$WORK/gpgv.err" \
 	|| ! cmp -s "$WORK/body" "$RELEASE"; then
-	echo "::error::the InRelease just signed does not verify against $PUBKEY_ASC, or its body is not the Release" >&2
+	echo "::error::the InRelease just signed does not verify against $PUBKEY_ASC, or its body is not the Release; gpgv said: $(gpgv_said)" >&2
 	exit 1
 fi
-if ! gpgv --keyring "$WORK/archive-key.gpg" --quiet "$WORK/Release.gpg" "$RELEASE" 2>/dev/null; then
-	echo "::error::the Release.gpg just signed does not verify against $PUBKEY_ASC" >&2
+if ! gpgv --keyring "$WORK/archive-key.gpg" --quiet "$WORK/Release.gpg" "$RELEASE" 2>"$WORK/gpgv.err"; then
+	echo "::error::the Release.gpg just signed does not verify against $PUBKEY_ASC; gpgv said: $(gpgv_said)" >&2
 	exit 1
 fi
 mv "$WORK/InRelease" "$WORK/Release.gpg" "$DIST/"

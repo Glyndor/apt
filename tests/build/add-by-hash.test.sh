@@ -56,7 +56,7 @@ GNUPGHOME="$OTHER" gpg --batch --armor --export > "$WORK/other-key.asc" 2>/dev/n
 . "$HERE/tests/fixtures/build/unsigned-dist.sh"
 
 run() { # $1=root [$2=public key]
-	bash "$SCRIPT" "$1/dists/stable" "$FPR" "${2:-$WORK/archive-key.asc}" > "$WORK/out" 2>&1
+	LC_ALL=C bash "$SCRIPT" "$1/dists/stable" "$FPR" "${2:-$WORK/archive-key.asc}" > "$WORK/out" 2>&1
 }
 said() { grep -cF -- "$1" "$WORK/out"; }
 fresh() { rm -rf "${WORK:?}/${1:?}"; mkdist "$WORK/$1"; echo "$WORK/$1"; }
@@ -161,6 +161,7 @@ D="$(fresh untrusted)"
 rc=0; run "$D" "$WORK/other-key.asc" || rc=$?
 check "an index signed by a key the given public key is not is refused" "1" "$rc"
 check "naming the signature that does not verify" "1" "$(said 'the InRelease just signed does not verify against')"
+check "and saying why, in gpgv's words" "1" "$(grep -c '::error::the InRelease just signed .*gpgv said: .*No public key' "$WORK/out")"
 check "and leaves no signed index behind" "0" "$(find "$D/dists/stable" -maxdepth 1 -name 'InRelease' -o -maxdepth 1 -name 'Release.gpg' | wc -l)"
 
 D="$(fresh no-key)"
