@@ -47,6 +47,7 @@ tests/installer/unattended-upgrades.test.sh -
 tests/keyring/glyndor-upgrade-errors.test.sh -
 tests/keyring/glyndor-upgrade.test.sh -
 tests/keyring/keyring-fingerprints.test.sh -
+tests/keyring/readme-fingerprint-form.test.sh -
 tests/keyring/maintainer-offer-guards.test.sh -
 tests/keyring/maintainer-postinst-trust.test.sh -
 tests/keyring/maintainer-postrm.test.sh -
@@ -111,6 +112,7 @@ tests/verify/verify-debs.test.sh python3-cryptography
 tests/verify/verify-debs-hybrid.test.sh python3-cryptography
 tests/verify/verify-debs-anchor-bytes.test.sh python3-cryptography
 tests/verify/verify-debs-control-fields.test.sh python3-cryptography
+tests/verify/verify-debs-same-bytes.test.sh python3-cryptography
 
 # python3-yaml
 tests/ci/policy/freshness-job-scope.test.sh python3-yaml
@@ -121,6 +123,7 @@ tests/ci/policy/mutation-workflow.test.sh python3-yaml
 tests/ci/policy/publish-workflow-triggers.test.sh python3-yaml
 tests/ci/policy/workflow-shape.test.sh python3-yaml
 tests/ci/policy/persist-credentials.test.sh python3-yaml
+tests/ci/policy/permissions-declared.test.sh python3-yaml
 tests/publication/publish/publish-workflow.test.sh python3-yaml
 tests/ci/suites/lint-job-scope.test.sh python3-yaml
 tests/ci/suites/mldsa-job-scope.test.sh python3-yaml
@@ -149,3 +152,5 @@ tests/quality/lint/check-tooling-isolation.test.sh python3-cryptography python3-
 
 # python3-cryptography, python3-yaml, reprepro, shellcheck
 tests/ci/reusable/reusable-shell-ci.test.sh python3-cryptography python3-yaml reprepro shellcheck
+
+tests/ci/policy/workflow-calls-are-exact.test.sh -

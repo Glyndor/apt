@@ -137,13 +137,13 @@ curl -fsSLO --proto '=https' --proto-redir '=https' --max-filesize 65536 https:/
 dpkg-deb --fsys-tarfile glyndor-archive-keyring.deb | tar -t -v --numeric-owner |
   awk '$3 !~ /^[0-9]+$/ { bad = 1 } { total += $3 } END { exit (bad || total > 8 * 1024 * 1024) }'
 dpkg-deb -x glyndor-archive-keyring.deb keyring-check
-gpg --show-keys keyring-check/usr/share/keyrings/glyndor.gpg
+gpg --show-keys --fingerprint keyring-check/usr/share/keyrings/glyndor.gpg
 ```
 
 Nothing from the package runs. The downloads are capped at 8 MiB and 64 KiB, and the
 `awk` line refuses a package whose files declare more than 8 MiB once unpacked (a
 sparse member costs a few kilobytes in the archive and 16 MiB on disk), the same bounds
-the installer applies; if it exits non-zero, stop and report it. It must print **exactly**:
+the installer applies; if it exits non-zero, stop and report it. The fingerprint it prints must be **exactly**:
 
 ```
 9ADF 04EA 8C31 39CD B673  03CF A670 5C2E A153 F3D6

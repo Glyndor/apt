@@ -52,11 +52,17 @@ unpinned() {
 			| grep -v '^[0-9]*:[[:space:]]*#' \
 			| grep -v 'LC_ALL=C[[:space:]]*sort' \
 			| while IFS= read -r line; do echo "$f:$line"; done
-	done < <(find scripts -type f -name '*.sh' 2>/dev/null | LC_ALL=C sort)
+	done < <({
+		find scripts -type f -name '*.sh'
+		# keyring/upgrade/ runs as root on every client and is held to the same gates
+		# as scripts/ (check-test-coverage): its maintainer scripts have no extension,
+		# and the units beside them are not shell.
+		find keyring/upgrade -type f ! -name '*.service' ! -name '*.timer'
+	} 2>/dev/null | LC_ALL=C sort)
 }
 
 found="$(unpinned || true)"
-check "every sort in scripts/ pins its collation" "" "$found"
+check "every sort in scripts/ and keyring/upgrade/ pins its collation" "" "$found"
 
 # The check must be able to see a violation, or it is a grep that always agrees.
 # Rather than write to a tracked file, run the same pattern over a fixture.
@@ -67,13 +73,21 @@ printf '#!/bin/sh\nexport LC_ALL=C\nprintf "b\\na\\n" | sort -u\n' > "$probe/scr
 printf '#!/bin/sh\nprintf "b\\na\\n" | LC_ALL=C sort -u\n' > "$probe/scripts/inline.sh"
 mkdir -p "$probe/scripts/area/sub"
 printf '#!/bin/sh\nprintf "b\\na\\n" | sort -u\n' > "$probe/scripts/area/sub/deep.sh"
+mkdir -p "$probe/keyring/upgrade"
+printf '#!/bin/sh\nprintf "b\\na\\n" | sort -u\n' > "$probe/keyring/upgrade/maintainer-bad"
+printf '#!/bin/sh\nprintf "b\\na\\n" | LC_ALL=C sort -u\n' > "$probe/keyring/upgrade/maintainer-pinned"
+printf '[Service]\nExecStart=/usr/bin/sort -u\n' > "$probe/keyring/upgrade/unit.service"
 seen="$( cd "$probe" || exit 1; unpinned | grep -c . )"
 named="$( cd "$probe" || exit 1; unpinned | grep -c 'bad.sh' )"
 deep="$( cd "$probe" || exit 1; unpinned | grep -c 'area/sub/deep.sh' )"
+keyring="$( cd "$probe" || exit 1; unpinned | grep -c 'keyring/upgrade/maintainer-bad' )"
+others="$( cd "$probe" || exit 1; unpinned | grep -c 'keyring/upgrade/\(maintainer-pinned\|unit.service\)' )"
 rm -rf "$probe"
-check "and it reports the unpinned sorts at every depth" "2" "$seen"
+check "and it reports the unpinned sorts at every depth" "3" "$seen"
 check "and names the file it is in" "1" "$named"
 check "and names the one in a nested folder" "1" "$deep"
+check "and names the one in keyring/upgrade, which has no extension" "1" "$keyring"
+check "and not a pinned one there, nor a unit that names sort" "0" "$others"
 
 echo
 echo "$pass passed, $fail failed"

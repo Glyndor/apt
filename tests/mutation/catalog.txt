@@ -64,7 +64,7 @@
 # Run: tests/mutation/run-mutations.sh [--list] [<id>]
 verify-debs-reserved-filename	scripts/verify/verify-debs.sh	if [[ "$(basename "$deb")" == glyndor-archive-keyring* ]]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-reserved-control	scripts/verify/verify-debs.sh	if [ "$pkg" = "glyndor-archive-keyring" ]; then	if false; then	tests/verify/verify-debs.test.sh
-verify-debs-unreadable-control	scripts/verify/verify-debs.sh	if ! pkg="$(dpkg-deb -f "$deb" Package)"; then	if pkg="$(dpkg-deb -f "$deb" Package)"; false; then	tests/verify/verify-debs.test.sh
+verify-debs-unreadable-control	scripts/verify/verify-debs.sh	if ! pkg="$(dpkg-deb -f "$verified" Package)"; then	if pkg="$(dpkg-deb -f "$verified" Package)"; false; then	tests/verify/verify-debs.test.sh
 verify-debs-package-mismatch	scripts/verify/verify-debs.sh	if [ "$pkg" != "$EXPECTED_PACKAGE" ]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-filename-prefix	scripts/verify/verify-debs.sh	if [[ "$(basename "$deb")" != "${EXPECTED_PACKAGE}_"* ]]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-version-mismatch	scripts/verify/verify-debs.sh	if [ "$upstream" != "$want" ] && [ "${ver#*:}" != "$want" ]; then	if false; then	tests/verify/verify-debs.test.sh
@@ -298,12 +298,12 @@ distro-floor-expectation	scripts/verify/distro-floor.sh	*) fail "expectation mus
 distro-floor-installer-exited-0-but-product	scripts/verify/distro-floor.sh	|| fail "the installer exited 0 but $product is not on PATH"	|| true || fail "the installer exited 0 but $product is not on PATH"	tests/verify/distro-floor.test.sh
 distro-floor-installer-exited-rc-on-release	scripts/verify/distro-floor.sh	|| fail "the installer exited $rc on a release the README lists as supported"	|| true || fail "the installer exited $rc on a release the README lists as supported"	tests/verify/distro-floor.test.sh
 distro-floor-installer-succeeded-on-release-readme	scripts/verify/distro-floor.sh	|| fail "the installer succeeded on a release the README lists as unsupported"	|| true || fail "the installer succeeded on a release the README lists as unsupported"	tests/verify/distro-floor.test.sh
-distro-floor-installer-was-refused-but-refusal	scripts/verify/distro-floor.sh	|| fail "the installer was refused, but the refusal does not name the floor: podman (>= 5.0) or libc6 (>= N)"	|| true || fail "the installer was refused, but the refusal does not name the floor: podman (>= 5.0) or libc6 (>= N)"	tests/verify/distro-floor.test.sh
+distro-floor-installer-was-refused-but-refusal	scripts/verify/distro-floor.sh	|| fail "the installer was refused, but the refusal does not name the floor: libc6 (>= $floor_libc)"	|| true || fail "the installer was refused, but the refusal does not name the floor: libc6 (>= $floor_libc)"	tests/verify/distro-floor.test.sh
 distro-floor-product-on-path-but-does	scripts/verify/distro-floor.sh	|| fail "$product is on PATH but does not start; the installer did not notice"	|| true || fail "$product is on PATH but does not start; the installer did not notice"	tests/verify/distro-floor.test.sh
 published-roster-published-commit	scripts/verify/published-roster.sh	echo "::error::the published commit ${sha:0:7} has no PRODUCTS list this script can read in $workflow; this check cannot tell which installers to ask for" >&2	exit 0	tests/verify/published-roster.test.sh
 roster-has-releases-no-products-or-architectures-list	scripts/verify/roster-has-releases.sh	if [ -z "$specs" ] || [ -z "$archs_all" ]; then	if false; then	tests/verify/roster-has-releases.test.sh
-verify-debs-cannot-read-architecture-control-field	scripts/verify/verify-debs.sh	if ! ctrl_arch="$(dpkg-deb -f "$deb" Architecture)"; then	if ctrl_arch="$(dpkg-deb -f "$deb" Architecture)"; false; then	tests/verify/verify-debs-control-fields.test.sh
-verify-debs-cannot-read-version-control-field	scripts/verify/verify-debs.sh	if ! ver="$(dpkg-deb -f "$deb" Version)"; then	if ver="$(dpkg-deb -f "$deb" Version)"; false; then	tests/verify/verify-debs-control-fields.test.sh
+verify-debs-cannot-read-architecture-control-field	scripts/verify/verify-debs.sh	if ! ctrl_arch="$(dpkg-deb -f "$verified" Architecture)"; then	if ctrl_arch="$(dpkg-deb -f "$verified" Architecture)"; false; then	tests/verify/verify-debs-control-fields.test.sh
+verify-debs-cannot-read-version-control-field	scripts/verify/verify-debs.sh	if ! ver="$(dpkg-deb -f "$verified" Version)"; then	if ver="$(dpkg-deb -f "$verified" Version)"; false; then	tests/verify/verify-debs-control-fields.test.sh
 verify-debs-except-oserror-as-exc-sys	scripts/verify/verify-debs.sh	except OSError as exc:	except ZeroDivisionError as exc:	tests/verify/verify-debs-hybrid.test.sh
 verify-debs-except-valueerror-base64-binascii-as	scripts/verify/verify-debs.sh	except (ValueError, base64.binascii.Error) as exc:	except ZeroDivisionError as exc:	tests/verify/verify-debs.test.sh
 verify-debs-local-release-trust-file-malformed	scripts/verify/verify-debs.sh	if [ "$python_rc" -ne 0 ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
@@ -439,3 +439,24 @@ verify-debs-anchor-checked	scripts/verify/verify-debs.sh	ascii_only "$anchor" ||
 verify-debs-anchor-three-files	scripts/verify/verify-debs.sh	for anchor in "$KEY_FILE" "$MLDSA_KEY_FILE" "$PQ_REQUIRED_FILE"; do	for anchor in "$KEY_FILE"; do	tests/verify/verify-debs-anchor-bytes.test.sh
 verify-debs-anchor-cr-counted	scripts/verify/verify-debs.sh	tr -d ' -~\n' < 	tr -d ' -~\n\r' < 	tests/verify/verify-debs-anchor-bytes.test.sh
 publish-checkout-keeps-no-token	.github/workflows/publish.yml	persist-credentials: false	persist-credentials: true	tests/ci/policy/persist-credentials.test.sh
+freshness-reads-tests	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" tests.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
+freshness-reads-line-limit	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" line-limit.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
+freshness-reads-workflow-lint	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" workflow-lint.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
+commit-hygiene-identity	.github/workflows/commit-hygiene.yml	scripts/quality/hygiene/check-commit-identity.sh "$BASE" "$HEAD"	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
+commit-hygiene-secrets	.github/workflows/commit-hygiene.yml	scripts/quality/hygiene/check-secrets.sh "$BASE" "$HEAD"	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
+verify-debs-private-dir	scripts/verify/verify-debs.sh	|| { echo "::error::cannot create a private directory to hold the verified packages" >&2; exit 1; }	|| true	tests/verify/verify-debs-same-bytes.test.sh
+verify-debs-copy-not-kept	scripts/verify/verify-debs.sh	sys.exit(4)	sys.exit(1)	tests/verify/verify-debs-same-bytes.test.sh
+verify-debs-copy-not-kept-message	scripts/verify/verify-debs.sh	elif [ "$python_rc" -eq 4 ]; then	elif false; then	tests/verify/verify-debs-same-bytes.test.sh
+verify-debs-copy-is-the-buffer	scripts/verify/verify-debs.sh	copy.write(data)	copy.write(b"")	tests/verify/verify-debs-same-bytes.test.sh
+verify-debs-changed-while-verified	scripts/verify/verify-debs.sh	if ! cmp -s "$deb" "$verified"; then	if false; then	tests/verify/verify-debs-same-bytes.test.sh
+verify-debs-package-from-the-file	scripts/verify/verify-debs.sh	dpkg-deb -f "$verified" Package	dpkg-deb -f "$deb" Package	tests/verify/verify-debs-same-bytes.test.sh
+verify-debs-version-from-the-file	scripts/verify/verify-debs.sh	dpkg-deb -f "$verified" Version	dpkg-deb -f "$deb" Version	tests/verify/verify-debs-same-bytes.test.sh
+verify-debs-architecture-from-the-file	scripts/verify/verify-debs.sh	dpkg-deb -f "$verified" Architecture	dpkg-deb -f "$deb" Architecture	tests/verify/verify-debs-same-bytes.test.sh
+permissions-not-declared	.github/workflows/drift.yml	permissions:	x-permissions:	tests/ci/policy/permissions-declared.test.sh
+permissions-workflow-write	.github/workflows/drift.yml	contents: read	contents: write	tests/ci/policy/permissions-declared.test.sh
+permissions-write-all	.github/workflows/commit-hygiene.yml	permissions: {}	permissions: write-all	tests/ci/policy/permissions-declared.test.sh
+permissions-secret-job-inherits	.github/workflows/publish.yml	    permissions:	    x-permissions:	tests/ci/policy/permissions-declared.test.sh
+upgrade-names-collation	keyring/upgrade/glyndor-upgrade	names="$(printf '%s\n' "$names_raw" | grep -v '^$' | LC_ALL=C sort -u || true)"	names="$(printf '%s\n' "$names_raw" | grep -v '^$' | sort -u || true)"	tests/ci/policy/locale-pinned.test.sh
+upgrade-plan-collation	keyring/upgrade/glyndor-upgrade	plan="$(printf '%s\n' "$plan_raw" | grep -v '^$' | LC_ALL=C sort -u || true)"	plan="$(printf '%s\n' "$plan_raw" | grep -v '^$' | sort -u || true)"	tests/ci/policy/locale-pinned.test.sh
+distro-floor-refusal-is-the-readme-floor	scripts/verify/distro-floor.sh	grep -qF "libc6 (>= $floor_libc)" "$work/log"	grep -qE 'podman \(>= 5\.0\)|libc6 \(>= [0-9]+\.[0-9]+\)' "$work/log"	tests/verify/distro-floor.test.sh
+distro-floor-libc-number	scripts/verify/distro-floor.sh	floor_libc="2.39"	floor_libc="2.35"	tests/verify/distro-floor.test.sh

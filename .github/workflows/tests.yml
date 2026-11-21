@@ -56,6 +56,7 @@ jobs:
         ./tests/verify/verify-debs-hybrid.test.sh
         ./tests/verify/verify-debs-anchor-bytes.test.sh
         ./tests/verify/verify-debs-control-fields.test.sh
+        ./tests/verify/verify-debs-same-bytes.test.sh
         ./tests/verify/verify-published.test.sh
         ./tests/verify/verify-published/verify-published-bootstrap.test.sh
         ./tests/verify/verify-published/verify-published-budget.test.sh
@@ -71,6 +72,7 @@ jobs:
         ./tests/verify/roster-has-releases.test.sh
         ./tests/ci/policy/roster-releases-workflow.test.sh
         ./tests/ci/policy/workflows-run-their-scripts.test.sh
+        ./tests/ci/policy/workflow-calls-are-exact.test.sh
         ./tests/build/build-keyring.test.sh
         ./tests/build/keyring/build-keyring-generator.test.sh
         ./tests/build/keyring/build-keyring-contents.test.sh
@@ -106,6 +108,7 @@ jobs:
         ./tests/build/architectures-agree.test.sh
         ./tests/installer/readme-bootstrap.test.sh
         ./tests/keyring/keyring-fingerprints.test.sh
+        ./tests/keyring/readme-fingerprint-form.test.sh
         ./tests/publication/publish/publish-workflow.test.sh
         ./tests/publication/publish/publish-workflow-sync.test.sh
         ./tests/publication/publish/publish-workflow-assets.test.sh
@@ -151,6 +154,7 @@ jobs:
         ./tests/ci/policy/jobs-are-bounded.test.sh
         ./tests/ci/policy/workflow-shape.test.sh
         ./tests/ci/policy/persist-credentials.test.sh
+        ./tests/ci/policy/permissions-declared.test.sh
         ./tests/ci/policy/freshness-pr-scope.test.sh
         ./tests/ci/policy/scheduled-workflows-are-watched.test.sh
         ./tests/ci/policy/network-calls-are-bounded.test.sh
