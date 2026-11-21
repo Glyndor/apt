@@ -79,7 +79,11 @@ python3 -m venv --system-site-packages ~/.cache/apt-mldsa
 export PATH="$HOME/.cache/apt-mldsa/bin:$PATH"
 ```
 
-CI runs that suite in its own job, `ML-DSA-65 verifier` in `tests.yml`.
+CI runs that suite in its own job, `ML-DSA-65 verifier` in `tests.yml`. The job
+always starts and reports under that name, and decides in its first step whether
+anything the suite reads changed: when nothing did, the wheel install and the
+suite are skipped and the job says so in its summary. It asks the same question
+on a pull request and on a push to main, and any doubt runs the suite.
 
 The tests live in folders that mirror `scripts/` (`tests/verify/`, `tests/build/`
 and so on), so the loop finds them recursively, and the shellcheck line picks up
@@ -139,6 +143,9 @@ On a pull request the runner skips the suites whose paths the change does not to
 run every time. List every path the suite reads: a missing path lets a change merge
 without the suite that should have judged it, while an extra one only costs a run. A
 change to the map, to `scripts/quality/scope/ci-job-scope.sh` or to the runner runs everything.
+A suite that only a job of its own runs, such as the ML-DSA-65 one, has its entry here
+too, and the same test checks it: that job asks `ci-job-scope.sh suite-needed` before it
+installs anything.
 
 Two traps a local run cannot see:
 

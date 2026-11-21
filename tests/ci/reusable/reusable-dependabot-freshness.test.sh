@@ -7,13 +7,15 @@
 # newest Dependabot-authored pull request as the last time the integration
 # spoke, and failing when that signal is too old or absent.
 #
-# The step depends on GH_TOKEN, REPO, MAX_AGE_DAYS and WORKFLOWS_DIR from the
-# environment. Two network calls exist: `gh api ... --jq ...`, paginated over
-# three pages, and `git ls-remote --tags` against each pinned action's upstream,
-# asked only once the newest pull request is over the limit. A fake `gh` on
-# PATH records each URL it was called with and serves a per-call canned
-# response; a fake `git` serves canned tag lists per repository and records
-# that it was asked. The cases below exercise the real shell with a
+# The step depends on GH_TOKEN, REPO, MAX_AGE_DAYS, WORKFLOWS_DIR and
+# DEPENDABOT_CONFIG from the environment. Three network calls exist: `gh api ...
+# --jq ...`, paginated over three pages, `git ls-remote --tags` against each
+# pinned action's upstream and `curl` against PyPI for each pinned pip
+# requirement, the last two asked only once the newest pull request is over the
+# limit. A fake `gh` on PATH records each URL it was called with and serves a
+# per-call canned response; a fake `git` serves canned tag lists per repository
+# and a fake `curl` canned PyPI answers per package, and both record that they
+# were asked. The cases below exercise the real shell with a
 # deterministic API rather than mocking the workflow itself.
 #
 # Silence is only an alarm when there was something to say: over the limit
@@ -140,10 +142,33 @@ upstream() { # $1=owner/repo  $2..=tags
 	done
 }
 
+# Fake `curl`. Only the PyPI JSON API is reachable: `https://pypi.org/pypi/<name>/json`
+# prints "$STUB_PYPI_DIR/<name>.json" and records the package asked in
+# STUB_CURL_LOG; an absent file is a PyPI that cannot answer (exit 22, nothing
+# printed), and any other URL is a call the step must not make.
+write_curl_stub() {
+	cat > "$WORK/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+url=""
+for a in "$@"; do case "$a" in https://*) url="$a" ;; esac; done
+case "$url" in
+https://pypi.org/pypi/*/json) ;;
+*) echo "unexpected curl: $*" >&2; exit 2 ;;
+esac
+name="${url#https://pypi.org/pypi/}"; name="${name%/json}"
+printf '%s\0' "$name" >> "${STUB_CURL_LOG:?}"
+f="${STUB_PYPI_DIR:?}/$name.json"
+[ -f "$f" ] || exit 22
+cat "$f"
+STUB
+	chmod +x "$WORK/bin/curl"
+}
+
 WORKFLOW="$HERE/.github/workflows/reusable-dependabot-freshness.yml"
 step_script "$WORKFLOW" "Check the newest Dependabot pull request" > "$WORK/step.sh"
 write_stub
 write_git_stub
+write_curl_stub
 
 # The default fixture: one pin behind upstream, so an over-the-limit silence is
 # the alarm it used to be. Cases that want every pin current build their own.
@@ -161,18 +186,28 @@ ago() { date -u -d "$1 days ago" +%Y-%m-%dT%H:%M:%SZ; }
 
 # Run the step with the stub on PATH. Combined stdout+stderr in `out`, exit
 # code in `rc`. The stub log is reset per call so each case starts at index 1.
+# The step reads the caller's dependabot.yml relative to the working directory:
+# PIP_ROOT is the directory it runs in and PIP_CONFIG the file it reads. Without
+# them it runs in $WORK, where there is none, so no case below reaches PyPI
+# unless it builds a pip fixture.
 run_step() { # $1=MAX_AGE_DAYS  $2=responses file  [$3=workflows dir]
 	local max="$1" resp="$2" wf="${3:-$WORK/wf}"
-	rm -f "$WORK/gh.log" "$WORK/git.log"
+	rm -f "$WORK/gh.log" "$WORK/git.log" "$WORK/curl.log"
+	( cd "${PIP_ROOT:-$WORK}" && \
 	STUB_LOG="$WORK/gh.log" STUB_RESPONSES="$resp" \
 	STUB_GIT_LOG="$WORK/git.log" STUB_TAGS_DIR="$WORK/tags" \
+	STUB_CURL_LOG="$WORK/curl.log" STUB_PYPI_DIR="$WORK/pypi" \
 	PATH="$WORK/bin:$PATH" \
 	GH_TOKEN=dummy REPO="$REPO" MAX_AGE_DAYS="$max" WORKFLOWS_DIR="$wf" \
-	bash "$WORK/step.sh" 2>&1
+	DEPENDABOT_CONFIG="${PIP_CONFIG:-$WORK/absent-dependabot.yml}" \
+	bash "$WORK/step.sh" 2>&1 )
 }
 
 # How many repositories the step asked upstream about.
 git_calls() { grep -cz . "$WORK/git.log" 2>/dev/null || echo 0; }
+
+# How many packages the step asked PyPI about.
+pypi_calls() { grep -cz . "$WORK/curl.log" 2>/dev/null || echo 0; }
 
 # Count how many times the stub was called: number of NUL-terminated records
 # in the log.
@@ -326,6 +361,94 @@ check "and names the pin it could not read" "1" \
 	"$(printf '%s' "$out" | grep -q 'example/unannotated pinned without a version comment: cannot tell whether it is behind' && echo 1 || echo 0)"
 check "and upstream was asked for the annotated pin only" "1" \
 	"$(git_calls | tr -d ' ')"
+
+# --- the pip ecosystem is watched as well -----------------------------------------
+#
+# A caller can hand a requirements file to Dependabot's pip ecosystem, and the
+# actions are then not the only thing a silent Dependabot can be silent about:
+# the library is pinned by hash and moves only when something proposes the move.
+# Over the limit, every pin of every requirements file the pip entries name has
+# to be at the newest release PyPI lists too, or the silence is the alarm.
+
+pypi() { # $1=name $2=newest version: what PyPI answers for the package
+	mkdir -p "$WORK/pypi"
+	printf '{"info": {"name": "%s", "version": "%s"}, "releases": {}}\n' "$1" "$2" > "$WORK/pypi/$1.json"
+}
+# pip_fixture <dir> [entries]: a repository root with a dependabot.yml naming
+# the actions ecosystem and the given pip directories (default scripts/release),
+# and a requirements file shaped like the real ones: pins by hash over several
+# lines, and a pin that is not exact, which cannot be compared and is ignored.
+pip_fixture() {
+	local dir="$1" pip_dirs="${2:-/scripts/release}" d
+	rm -rf "$dir"; mkdir -p "$dir/.github"
+	{
+		printf 'version: 2\nupdates:\n  - package-ecosystem: "github-actions"\n    directory: "/"\n'
+		for d in $pip_dirs; do printf '  - package-ecosystem: "pip"\n    directory: "%s"\n' "$d"; done
+	} > "$dir/.github/dependabot.yml"
+	mkdir -p "$dir/scripts/release"
+	{
+		printf '# pinned by hash\n'
+		printf 'cffi==2.1.1 \\\n    --hash=sha256:%064d \\\n    --hash=sha256:%064d\n' 1 2
+		printf 'cryptography==50.0.2 \\\n    --hash=sha256:%064d\n' 3
+		printf 'loose>=1.0\n'
+	} > "$dir/scripts/release/render-requirements.txt"
+}
+pip_run() { # $1=fixture dir $2=responses
+	PIP_ROOT="$1" PIP_CONFIG="$1/.github/dependabot.yml" run_step "$MAX_AGE_DAYS" "$2" "$WORK/wf-current"
+}
+
+pypi cffi 2.1.1; pypi cryptography 50.0.2
+pip_fixture "$WORK/pip-current"
+out="$(pip_run "$WORK/pip-current" "$WORK/old.resp")"; rc=$?
+check "over the limit with the actions and the pip pins current passes" "0" "$rc"
+check "and says the pip pins are current too, with their count" "1" \
+	"$(printf '%s' "$out" | grep -q 'and so is every one of the 2 pinned pip requirement(s) at its newest PyPI release' && echo 1 || echo 0)"
+check "and it asked PyPI about both packages, and not about the unpinned one" "2" "$(pypi_calls | tr -d ' ')"
+
+pypi cryptography 50.1.0
+out="$(pip_run "$WORK/pip-current" "$WORK/old.resp")"; rc=$?
+check "over the limit with a pip pin behind fails although every action is current" "1" "$rc"
+check "and names the package, its pin and the release PyPI has" "1" \
+	"$(printf '%s' "$out" | grep -q 'pip: cryptography pinned as 50.0.2, PyPI has 50.1.0' && echo 1 || echo 0)"
+check "and says it is not because there was nothing to bump" "1" \
+	"$(printf '%s' "$out" | grep -q 'not because there was nothing to bump' && echo 1 || echo 0)"
+check "and does not name the pin that is current" "0" "$(printf '%s' "$out" | grep -c 'pip: cffi')"
+
+pypi cryptography 50.0.2; rm -f "$WORK/pypi/cffi.json"
+out="$(pip_run "$WORK/pip-current" "$WORK/old.resp")"; rc=$?
+check "a package PyPI cannot answer for fails rather than passing as current" "1" "$rc"
+check "and names it" "1" \
+	"$(printf '%s' "$out" | grep -q 'pip: cffi pinned as 2.1.1: could not read the newest release from PyPI' && echo 1 || echo 0)"
+pypi cffi 2.1.1
+printf 'not json at all\n' > "$WORK/pypi/cffi.json"
+rc=0; pip_run "$WORK/pip-current" "$WORK/old.resp" >/dev/null || rc=$?
+check "an answer that is not JSON fails rather than passing as current" "1" "$rc"
+printf '{"info": {"version": "latest"}}\n' > "$WORK/pypi/cffi.json"
+rc=0; pip_run "$WORK/pip-current" "$WORK/old.resp" >/dev/null || rc=$?
+check "an answer whose version is not a version fails" "1" "$rc"
+pypi cffi 2.1.1
+
+pip_fixture "$WORK/pip-empty" "/scripts/release /scripts/nothing"
+mkdir -p "$WORK/pip-empty/scripts/nothing"
+out="$(pip_run "$WORK/pip-empty" "$WORK/old.resp")"; rc=$?
+check "a pip entry whose directory holds no pin fails" "1" "$rc"
+check "and names the directory" "1" \
+	"$(printf '%s' "$out" | grep -q 'pip: dependabot.yml hands /scripts/nothing to the pip ecosystem but no pinned requirement was found there' && echo 1 || echo 0)"
+
+pip_fixture "$WORK/pip-none"
+printf 'version: 2\nupdates:\n  - package-ecosystem: "github-actions"\n    directory: "/"\n' > "$WORK/pip-none/.github/dependabot.yml"
+pypi cryptography 99.0.0
+out="$(pip_run "$WORK/pip-none" "$WORK/old.resp")"; rc=$?
+check "a caller with no pip entry is judged as before, whatever a requirements file says" "0" "$rc"
+check "and PyPI was not asked" "0" "$(pypi_calls | tr -d ' ')"
+check "and the success line does not mention pip" "0" "$(printf '%s' "$out" | grep -c 'pip requirement')"
+rc=0; PIP_ROOT="$WORK/pip-current" PIP_CONFIG="$WORK/pip-current/no-such-file.yml" run_step "$MAX_AGE_DAYS" "$WORK/old.resp" "$WORK/wf-current" >/dev/null || rc=$?
+check "a caller with no dependabot.yml is judged as before" "0" "$rc"
+
+pypi cryptography 50.1.0
+rc=0; PIP_ROOT="$WORK/pip-current" PIP_CONFIG="$WORK/pip-current/.github/dependabot.yml" run_step "$MAX_AGE_DAYS" "$WORK/recent.resp" "$WORK/wf-current" >/dev/null || rc=$?
+check "within the limit a pip pin that is behind is not asked about" "0" "$rc"
+check "and PyPI was not asked" "0" "$(pypi_calls | tr -d ' ')"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

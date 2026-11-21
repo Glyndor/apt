@@ -361,3 +361,6 @@ scope-suite-needed-push-event	scripts/quality/scope/ci-job-scope.sh	    elif eve
 scope-suite-needed-arity	scripts/quality/scope/ci-job-scope.sh	        if len(argv) != 2:	        if False:	tests/quality/scope/ci-job-scope-suite-needed.test.sh
 mldsa-decision-base	.github/workflows/tests.yml	            base=HEAD^1	            base=HEAD	tests/ci/suites/mldsa-job-scope.test.sh
 mldsa-run-fails-open	.github/workflows/tests.yml	          if [ "$NEEDED" = false ]; then	          if [ "$NEEDED" != true ]; then	tests/ci/suites/mldsa-job-scope.test.sh
+freshness-pip-behind	.github/workflows/reusable-dependabot-freshness.yml	            behind="$(pins_behind_upstream; pip_pins_behind_upstream)"	            behind="$(pins_behind_upstream)"	tests/ci/reusable/reusable-dependabot-freshness.test.sh
+freshness-pip-empty	.github/workflows/reusable-dependabot-freshness.yml	              if [ "$kind" = empty ]; then	              if false; then	tests/ci/reusable/reusable-dependabot-freshness.test.sh
+freshness-pip-unreadable	.github/workflows/reusable-dependabot-freshness.yml	              if ! [[ "$newest" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then	              if false; then	tests/ci/reusable/reusable-dependabot-freshness.test.sh
