@@ -155,6 +155,10 @@ lint-caller-needs	scripts/quality/check-test-job-not-switchable.sh	            i
 lint-callers-none	scripts/quality/check-test-job-not-switchable.sh	    if callers == 0:	    if False:	tests/quality/check-test-job-not-switchable.test.sh
 lint-callers-verdict	scripts/quality/check-test-job-not-switchable.sh	    if violations:	    if False:	tests/quality/check-test-job-not-switchable.test.sh
 lint-tooling-verdict	scripts/quality/check-tooling-isolation.sh	    if violations:	    if False:	tests/quality/check-tooling-isolation.test.sh
+tooling-token-write	scripts/quality/check-tooling-isolation.sh	        if not (holds_secret or writes):	        if not holds_secret:	tests/quality/check-tooling-isolation.test.sh
+tooling-token-default	scripts/quality/check-tooling-isolation.sh	        return "no `permissions` at the job or the workflow, so the repository default applies"	        return None	tests/quality/check-tooling-isolation.test.sh
+tooling-token-writeall	scripts/quality/check-tooling-isolation.sh	        return None if perms == "read-all" else f"`permissions: {perms}`"	        return None	tests/quality/check-tooling-isolation.test.sh
+tooling-token-job-first	scripts/quality/check-tooling-isolation.sh	    if "permissions" in job:	    if False:	tests/quality/check-tooling-isolation.test.sh
 lint-callers-wired	.github/workflows/reusable-workflow-lint.yml	run: bash "$RUNNER_TEMP/lint-rules/check-test-job-not-switchable.sh"	run: "true"	tests/ci/reusable/reusable-workflow-lint.test.sh
 lint-tooling-wired	.github/workflows/reusable-workflow-lint.yml	run: bash "$RUNNER_TEMP/lint-rules/check-tooling-isolation.sh"	run: "true"	tests/ci/reusable/reusable-workflow-lint.test.sh
 lint-rules-from-base	.github/workflows/reusable-workflow-lint.yml	            if [ "$from_base" = true ] && git cat-file -e "${BASE_SHA}:scripts/quality/${file}" 2>/dev/null; then	            if false; then	tests/ci/reusable/reusable-workflow-lint.test.sh,tests/quality/check-suites-wired.test.sh

@@ -69,17 +69,18 @@ SECRET_RE = re.compile(
     r"(?<!\w)secrets(?:\.[A-Za-z_]\w*|\[\s*['\"][^'\"\]]+['\"]\s*\])"
 )
 
-# `github.token` is not matched, and that is decided rather than missed. The
-# job token is not a secret the job opts into: the runner hands it to every
-# action as its default `token`, so a job holds it whether a step names it or
-# not, and what it can do is set by the job's `permissions`, not by a step
-# writing it down. Measured 2026-11-21 in apt, homebrew-tap and scoop-bucket:
-# every job that installs anything (the shell-ci test job, workflow-lint, the
-# mldsa suite, apt's publish, the channels' render, validate and audit, the
-# bucket's mutation sweep) runs with `contents: read` and no other grant, and
-# on a public repository that reads nothing an anonymous client cannot. The
-# premise is that no job which installs is granted a write permission; the day
-# one is, this rule has to count that job's token as a secret.
+# `github.token` is not matched by name, and that is decided rather than
+# missed. The job token is not a secret the job opts into: the runner hands it
+# to every action as its default `token`, so a job holds it whether a step
+# names it or not, and what it can do is set by the job's `permissions`, not by
+# a step writing it down. So the token counts as a secret exactly when those
+# permissions let it write: a job that installs third-party tooling and whose
+# effective permissions (the job's, or the workflow's when the job declares
+# none) grant any `write`, or `write-all`, or are declared at neither level,
+# which leaves the repository default, is refused with a message of its own.
+# Measured 2026-11-21 in apt, homebrew-tap and scoop-bucket: every job that
+# installs anything runs with `contents: read` and no other grant, and on a
+# public repository that reads nothing an anonymous client cannot.
 
 # (`pattern`, `opt-out marker on the same line`). The marker, when
 # present on the line, exempts that install: the only case where
@@ -280,6 +281,24 @@ def classify(line, env, apt_tainted):
     return None
 
 
+def token_can_write(job, spec):
+    """Why the job's token can write, or None when it is read-only."""
+    if "permissions" in job:
+        perms = job["permissions"]
+    elif "permissions" in spec:
+        perms = spec["permissions"]
+    else:
+        return "no `permissions` at the job or the workflow, so the repository default applies"
+    if perms is None or perms == {}:
+        return None
+    if isinstance(perms, str):
+        return None if perms == "read-all" else f"`permissions: {perms}`"
+    if isinstance(perms, dict):
+        writes = sorted(str(k) for k, v in perms.items() if v != "read" and v != "none")
+        return ("`" + ", ".join(f"{k}: {perms[k]}" for k in writes) + "`") if writes else None
+    return "`permissions` that cannot be read"
+
+
 def find_violations(spec_path):
     violations = []
     try:
@@ -306,8 +325,13 @@ def find_violations(spec_path):
         job_text = yaml.safe_dump(job)
         # A secret in the workflow's own `env:` reaches every step of
         # every job, so the job holds it without naming it.
-        if not (SECRET_RE.search(job_text) or env_carries_secret(workflow_env)):
+        holds_secret = bool(SECRET_RE.search(job_text) or env_carries_secret(workflow_env))
+        # A job that calls a reusable has no steps here; the reusable's own
+        # jobs are read from its file.
+        writes = None if "uses" in job else token_can_write(job, spec)
+        if not (holds_secret or writes):
             continue
+        token = None if holds_secret else writes
         steps = [
             s for s in (job.get("steps") or [])
             if isinstance(s, dict)
@@ -325,7 +349,7 @@ def find_violations(spec_path):
             if isinstance(uses, str) and not uses.startswith("./"):
                 owner = uses.split("/", 1)[0].lower()
                 if owner not in FIRST_PARTY_OWNERS:
-                    violations.append((spec_path, job_id, f"uses: {uses}", ""))
+                    violations.append((spec_path, job_id, f"uses: {uses}", "", token))
             run = step.get("run")
             if run is None:
                 continue
@@ -341,7 +365,7 @@ def find_violations(spec_path):
                 why = classify(line, env, apt_tainted)
                 if why is None:
                     continue
-                violations.append((spec_path, job_id, line, why))
+                violations.append((spec_path, job_id, line, why, token))
     return violations
 
 
@@ -354,8 +378,18 @@ def main():
     for path in files:
         violations.extend(find_violations(path))
     if violations:
-        for path, job_id, line, why in violations:
+        for path, job_id, line, why, token in violations:
             because = f" {why}" if why else ""
+            if token:
+                print(
+                    f"::error file={path}::job `{job_id}` installs third-party "
+                    f"tooling while its token can write ({token}): "
+                    f"`{line.strip()}`.{because} The token reaches every step "
+                    "of the job, so the installer runs with write access. Fix "
+                    "by giving the job read-only permissions, or by moving the "
+                    "install into a job that has them."
+                )
+                continue
             print(
                 f"::error file={path}::job `{job_id}` installs third-party "
                 f"tooling while holding a secret: `{line.strip()}`.{because} "
@@ -365,7 +399,8 @@ def main():
             )
         sys.exit(1)
     print(
-        "tooling-isolation: no job holding a secret installs third-party tooling."
+        "tooling-isolation: no job holding a secret installs third-party "
+        "tooling, and no job whose token can write does either."
     )
     sys.exit(0)
 

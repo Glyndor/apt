@@ -90,6 +90,8 @@ EOF
 	cat > "$WORK/t/.github/workflows/job.yml" <<'EOF'
 name: Job
 on: push
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest

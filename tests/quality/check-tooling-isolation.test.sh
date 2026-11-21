@@ -64,7 +64,7 @@ plant() {
 	local f="$WORK/t/.github/workflows/job.yml"
 	mkdir -p "$WORK/t/.github/workflows"
 	{
-		printf 'name: Job\non: push\n'
+		printf 'name: Job\non: push\npermissions:\n  contents: read\n'
 		[ -n "${5:-}" ] && printf 'env:\n  %s\n' "$5"
 		printf 'jobs:\n  build:\n    runs-on: ubuntu-latest\n'
 		if [ "$1" = job ] || [ -n "${3:-}" ]; then
@@ -155,6 +155,8 @@ tooling_case() { # $1=dir $2=env line (or empty) $3=run line
 	cat > "$1/.github/workflows/job.yml" <<EOF
 name: Job
 on: push
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -194,6 +196,8 @@ action_case() { # $1=dir $2=env line  $3=uses value
 	cat > "$1/.github/workflows/job.yml" <<EOF
 name: Job
 on: push
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -228,6 +232,8 @@ d="$(new)"
 cat > "$d/.github/workflows/job.yml" <<'EOF'
 name: Job
 on: push
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -245,6 +251,8 @@ d="$(new)"
 cat > "$d/.github/workflows/job.yml" <<'EOF'
 name: Job
 on: push
+permissions:
+  contents: read
 jobs:
   call:
     uses: ./.github/workflows/reusable-x.yml
@@ -262,6 +270,49 @@ d="$(new)"; printf 'name: [\n' > "$d/.github/workflows/broken.yml"
 out="$(run_in "$d" "$SCRIPT")"; rc=$?
 check "a workflow that does not parse does not fail the step" "0" "$rc"
 check "but is reported as skipped, so the silence is visible" "1" "$(said "$out" '::warning')"
+
+# ===========================================================================
+# A job whose token can write must not install third-party tooling
+# ===========================================================================
+#
+# The job token reaches every step whether a step names it or not, so it is a
+# secret exactly when the job's permissions let it write. Each refusal is
+# paired with the same job read-only, which passes.
+token_case() { # $1=workflow permissions (or -) $2=job permissions (or -) $3=run line
+	{
+		printf 'name: Job\non: push\n'
+		[ "$1" = - ] || printf 'permissions:\n  %s\n' "$1"
+		printf 'jobs:\n  build:\n    runs-on: ubuntu-latest\n'
+		[ "$2" = - ] || printf '    permissions:\n      %s\n' "$2"
+		printf '    steps:\n      - run: %s\n' "$3"
+	} > "$WORK/t/.github/workflows/job.yml"
+}
+d="$(new)"; token_case - 'contents: write' 'pip install requests'
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "a job whose token can write that pip installs is refused" "1" "$rc"
+check "and refused for the token, naming the grant" "1" "$(said "$out" 'while its token can write (`contents: write`)')"
+d="$(new)"; token_case - 'contents: read' 'pip install requests'
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "the same install with a read-only token passes" "0" "$rc"
+d="$(new)"; token_case 'contents: write' - 'cargo install --locked tool'
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "a write grant at the workflow level reaches a job that declares none" "1" "$rc"
+d="$(new)"; token_case 'contents: write' 'contents: read' 'cargo install --locked tool'
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "a job that declares read-only permissions overrides the workflow's write" "0" "$rc"
+d="$(new)"; token_case - - 'npm install -g tool'
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "a job with no permissions at any level is refused" "1" "$rc"
+check "and the message says the repository default applies" "1" "$(said "$out" 'repository default applies')"
+d="$(new)"; printf 'name: Job\non: push\npermissions: write-all\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: brew install x\n' > "$d/.github/workflows/job.yml"
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "permissions: write-all with an install is refused" "1" "$rc"
+d="$(new)"; token_case - 'contents: write' 'sudo apt-get install -y jq'
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "an install from the distribution's archive with a write token passes, as with a secret" "0" "$rc"
+d="$(new)"; token_case - 'contents: write' 'echo nothing installed'
+rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
+check "a write token in a job that installs nothing passes" "0" "$rc"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
