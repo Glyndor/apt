@@ -431,3 +431,4 @@ sync-archive-cli-reads-endpoint	scripts/publish/sync-archive.sh	esac || { echo "
 verify-debs-pq-state-reported	scripts/verify/verify-debs.sh	echo "ML-DSA-65 second signature: ${#MLDSA_KEYS[@]} public key(s) configured in	: "ML-DSA-65 second signature: ${#MLDSA_KEYS[@]} public key(s) configured in	tests/verify/verify-debs-hybrid.test.sh
 sync-archive-endpoint-overridden	scripts/publish/sync-archive.sh	  if [ -n "${!v+set}" ]; then	  if false; then	tests/publish/sync-archive.test.sh
 prune-installers-endpoint-overridden	scripts/publish/prune-installers.sh	if [ -n "${!v+set}" ]; then	if false; then	tests/publish/prune-installers.test.sh
+build-repo-key-out-of-env	scripts/build/build-repo.sh	unset GLYNDOR_APT_GPG_PRIVATE_KEY	:	tests/build/build-repo.test.sh
