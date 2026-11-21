@@ -30,8 +30,8 @@
 # requirements.txt), and only when there is a second signature to check.
 #
 # Usage:
-#   verify-debs.sh <debs-dir> [<pubkey-b64-file>] [<expected_package>] [<expected_tag>]
-#                  [<mldsa65-pubkey-b64-file>] [<pq-required-file>]
+#   verify-debs.sh [--require-tag] <debs-dir> [<pubkey-b64-file>] [<expected_package>]
+#                  [<expected_tag>] [<mldsa65-pubkey-b64-file>] [<pq-required-file>]
 #
 # The ML-DSA-65 key file has the same format as the Ed25519 one, a raw 1952-byte
 # key per line. The required file names one Debian package per line, and a
@@ -50,6 +50,13 @@
 # and not the tag they were attached to, so this is what stops a still-valid
 # .deb from an older release being re-attached to a new one.
 #
+# An empty expected_tag means "do not bind to a release", which is what the suite
+# needs to exercise the other gates on their own and the opposite of what a
+# publish needs. --require-tag makes the binding mandatory: with it, an absent
+# or empty expected_tag refuses the run here, so the caller cannot turn the
+# check off by handing over an empty value, and no check of its own has to stay
+# in place for the binding to hold.
+#
 # When expected_package is given, every .deb in debs-dir must also declare it
 # as the control Package field AND carry it as the filename prefix
 # ("<expected_package>_..."). The release key is shared by every Glyndor
@@ -59,14 +66,23 @@
 
 set -euo pipefail
 
-DEBS_DIR="${1:?usage: verify-debs.sh <debs-dir> [<pubkey-b64-file>] [<expected_package>] [<expected_tag>]}"
+REQUIRE_TAG=0
+if [ "${1:-}" = "--require-tag" ]; then
+	REQUIRE_TAG=1
+	shift
+fi
+DEBS_DIR="${1:?usage: verify-debs.sh [--require-tag] <debs-dir> [<pubkey-b64-file>] [<expected_package>] [<expected_tag>]}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 KEY_FILE="${2:-$HERE/keyring/glyndor-release-ed25519.b64}"
 EXPECTED_PACKAGE="${3:-}"
 # The release tag the directory was downloaded from, e.g. v5.9.2. Optional so
 # the suite can exercise the other gates on their own, and passed by publish.yml
-# from the tag it already pinned per product.
+# from the tag it already pinned per product, together with --require-tag.
 EXPECTED_TAG="${4:-}"
+if [ "$REQUIRE_TAG" -eq 1 ] && [ -z "$EXPECTED_TAG" ]; then
+	echo "::error::--require-tag was given but the expected tag is empty; refusing to admit the packages in $DEBS_DIR, which cannot be bound to a release" >&2
+	exit 1
+fi
 MLDSA_KEY_FILE="${5:-$HERE/keyring/glyndor-release-mldsa65.b64}"
 PQ_REQUIRED_FILE="${6:-$HERE/keyring/pq-required-products}"
 

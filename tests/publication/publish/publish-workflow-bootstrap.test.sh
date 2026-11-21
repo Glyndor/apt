@@ -96,11 +96,13 @@ check "the keyring-signing step signs the served copy, not the debs/ one" "1" \
 # tag as an argument. The download step resolves it; the verification step runs
 # in a different shell and cannot see the variable. An empty fourth argument
 # means "do not check", which is right for the suite and would be a silently
-# disabled gate here, so the workflow has to persist the tag and refuse when it
-# is absent.
+# disabled gate here, so the workflow has to persist the tag and call the
+# verifier with --require-tag, which refuses an empty one.
 #
 # Asserted on the workflow text because the failure is a shell-scope one that no
-# amount of running verify-debs.sh in isolation can surface.
+# amount of running verify-debs.sh in isolation can surface. That the refusal
+# fires is asserted by running the step itself, with no tag on disk, in
+# tests/publication/publish/publish-workflow-verify-debs.test.sh.
 # shellcheck disable=SC2016  # these patterns are the literal shell text in the
 # workflow, so `$p` and `$tag` must stay unexpanded; expanding them here would
 # search for this test's own empty variables and match nothing, which is a
@@ -110,22 +112,9 @@ check "the download step records the pinned tag for the next step" "1" \
 # shellcheck disable=SC2016  # same reason as above: literal workflow text.
 check "the verification step reads that recorded tag back" "1" \
 	"$(grep -c 'tag="\$(cat "tags/\$p"' "$WF")"
-check "and refuses when no tag was recorded, rather than skipping the binding" "1" \
-	"$(grep -c 'no pinned tag was recorded' "$WF")"
 # shellcheck disable=SC2016  # same reason as above: literal workflow text.
-check "the admission gate is called with the tag as its fourth argument" "1" \
-	"$(grep -c 'verify-debs.sh "debs/\$p" keyring/glyndor-release-ed25519.b64 "\$p" "\$tag"' "$WF")"
-
-# The guard has to be able to fire. Run the same two lines the workflow runs,
-# in a directory with no recorded tag, and require the refusal.
-guard_dir="$(mktemp -d)"
-guard_out="$(cd "$guard_dir" && p=podup; tag="$(cat "tags/$p" 2>/dev/null || true)"; \
-	[ -n "$tag" ] || { echo "::error::no pinned tag was recorded for $p"; exit 1; }; echo "reached the gate" )" \
-	&& guard_rc=0 || guard_rc=$?
-rm -rf "$guard_dir"
-check "the recorded-tag guard exits non-zero with no tag on disk" "1" "$guard_rc"
-check "and says which product had none" "1" \
-	"$(printf '%s' "$guard_out" | grep -c 'no pinned tag was recorded for podup')"
+check "the admission gate requires the tag, which it gets as its fourth argument" "1" \
+	"$(grep -c 'verify-debs.sh --require-tag "debs/\$p" keyring/glyndor-release-ed25519.b64 "\$p" "\$tag"' "$WF")"
 
 # --- the same gpg commands actually sign and verify end to end -------------
 #

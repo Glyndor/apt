@@ -355,12 +355,31 @@ assert_error 1 "malformed release public key" \
 	-- "$VERIFY" "$d" "$WORK/key-stray.b64" podup v5.9.2
 
 # --- Case 18: with no tag given the binding is skipped, which is why the ------
-#             workflow must never pass an empty one.
+#             workflow passes --require-tag.
 #
-# tests/publication/publish/publish-workflow.test.sh is where that half is asserted; this case only
-# pins the script's own contract so the two cannot drift apart silently.
+# tests/publication/publish/publish-workflow-verify-debs.test.sh runs the
+# workflow step with no tag recorded; this case only pins the script's own
+# contract so the two cannot drift apart silently.
 assert 0 "no expected tag means the binding is not applied" \
 	-- "$VERIFY" "$WORK/case16" "$WORK/key.b64" podup
+
+# --- Case 18b: --require-tag makes the binding mandatory. ----------------------
+#             An empty tag is how a publish loses the binding without anything
+# saying so, so with the flag it is refused by the verifier itself. The same
+# bytes are admitted with the flag and their own tag, so the refusal belongs to
+# the empty tag and not to the flag, and with a wrong tag the version binding
+# still fires under the flag.
+assert_error 1 "but the expected tag is empty" \
+	"with --require-tag an empty tag is refused" \
+	-- "$VERIFY" --require-tag "$WORK/case16" "$WORK/key.b64" podup ""
+assert_error 1 "but the expected tag is empty" \
+	"with --require-tag an absent tag is refused" \
+	-- "$VERIFY" --require-tag "$WORK/case16" "$WORK/key.b64" podup
+assert 0 "with --require-tag the package is admitted under its own tag" \
+	-- "$VERIFY" --require-tag "$WORK/case16" "$WORK/key.b64" podup v5.4.0
+assert_error 1 "version mismatch" \
+	"with --require-tag a package from another release is still refused for its version" \
+	-- "$VERIFY" --require-tag "$WORK/case16" "$WORK/key.b64" podup v5.9.2
 
 # --- Case 19: an amd64 .deb attached under an arm64 asset name is refused ---
 #             because the filename is chosen by whoever uploads the asset

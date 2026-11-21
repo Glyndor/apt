@@ -14,6 +14,13 @@
 # invalid signature has to pass there, so the refusal is shown to come from
 # the call and not from something else.
 #
+# The step also binds each .deb to the tag the download step recorded. With no
+# tag on disk it has to stop, and the stop has to come from the verifier's
+# --require-tag: an empty tag handed to the verifier without the flag means "do
+# not check", and a guard of the step's own could be deleted with every suite
+# green. So the step runs once with the tag file removed, and once more from a
+# copy of the workflow without the flag, where the same sandbox has to pass.
+#
 # Requires: python3 with the `cryptography` module, dpkg-deb.
 set -u
 
@@ -101,6 +108,18 @@ D="$(sandbox bad bad)"; rc=0; run_step "$D" "$WORK/step.sh" || rc=$?
 check "a .deb with an invalid signature stops the step" "1" "$rc"
 check "and says the signature is invalid" "1" "$(grep -qi 'invalid signature' "$WORK/out" && echo 1 || echo 0)"
 check "and the .deb is not moved into debs/" "0" "$([ -f "$D/debs/podup_1.0.0_amd64.deb" ] && echo 1 || echo 0)"
+
+D="$(sandbox notag good)"; rm -f "$D/tags/podup"; rc=0; run_step "$D" "$WORK/step.sh" || rc=$?
+check "a product with no recorded tag stops the step" "1" "$rc"
+check "and the verifier says the tag is empty" "1" "$(grep -c 'but the expected tag is empty' "$WORK/out")"
+check "and the .deb is not moved into debs/" "0" "$([ -f "$D/debs/podup_1.0.0_amd64.deb" ] && echo 1 || echo 0)"
+
+# --- the control: without --require-tag, the missing tag passes ---------------
+sed 's|verify-debs\.sh --require-tag |verify-debs.sh |' "$WF" > "$WORK/publish-noflag.yml"
+check "the flag sabotage changed the workflow" "1" "$(cmp -s "$WF" "$WORK/publish-noflag.yml" && echo 0 || echo 1)"
+extract "$WORK/publish-noflag.yml" > "$WORK/step-noflag.sh"
+D="$(sandbox noflag good)"; rm -f "$D/tags/podup"; rc=0; run_step "$D" "$WORK/step-noflag.sh" || rc=$?
+check "without --require-tag, a missing tag is admitted (the refusal is the flag's)" "0" "$rc"
 
 # --- the control: with the call replaced by true, the invalid one passes ------
 sed 's|^\( *\)\./scripts/verify/verify-debs\.sh .*|\1true|' "$WF" > "$WORK/publish-cut.yml"

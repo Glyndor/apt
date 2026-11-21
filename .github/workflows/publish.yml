@@ -390,12 +390,15 @@ jobs:
             # recomputed: resolving "latest" again here could hand this step a
             # newer release than the one the .deb files actually came from.
             #
-            # Missing is a hard error, never a skip. verify-debs.sh treats an
-            # empty tag as "do not check", which is right for the suite and
-            # would be a silently disabled gate here.
+            # Missing is a hard error, never a skip. Without --require-tag,
+            # verify-debs.sh reads an empty tag as "do not check", which is
+            # right for the suite and would be a silently disabled gate here.
+            # The refusal lives in the verifier and not in a check of this
+            # step: a check here could be deleted with every suite staying
+            # green, because the verifier would then skip the binding without
+            # saying so. tests/publication/publish/publish-workflow-verify-debs.test.sh
+            # runs this step with no tag recorded and requires the refusal.
             tag="$(cat "tags/$p" 2>/dev/null || true)"
-            [ -n "$tag" ] \
-              || { echo "::error::no pinned tag was recorded for $p; refusing to admit packages that cannot be bound to a release"; exit 1; }
             # The ML-DSA-65 key and the required products are the verifier's
             # defaults, keyring/glyndor-release-mldsa65.b64 and
             # keyring/pq-required-products. With a key committed the install
@@ -403,7 +406,7 @@ jobs:
             # without one this runs on the distribution's python3-cryptography,
             # which has no ML-DSA, and a release that attaches a .mldsa65.sig
             # is refused before the library is needed.
-            ./scripts/verify/verify-debs.sh "debs/$p" keyring/glyndor-release-ed25519.b64 "$p" "$tag"
+            ./scripts/verify/verify-debs.sh --require-tag "debs/$p" keyring/glyndor-release-ed25519.b64 "$p" "$tag"
           done
           # Flatten the per-product, now-verified .deb files into a single
           # directory for reprepro and the keyring build below.
