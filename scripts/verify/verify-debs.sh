@@ -16,10 +16,27 @@
 # and the new key at once during the overlap: a .deb is admitted if any listed
 # key verifies it. Blank lines and lines starting with '#' are ignored.
 #
-# Requires: python3 with the `cryptography` module, and dpkg-deb.
+# A second, post-quantum signature may sit beside the first: <deb>.mldsa65.sig,
+# the raw ML-DSA-65 (FIPS 204) signature over the same bytes. It is a hybrid,
+# never a replacement: the Ed25519 signature is checked first and always, and
+# when the second one is present it must verify as well. A product listed in
+# the required file must carry it, because a second signature that may be left
+# out protects nothing; whoever can forge the first one simply drops it. A
+# present second signature with no ML-DSA-65 key configured is refused, since a
+# signature that cannot be checked is not one that passed.
+#
+# Requires: python3 with the `cryptography` module, and dpkg-deb. The ML-DSA-65
+# check needs cryptography 50.0.2 or later (scripts/verify/verify-debs-
+# requirements.txt), and only when there is a second signature to check.
 #
 # Usage:
 #   verify-debs.sh <debs-dir> [<pubkey-b64-file>] [<expected_package>] [<expected_tag>]
+#                  [<mldsa65-pubkey-b64-file>] [<pq-required-file>]
+#
+# The ML-DSA-65 key file has the same format as the Ed25519 one, a raw 1952-byte
+# key per line. The required file names one Debian package per line, with '#'
+# comments. Either may be absent, which reads as no key and no product
+# required.
 #
 # When expected_tag is given, every .deb must declare a Version whose upstream
 # part equals that tag without its leading `v`. The signature covers the bytes
@@ -43,6 +60,8 @@ EXPECTED_PACKAGE="${3:-}"
 # the suite can exercise the other gates on their own, and passed by publish.yml
 # from the tag it already pinned per product.
 EXPECTED_TAG="${4:-}"
+MLDSA_KEY_FILE="${5:-$HERE/keyring/glyndor-release-mldsa65.b64}"
+PQ_REQUIRED_FILE="${6:-$HERE/keyring/pq-required-products}"
 
 [ -f "$KEY_FILE" ] || { echo "::error::release public key $KEY_FILE not found" >&2; exit 1; }
 
@@ -55,6 +74,126 @@ while IFS= read -r line || [ -n "$line" ]; do
 	KEYS+=("$line")
 done < "$KEY_FILE"
 [ "${#KEYS[@]}" -ge 1 ] || { echo "::error::release public key $KEY_FILE has no keys" >&2; exit 1; }
+
+# One entry per non-empty, non-comment line, whitespace stripped, as above. A
+# missing file reads as empty: no ML-DSA-65 key is configured yet, and the
+# caller may run this from a tree that predates the second signature.
+read_list() { # <file>
+	local line
+	[ -e "$1" ] || return 0
+	while IFS= read -r line || [ -n "$line" ]; do
+		line="$(printf '%s' "$line" | tr -d '[:space:]')"
+		case "$line" in '' | '#'*) continue ;; esac
+		printf '%s\n' "$line"
+	done < "$1"
+}
+# A file that exists and cannot be read is an error, not an empty list: an
+# unreadable required file would otherwise drop every product from it.
+mldsa_keys="$(read_list "$MLDSA_KEY_FILE")" \
+	|| { echo "::error::cannot read the ML-DSA-65 release public key file $MLDSA_KEY_FILE" >&2; exit 1; }
+pq_required="$(read_list "$PQ_REQUIRED_FILE")" \
+	|| { echo "::error::cannot read the required-products file $PQ_REQUIRED_FILE" >&2; exit 1; }
+MLDSA_KEYS=()
+[ -z "$mldsa_keys" ] || mapfile -t MLDSA_KEYS <<< "$mldsa_keys"
+PQ_REQUIRED=()
+[ -z "$pq_required" ] || mapfile -t PQ_REQUIRED <<< "$pq_required"
+
+# Check the ML-DSA-65 key file, or one signature against it. Exit 0 verified, 1
+# the downloaded signature is bad, 2 our own key file is malformed, 3 the
+# installed cryptography cannot verify ML-DSA. The library is imported only
+# after the key file and the signature's length are checked, so neither of
+# those needs it, and nothing here needs it while no release carries a second
+# signature: the runner's python3-cryptography has no ML-DSA.
+mldsa() { # check-keys | verify <sig> <deb>, then the keys
+	python3 - "$@" <<'PYEOF'
+import base64
+import binascii
+import sys
+
+PUBLIC_KEY_BYTES = 1952  # FIPS 204, ML-DSA-65
+SIGNATURE_BYTES = 3309
+# The same 4096-byte read cap as the Ed25519 signature and as publish.yml's
+# per-asset .sig cap: a hostile sidecar is never read whole before its length
+# is known.
+MAX_SIG_BYTES = 4096
+
+mode = sys.argv[1]
+if mode == "check-keys":
+	sig_path = data_path = None
+	keys_b64 = sys.argv[2:]
+else:
+	sig_path, data_path, keys_b64 = sys.argv[2], sys.argv[3], sys.argv[4:]
+
+
+def decode(b64):
+	b64 += "=" * (-len(b64) % 4)
+	raw = base64.b64decode(b64, validate=True)
+	if len(raw) != PUBLIC_KEY_BYTES:
+		raise ValueError(f"key is {len(raw)} bytes, not a {PUBLIC_KEY_BYTES}-byte ML-DSA-65 public key")
+	return raw
+
+
+try:
+	raw_keys = [decode(b64) for b64 in keys_b64]
+except (ValueError, binascii.Error) as exc:
+	sys.stderr.write(f"malformed ML-DSA-65 release public key: {exc}\n")
+	sys.exit(2)
+if not raw_keys:
+	sys.stderr.write("no ML-DSA-65 release public keys provided\n")
+	sys.exit(2)
+if mode == "check-keys":
+	sys.exit(0)
+
+try:
+	with open(sig_path, "rb") as f:
+		pq_sig = f.read(MAX_SIG_BYTES + 1)
+except OSError as exc:
+	sys.stderr.write(f"cannot read the ML-DSA-65 signature file: {exc}\n")
+	sys.exit(1)
+if len(pq_sig) > MAX_SIG_BYTES:
+	sys.stderr.write(f"ML-DSA-65 signature file is over {MAX_SIG_BYTES} bytes\n")
+	sys.exit(1)
+if len(pq_sig) != SIGNATURE_BYTES:
+	sys.stderr.write(f"ML-DSA-65 signature is {len(pq_sig)} bytes, expected exactly {SIGNATURE_BYTES}\n")
+	sys.exit(1)
+
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
+
+try:
+	from cryptography.hazmat.primitives.asymmetric.mldsa import MLDSA65PublicKey
+
+	keys = [MLDSA65PublicKey.from_public_bytes(raw) for raw in raw_keys]
+except (ImportError, UnsupportedAlgorithm) as exc:
+	sys.stderr.write(
+		f"the installed cryptography module cannot verify ML-DSA-65 ({exc}); "
+		"cryptography 50.0.2 or later is required, pinned in scripts/verify/verify-debs-requirements.txt\n"
+	)
+	sys.exit(3)
+except ValueError as exc:
+	sys.stderr.write(f"malformed ML-DSA-65 release public key: {exc}\n")
+	sys.exit(2)
+
+# Bounded by the caller, as for the Ed25519 check: publish.yml caps the .deb.
+with open(data_path, "rb") as f:
+	data = f.read()
+# Pure ML-DSA with the empty context, so `openssl pkeyutl -verify -rawin` 3.5
+# or later checks the same signature. Any listed key may verify it (rotation).
+for key in keys:
+	try:
+		key.verify(pq_sig, data)
+		sys.exit(0)
+	except InvalidSignature:
+		continue
+sys.exit(1)
+PYEOF
+}
+
+# Our own trust anchor is checked before any package: a broken key file is a
+# configuration error whether or not this run meets a second signature.
+if [ "${#MLDSA_KEYS[@]}" -ge 1 ] && ! mldsa check-keys "${MLDSA_KEYS[@]}"; then
+	echo "::error::local ML-DSA-65 release trust file $MLDSA_KEY_FILE is malformed" >&2
+	exit 1
+fi
 
 shopt -s nullglob
 debs=("$DEBS_DIR"/*.deb)
@@ -261,6 +400,43 @@ PYEOF
 			echo "::error::invalid signature for $(basename "$deb"); release may be tampered" >&2
 		fi
 		exit 1
+	fi
+
+	# The second signature, checked only after the first one passed. Keyed on
+	# the control Package field, which is inside the signed bytes and already
+	# bound to expected_package above, so a renamed asset cannot leave the list.
+	required=0
+	for name in "${PQ_REQUIRED[@]}"; do
+		[ "$name" = "$pkg" ] && required=1
+	done
+	pq_sig="$deb.mldsa65.sig"
+	if [ ! -e "$pq_sig" ] && [ ! -L "$pq_sig" ]; then
+		if [ "$required" -eq 1 ]; then
+			echo "::error::no ML-DSA-65 signature ($pq_sig) for $(basename "$deb"); $pkg requires the hybrid release signature" >&2
+			exit 1
+		fi
+	else
+		if [ "${#MLDSA_KEYS[@]}" -eq 0 ]; then
+			echo "::error::$(basename "$deb") carries an ML-DSA-65 signature and no ML-DSA-65 release public key is configured in $MLDSA_KEY_FILE; refusing a signature that cannot be checked" >&2
+			exit 1
+		fi
+		pq_rc=0
+		mldsa verify "$pq_sig" "$deb" "${MLDSA_KEYS[@]}" || pq_rc=$?
+		case "$pq_rc" in
+			0) ;;
+			2)
+				echo "::error::local ML-DSA-65 release trust file is malformed; could not load a key to verify $(basename "$deb") against" >&2
+				exit 1
+				;;
+			3)
+				echo "::error::cannot verify the ML-DSA-65 signature of $(basename "$deb"): the installed cryptography has no ML-DSA support; refusing rather than skipping it" >&2
+				exit 1
+				;;
+			*)
+				echo "::error::invalid ML-DSA-65 signature for $(basename "$deb"); release may be tampered" >&2
+				exit 1
+				;;
+		esac
 	fi
 
 	echo "verified $(basename "$deb")"

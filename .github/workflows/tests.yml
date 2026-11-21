@@ -49,6 +49,7 @@ jobs:
         ./tests/ci/suites/check-suite-completeness.test.sh
         ./tests/mutation/run-mutations.test.sh
         ./tests/verify/verify-debs.test.sh
+        ./tests/verify/verify-debs-hybrid.test.sh
         ./tests/verify/verify-published.test.sh
         ./tests/verify/verify-published/verify-published-bootstrap.test.sh
         ./tests/verify/verify-published/verify-published-budget.test.sh
