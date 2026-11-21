@@ -381,6 +381,11 @@ jobs:
     needs: scope
     if: ${{ !cancelled() && needs.scope.outputs.tools != 'false' }}
     name: pinned tool versions keep up with upstream
+    # A newer push to the same pull request supersedes the run; on main and on
+    # the schedule every run is kept, as each answers for its own commit.
+    concurrency:
+      group: freshness-tool-versions-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     # Two `gh release list` calls and a checkout, seconds when measured
     # locally against stubs; the real calls are two API requests. Ten minutes

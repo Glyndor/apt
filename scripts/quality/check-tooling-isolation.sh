@@ -67,6 +67,18 @@ SECRET_RE = re.compile(
     r"(?<!\w)secrets(?:\.[A-Za-z_]\w*|\[\s*['\"][^'\"\]]+['\"]\s*\])"
 )
 
+# `github.token` is not matched, and that is decided rather than missed. The
+# job token is not a secret the job opts into: the runner hands it to every
+# action as its default `token`, so a job holds it whether a step names it or
+# not, and what it can do is set by the job's `permissions`, not by a step
+# writing it down. Measured 2026-11-21 in apt, homebrew-tap and scoop-bucket:
+# every job that installs anything (the shell-ci test job, workflow-lint, the
+# mldsa suite, apt's publish, the channels' render, validate and audit, the
+# bucket's mutation sweep) runs with `contents: read` and no other grant, and
+# on a public repository that reads nothing an anonymous client cannot. The
+# premise is that no job which installs is granted a write permission; the day
+# one is, this rule has to count that job's token as a secret.
+
 # (`pattern`, `opt-out marker on the same line`). The marker, when
 # present on the line, exempts that install: the only case where
 # the resolved tree is fixed is pip with --require-hashes, which
