@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for scripts/quality/lint-workflow-shell.sh.
+# Tests for scripts/quality/lint/lint-workflow-shell.sh.
 #
 # The point of the script is that a linter which inspected nothing prints the
 # same success line as one that inspected everything, so the tests that matter
@@ -9,8 +9,8 @@
 # happily against a script that returns 0 unconditionally.
 set -uo pipefail
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
-SCRIPT="$HERE/scripts/quality/lint-workflow-shell.sh"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
+SCRIPT="$HERE/scripts/quality/lint/lint-workflow-shell.sh"
 
 pass=0
 fail=0
@@ -48,8 +48,8 @@ check "and that count is greater than zero" "1" \
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-mkdir -p "$work/scripts/quality" "$work/.github/workflows"
-cp "$SCRIPT" "$work/scripts/quality/"
+mkdir -p "$work/scripts/quality/lint" "$work/.github/workflows"
+cp "$SCRIPT" "$work/scripts/quality/lint/"
 
 cat >"$work/.github/workflows/planted.yml" <<'YML'
 name: planted
@@ -64,7 +64,7 @@ jobs:
           rm -rf $UNQUOTED/*
 YML
 
-out="$(cd "$work" && ./scripts/quality/lint-workflow-shell.sh style 2>&1)"
+out="$(cd "$work" && ./scripts/quality/lint/lint-workflow-shell.sh style 2>&1)"
 rc=$?
 check "a planted violation fails" "1" "$rc"
 check "and names the rule it tripped" "1" \
@@ -81,7 +81,7 @@ check "and on the line the offending command is on" "1" \
 # --- an empty tree must turn it red too ----------------------------------
 
 rm -f "$work/.github/workflows/planted.yml"
-out="$(cd "$work" && ./scripts/quality/lint-workflow-shell.sh style 2>&1)"
+out="$(cd "$work" && ./scripts/quality/lint/lint-workflow-shell.sh style 2>&1)"
 rc=$?
 check "a tree with no run: blocks fails rather than reporting success" "1" "$rc"
 check "and says the extractor found nothing" "1" \
@@ -104,7 +104,7 @@ jobs:
         run: rm -rf $UNQUOTED/*
 YML
 
-out="$(cd "$work" && ./scripts/quality/lint-workflow-shell.sh style 2>&1)"
+out="$(cd "$work" && ./scripts/quality/lint/lint-workflow-shell.sh style 2>&1)"
 rc=$?
 check "a violation in a single-line run: fails" "1" "$rc"
 check "and reports it on that line of the workflow" "1" \
@@ -123,7 +123,7 @@ jobs:
         run: "echo hello"
 YML
 
-out="$(cd "$work" && ./scripts/quality/lint-workflow-shell.sh style 2>&1)"
+out="$(cd "$work" && ./scripts/quality/lint/lint-workflow-shell.sh style 2>&1)"
 rc=$?
 check "a quoted single-line run: is unwrapped and passes" "0" "$rc"
 rm -f "$work/.github/workflows/oneline.yml"
@@ -143,7 +143,7 @@ jobs:
           echo "${{ github.sha }}"
 YML
 
-out="$(cd "$work" && ./scripts/quality/lint-workflow-shell.sh style 2>&1)"
+out="$(cd "$work" && ./scripts/quality/lint/lint-workflow-shell.sh style 2>&1)"
 rc=$?
 check "a quoted GitHub expression is not reported as a shell problem" "0" "$rc"
 
@@ -172,7 +172,7 @@ jobs:
           rm -rf $UNQUOTED/*
 YML
 
-out="$(cd "$work" && ./scripts/quality/lint-workflow-shell.sh style 2>&1)"
+out="$(cd "$work" && ./scripts/quality/lint/lint-workflow-shell.sh style 2>&1)"
 # The exit-code assertion alone is not the discriminator: the broken
 # extractor also exits 1 (with "found no blocks"). The SC2115 finding on
 # the workflow line is what proves the body actually reached shellcheck.
@@ -197,7 +197,7 @@ jobs:
           rm -rf $UNQUOTED/*
 YML
 
-out="$(cd "$work" && ./scripts/quality/lint-workflow-shell.sh style 2>&1)"
+out="$(cd "$work" && ./scripts/quality/lint/lint-workflow-shell.sh style 2>&1)"
 check "the same body under run: | trips the same rule" "1" \
 	"$(printf '%s' "$out" | grep -q 'SC2115' && echo 1 || echo 0)"
 check "and reports it on the same line" "1" \
@@ -219,7 +219,7 @@ jobs:
           rm -rf $UNQUOTED/*
 YML
 
-out="$(cd "$work" && ./scripts/quality/lint-workflow-shell.sh style 2>&1)"
+out="$(cd "$work" && ./scripts/quality/lint/lint-workflow-shell.sh style 2>&1)"
 check "a dirty run: |+ block trips shellcheck" "1" \
 	"$(printf '%s' "$out" | grep -q 'SC2115' && echo 1 || echo 0)"
 rm -f "$work/.github/workflows/keep.yml"
@@ -240,7 +240,7 @@ jobs:
           echo folded
 YML
 
-out="$(cd "$work" && ./scripts/quality/lint-workflow-shell.sh style 2>&1)"
+out="$(cd "$work" && ./scripts/quality/lint/lint-workflow-shell.sh style 2>&1)"
 rc=$?
 check "a run: > block does not abort the extractor" "0" "$rc"
 check "and the success line counts it" "1" \
@@ -267,7 +267,7 @@ jobs:
           echo folded
 YML
 
-out="$(cd "$work" && ./scripts/quality/lint-workflow-shell.sh style 2>&1)"
+out="$(cd "$work" && ./scripts/quality/lint/lint-workflow-shell.sh style 2>&1)"
 rc=$?
 # The exit-code assertion is not the discriminator for this case (broken
 # code lints the `run: |` step, finds nothing, still exits 0 with the
@@ -299,15 +299,15 @@ red() { # $1=name $2=script path -> "rc rule"
 	printf '%s %s' "$r" "$(printf '%s' "$o" | grep -c 'SC2115')"
 }
 plant_shape listitem "      - run: |" "          $VIOLATION"
-check "a list-item run block is linted" "1 1" "$(red listitem ./scripts/quality/lint-workflow-shell.sh)"
+check "a list-item run block is linted" "1 1" "$(red listitem ./scripts/quality/lint/lint-workflow-shell.sh)"
 plant_shape comment "      - name: commented" "        run: | # explain" "          $VIOLATION"
-check "a run block whose header carries a comment is linted" "1 1" "$(red comment ./scripts/quality/lint-workflow-shell.sh)"
+check "a run block whose header carries a comment is linted" "1 1" "$(red comment ./scripts/quality/lint/lint-workflow-shell.sh)"
 plant_shape folded "      - name: folded" "        run: >" "          $VIOLATION"
-check "a folded run block is linted as the runner folds it" "1 1" "$(red folded ./scripts/quality/lint-workflow-shell.sh)"
+check "a folded run block is linted as the runner folds it" "1 1" "$(red folded ./scripts/quality/lint/lint-workflow-shell.sh)"
 plant_shape foldedjoin "      - name: folded" "        run: >" "          echo one" "          two three"
-check "a clean folded block passes" "0 0" "$(red foldedjoin ./scripts/quality/lint-workflow-shell.sh)"
+check "a clean folded block passes" "0 0" "$(red foldedjoin ./scripts/quality/lint/lint-workflow-shell.sh)"
 # Control: the extractor as it was. Each planted shape is then declared clean.
-python3 -I - "$SCRIPT" "$work/scripts/quality/old-lint.sh" <<'PY'
+python3 -I - "$SCRIPT" "$work/scripts/quality/lint/old-lint.sh" <<'PY'
 import sys
 s = open(sys.argv[1]).read()
 new_header = "/^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*[|>]([-+]?[0-9]*)?[[:space:]]*(#.*)?$/ {"
@@ -318,13 +318,13 @@ assert folded in s
 s = s.replace(folded, "folded = 0\n\t\t\tif ($0 ~ /run:[[:space:]]*>/) { out = \"\"; next }", 1)
 open(sys.argv[2], "w").write(s)
 PY
-chmod +x "$work/scripts/quality/old-lint.sh"
+chmod +x "$work/scripts/quality/lint/old-lint.sh"
 plant_shape listitem "      - run: |" "          $VIOLATION"
-check "control: the old header pattern declares the list-item violation clean" "0 0" "$(red listitem ./scripts/quality/old-lint.sh)"
+check "control: the old header pattern declares the list-item violation clean" "0 0" "$(red listitem ./scripts/quality/lint/old-lint.sh)"
 plant_shape comment "      - name: commented" "        run: | # explain" "          $VIOLATION"
-check "control: the old header pattern declares the commented violation clean" "0 0" "$(red comment ./scripts/quality/old-lint.sh)"
+check "control: the old header pattern declares the commented violation clean" "0 0" "$(red comment ./scripts/quality/lint/old-lint.sh)"
 plant_shape folded "      - name: folded" "        run: >" "          $VIOLATION"
-check "control: not linting folded blocks declares the folded violation clean" "0 0" "$(red folded ./scripts/quality/old-lint.sh)"
+check "control: not linting folded blocks declares the folded violation clean" "0 0" "$(red folded ./scripts/quality/lint/old-lint.sh)"
 rm -f "$work/.github/workflows/"*.yml
 
 echo "$pass passed, $fail failed"

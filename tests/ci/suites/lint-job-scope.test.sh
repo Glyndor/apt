@@ -14,7 +14,7 @@ import tempfile
 import yaml
 
 root = Path(sys.argv[1])
-helper = "scripts/quality/ci-job-scope.sh"
+helper = "scripts/quality/scope/ci-job-scope.sh"
 specs = {
     "shellcheck": ("reusable-shell-ci.yml", "shellcheck"),
     "workflow-lint": ("reusable-workflow-lint.yml", "workflow-lint"),
@@ -162,6 +162,42 @@ with tempfile.TemporaryDirectory() as tmp:
     merge({helper: "#!/bin/sh\necho false\n", "README.md": "first adoption\n"}, old_base)
     for job in specs:
         check(f"missing base helper runs {job}", "true", scope(job))
+
+    # The pull request that moves the helper into its folder: the base carries
+    # it at the path it had before, so the new path is not in the base and the
+    # scope cannot be established. Every job runs, which is the fail-open
+    # answer, and nothing is skipped on the strength of the pull request's copy:
+    # the one it moves is hostile here, and would say false if it were asked.
+    # Once a move is merged the next pull request reads the helper from the base
+    # again and skips what it can.
+    legacy = "scripts/quality/ci-job-scope.sh"
+    body = (root / helper).read_text()
+
+    def moved(new_body):
+        git("checkout", "-q", "-B", "main", base)
+        git("rm", "-q", helper)
+        write(legacy, body)
+        git("add", "-A")
+        git("commit", "-qm", "I model the base before the helper moved", "-s")
+        git("checkout", "-q", "-B", "pr")
+        git("rm", "-q", legacy)
+        write(helper, new_body)
+        write("README.md", "the helper moves\n")
+        git("add", "-A")
+        git("commit", "-qm", "I move the helper", "-s")
+        git("checkout", "-q", "main")
+        git("merge", "-q", "--no-ff", "pr", "-m", "I merge the move", "--signoff")
+
+    moved("#!/bin/sh\necho false\n")
+    for job in specs:
+        check(f"a base with the helper at its old path runs {job}", "true", scope(job))
+    moved(body)
+    for job in specs:
+        check(f"the move of the real helper runs {job}", "true", scope(job))
+    after_move = git("rev-parse", "HEAD")
+    merge({"README.md": "prose after the move\n"}, after_move)
+    for job in specs:
+        check(f"the pull request after the move reads the helper from the base: {job}", "false", scope(job))
 
 print(f"{passed} passed, {failed} failed")
 print(f"DONE lint-job-scope.test.sh {passed} {failed}")

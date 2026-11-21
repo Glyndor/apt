@@ -48,7 +48,7 @@ ONLY=()
 # they fail in every copy, on every machine, and measuring them per run would
 # only re-measure a fact that cannot change.
 ALWAYS_EXCLUDED="tests/ci/suites/check-suite-completeness.test.sh
-tests/quality/check-editorconfig.test.sh"
+tests/quality/hygiene/check-editorconfig.test.sh"
 
 usage() {
 	cat <<'EOF'

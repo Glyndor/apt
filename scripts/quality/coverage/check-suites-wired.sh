@@ -54,7 +54,7 @@
 # there is reported, with the reason it did not count.
 #
 # A suite that is deliberately not run on pull requests is exempted in
-# scripts/quality/suite-exemptions.txt, one per line as
+# scripts/quality/coverage/suite-exemptions.txt, one per line as
 # `tests/<path>.test.sh: <why>`. An exemption without a reason, repeated, or
 # for a file that no longer exists is a failure: an exemption that outlived
 # its premise is how a hole stays open after the reason for it has gone. One
@@ -93,7 +93,7 @@ LINE_RE = re.compile(r"^(?:bash\s+)?\./(" + SUITE + r")(?:\s|$)")
 ENTRY_RE = re.compile(r"^(" + SUITE + r"):(.*)$")
 OPERATOR_RE = re.compile(r"[|&;<>`]|\$\(")
 ERREXIT_OFF_RE = re.compile(r"\bset\s+\+[A-Za-z]*e|\bset\s+\+o\s+errexit")
-EXEMPTIONS = "scripts/quality/suite-exemptions.txt"
+EXEMPTIONS = "scripts/quality/coverage/suite-exemptions.txt"
 errors = []
 
 

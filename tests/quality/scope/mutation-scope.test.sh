@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# scripts/quality/mutation-scope.sh decides which entries of the mutation
+# scripts/quality/scope/mutation-scope.sh decides which entries of the mutation
 # catalogue a pull request runs. A wrong skip lets a guard that no suite notices
 # any more merge unseen, so most cases plant a way to slip through and require
 # the entry, or every entry, to run; the cases that require a skip only mean
@@ -12,7 +12,7 @@
 # Requires: bash, git, python3.
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0
@@ -33,13 +33,13 @@ CATALOG=$'# a comment line\na-guard\tscripts/a/x.sh\texit 1\ttrue\ttests/a/one.t
 # resolver and the decider, and the checkout on a branch for the change.
 repo() {
 	R="$WORK/$1"; rm -rf "$R"
-	mkdir -p "$R/scripts/quality" "$R/scripts/a" "$R/scripts/b" "$R/tests/a" "$R/tests/b" \
+	mkdir -p "$R/scripts/quality/scope" "$R/scripts/a" "$R/scripts/b" "$R/tests/a" "$R/tests/b" \
 		"$R/tests/fixtures/a" "$R/tests/mutation" "$R/tests/ci/suites" "$R/.github/workflows"
 	git -C "$R" init -q -b main
 	git -C "$R" config user.name t; git -C "$R" config user.email t@example.invalid; git -C "$R" config commit.gpgsign false
-	cp "${2:-$HERE/scripts/quality/mutation-scope.sh}" "$R/scripts/quality/mutation-scope.sh"
-	cp "$HERE/scripts/quality/ci-job-scope.sh" "$R/scripts/quality/ci-job-scope.sh"
-	printf '%s' "$MAP" > "$R/scripts/quality/suite-scope.txt"
+	cp "${2:-$HERE/scripts/quality/scope/mutation-scope.sh}" "$R/scripts/quality/scope/mutation-scope.sh"
+	cp "$HERE/scripts/quality/scope/ci-job-scope.sh" "$R/scripts/quality/scope/ci-job-scope.sh"
+	printf '%s' "$MAP" > "$R/scripts/quality/scope/suite-scope.txt"
 	printf '%s' "$CATALOG" > "$R/tests/mutation/catalog.txt"
 	printf 'runner\n' > "$R/tests/mutation/run-mutations.sh"
 	printf 'runner\n' > "$R/tests/ci/suites/check-suite-completeness.test.sh"
@@ -58,7 +58,7 @@ merge() {
 }
 # decide [event]: the decision of the BASE copy, one line, ids space-separated.
 decide() {
-	git -C "$R" show HEAD^1:scripts/quality/mutation-scope.sh > "$WORK/decider.sh" 2>/dev/null \
+	git -C "$R" show HEAD^1:scripts/quality/scope/mutation-scope.sh > "$WORK/decider.sh" 2>/dev/null \
 		|| { echo "no decider in the base"; return; }
 	( cd "$R" && EVENT="${1:-pull_request}" bash "$WORK/decider.sh" 2>/dev/null | tr '\n' ' ' | sed 's/ $//' )
 }
@@ -86,7 +86,7 @@ repo both; echo more >> "$R/scripts/a/x.sh"; echo more >> "$R/scripts/b/y.sh"; m
 check "when every entry is selected the decision says all" "all" "$(decide)"
 
 # --- every way the decision cannot be trusted runs every entry -------------------
-for global in tests/mutation/run-mutations.sh .github/workflows/mutation.yml scripts/quality/suite-scope.txt; do
+for global in tests/mutation/run-mutations.sh .github/workflows/mutation.yml scripts/quality/scope/suite-scope.txt; do
 	repo "global-$(basename "$global")"; echo more >> "$R/$global"; merge
 	check "a change to $global runs every entry" "all" "$(decide)"
 done
@@ -94,7 +94,7 @@ done
 # A pull request that rewrites the decider to select nothing still gets the
 # decision of the base copy.
 repo rewrite
-printf '#!/usr/bin/env bash\nexit 0\n' > "$R/scripts/quality/mutation-scope.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$R/scripts/quality/scope/mutation-scope.sh"
 echo more >> "$R/scripts/a/x.sh"; merge
 check "a pull request that rewrites the decider gets the base decision" "all" "$(decide)"
 
@@ -121,7 +121,7 @@ check "a base without a catalogue runs every entry" "all" "$(decide)"
 # The fixture case above passes only because the suite map is consulted. A
 # decider that skips it would miss a weakened fixture, and this shows that the
 # case can tell the two apart.
-python3 -I - "$HERE/scripts/quality/mutation-scope.sh" "$WORK/no-resolver.sh" <<'PY'
+python3 -I - "$HERE/scripts/quality/scope/mutation-scope.sh" "$WORK/no-resolver.sh" <<'PY'
 import sys
 text = open(sys.argv[1]).read()
 old = "    affected = affected_suites(suites)\n"

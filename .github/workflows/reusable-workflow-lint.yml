@@ -85,10 +85,15 @@ jobs:
       # review of .github/workflows/, which CODEOWNERS routes to the owner, to
       # catch, not this step.
       #
-      # A base commit that cannot be fetched or read fails the job. A base that
-      # can be read but does not carry a script (the pull request that adopts
-      # it) uses the checkout's copy and says so, and another event uses the
-      # checkout's copies.
+      # A base commit that cannot be fetched or read fails the job. When the
+      # path a script has now is not in the base, the base is searched for a file
+      # of the same name under scripts/quality/ at any depth: a pull request that
+      # moves a rule is judged by the base's copy at its earlier path, and the log
+      # says so, because moving a rule and weakening it in one change must not be
+      # a way to be judged by the weakened one. Two files of that name in the base
+      # fail the job, as there is no telling which is the rule. Only a base that
+      # holds no file of that name (a rule that is new) uses the checkout's copy,
+      # and says so. Another event uses the checkout's copies.
       - name: Take the rule scripts from the base commit
         env:
           EVENT: ${{ github.event_name }}
@@ -112,20 +117,48 @@ jobs:
             fi
             from_base=true
           fi
-          for file in check-suites-wired.sh check-test-job-not-switchable.sh check-tooling-isolation.sh; do
-            if [ "$from_base" = true ] && git cat-file -e "${BASE_SHA}:scripts/quality/${file}" 2>/dev/null; then
-              git show "${BASE_SHA}:scripts/quality/${file}" > "$dir/$file"
-              echo "$file read from the base commit ${BASE_SHA}."
+          # The path in the base commit of scripts/quality/$1: that path when the
+          # base has it, else the only file of that name under scripts/quality/
+          # at any depth, else nothing. Two of them are an error.
+          base_copy() {
+            local want="scripts/quality/$1" found count
+            if git cat-file -e "${BASE_SHA}:${want}" 2>/dev/null; then
+              printf '%s\n' "$want"
+              return 0
+            fi
+            found="$(git ls-tree -r --name-only "$BASE_SHA" -- scripts/quality | awk -F/ -v name="${1##*/}" '$NF == name')"
+            count="$(printf '%s' "$found" | grep -c . || true)"
+            if [ "$count" -gt 1 ]; then
+              echo "::error::The base commit ${BASE_SHA} holds ${count} files named ${1##*/} under scripts/quality/ ($(printf '%s' "$found" | tr '\n' ' ')), so it is not clear which one is the rule." >&2
+              return 1
+            fi
+            printf '%s\n' "$found"
+          }
+          for file in coverage/check-suites-wired.sh lint/check-test-job-not-switchable.sh lint/check-tooling-isolation.sh; do
+            name="${file##*/}"
+            from=""
+            if [ "$from_base" = true ]; then
+              from="$(base_copy "$file")"
+            fi
+            if [ -n "$from" ]; then
+              git show "${BASE_SHA}:${from}" > "$dir/$name"
+              if [ "$from" = "scripts/quality/${file}" ]; then
+                echo "$file read from the base commit ${BASE_SHA}."
+              else
+                echo "$file read from the base commit ${BASE_SHA} at its earlier path ${from}."
+              fi
             else
               if [ "$from_base" = true ]; then
-                echo "$file is not in the base commit ${BASE_SHA}; the checkout's copy runs."
+                echo "$file is not in the base commit ${BASE_SHA}, which holds no file of that name under scripts/quality/; the checkout's copy runs."
               fi
-              cp "scripts/quality/${file}" "$dir/$file"
+              cp "scripts/quality/${file}" "$dir/$name"
             fi
           done
-          if [ "$from_base" = true ] \
-            && git cat-file -e "${BASE_SHA}:scripts/quality/suite-exemptions.txt" 2>/dev/null; then
-            git show "${BASE_SHA}:scripts/quality/suite-exemptions.txt" > "$dir/suite-exemptions.base"
+          if [ "$from_base" = true ]; then
+            from="$(base_copy coverage/suite-exemptions.txt)"
+            if [ -n "$from" ]; then
+              git show "${BASE_SHA}:${from}" > "$dir/suite-exemptions.base"
+            fi
           fi
 
       # Every suite under tests/ must be run by a workflow on a pull request.
@@ -169,7 +202,7 @@ jobs:
           script="$(mktemp "$RUNNER_TEMP/lint-scope.XXXXXX")"
           trap 'rm -f "$script"' EXIT
           if [ "$EVENT" = pull_request ] \
-            && git show HEAD^1:scripts/quality/ci-job-scope.sh > "$script" 2>/dev/null; then
+            && git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then
             if decision="$(bash "$script" "$SCOPE_JOB")" \
               && [[ "$decision" == true || "$decision" == false ]]; then
               needed="$decision"

@@ -22,7 +22,7 @@ import sys
 # request: a pull request that narrows the map or rewrites this script to
 # narrow its own scope gets the full set instead, because the base copy is
 # what decides. This is the rule for a gate script.
-MAP = "scripts/quality/suite-scope.txt"
+MAP = "scripts/quality/scope/suite-scope.txt"
 
 # The map, this script and the runner are an input of every suite, by rule
 # rather than by an entry per suite: a change to any of the three changes
@@ -30,7 +30,7 @@ MAP = "scripts/quality/suite-scope.txt"
 # Keeping the rule here means a suite added to the map later cannot forget
 # it.
 GLOBAL_INPUTS = (
-    "scripts/quality/ci-job-scope.sh",
+    "scripts/quality/scope/ci-job-scope.sh",
     MAP,
     "tests/ci/suites/check-suite-completeness.test.sh",
 )
@@ -182,8 +182,8 @@ def suites(candidates):
 WORKFLOW_LINT_INPUTS = {
     ".github/actionlint.yml",
     ".github/actionlint.yaml",
-    "scripts/quality/check-test-job-not-switchable.sh",
-    "scripts/quality/check-tooling-isolation.sh",
+    "scripts/quality/lint/check-test-job-not-switchable.sh",
+    "scripts/quality/lint/check-tooling-isolation.sh",
 }
 
 
@@ -206,7 +206,7 @@ def needed(job):
         if status not in {b"A", b"M", b"D"} or not path_bytes:
             return True
         path = os.fsdecode(path_bytes)
-        if path == "scripts/quality/ci-job-scope.sh":
+        if path == "scripts/quality/scope/ci-job-scope.sh":
             return True
         name = PurePosixPath(path).name
         workflow = path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml"))
@@ -250,7 +250,7 @@ def packages():
     The runner still makes its own suite decision and checks every sentinel.
     """
     runner = "tests/ci/suites/check-suite-completeness.test.sh"
-    depmap = "scripts/quality/suite-dependencies.txt"
+    depmap = "scripts/quality/scope/suite-dependencies.txt"
     raw_command = os.environ.get("TEST_COMMAND", "")
     command = raw_command.split()
     if (os.environ.get("EVENT") != "pull_request"
@@ -275,7 +275,7 @@ def packages():
     # Exercise the same BASE resolver in its suites mode as the runner does.
     decision = subprocess.run(
         ["bash", "/dev/stdin", "suites", *command[1:]],
-        input=git("show", "HEAD^1:scripts/quality/ci-job-scope.sh"),
+        input=git("show", "HEAD^1:scripts/quality/scope/ci-job-scope.sh"),
         check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     selected = [normalise(s) for s in decision.stdout.decode("utf-8").splitlines() if s]
     if (decision.stderr or not selected or not set(selected) <= set(candidates)

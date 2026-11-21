@@ -41,7 +41,7 @@
 # exempts it: two trailing spaces are a hard line break in Markdown.
 set -euo pipefail
 
-root="$(cd "$(dirname "$0")/../.." && pwd)"
+root="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$root"
 
 fail=0

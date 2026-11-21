@@ -43,7 +43,7 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-        run: scripts/quality/check-commit-identity.sh "$BASE" "$HEAD"
+        run: scripts/quality/hygiene/check-commit-identity.sh "$BASE" "$HEAD"
 
   secret-scan:
     name: secret scan
@@ -63,4 +63,4 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-        run: scripts/quality/check-secrets.sh "$BASE" "$HEAD"
+        run: scripts/quality/hygiene/check-secrets.sh "$BASE" "$HEAD"

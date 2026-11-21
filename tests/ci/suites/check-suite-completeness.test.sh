@@ -69,8 +69,8 @@ self="${BASH_SOURCE[0]##*/}"
 # tests/publication/health-check/health-check-workflow.test.sh are 46 % of the 151 s the whole
 # suite takes on this repository.
 #
-# scripts/quality/ci-job-scope.sh, in its `suites` mode, says which suites
-# this change can affect, using the map in scripts/quality/suite-scope.txt.
+# scripts/quality/scope/ci-job-scope.sh, in its `suites` mode, says which suites
+# this change can affect, using the map in scripts/quality/scope/suite-scope.txt.
 # The decision is taken with the resolver and the map as they are in the BASE
 # commit, never as this pull request ships them, so a pull request that
 # narrows the map to hide its own suite gets the full set instead. That is the
@@ -129,7 +129,7 @@ if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ] \
 	resolver="$(mktemp "${TMPDIR:-/tmp}/suite-scope.XXXXXX" 2>/dev/null)" || resolver=""
 	decision=""
 	if [ -n "$resolver" ] \
-		&& git show HEAD^1:scripts/quality/ci-job-scope.sh > "$resolver" 2>/dev/null; then
+		&& git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$resolver" 2>/dev/null; then
 		decision="$(bash "$resolver" suites "$@" 2>/dev/null)" || decision=""
 	fi
 	[ -n "$resolver" ] && rm -f "$resolver"

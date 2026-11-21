@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/quality/check-suites-wired.sh, the check that every suite
+# Tests for scripts/quality/coverage/check-suites-wired.sh, the check that every suite
 # under tests/ is run by a workflow on a pull request, and for the step of
 # .github/workflows/reusable-workflow-lint.yml that runs it from outside the
 # test job.
@@ -13,8 +13,8 @@
 # Requires: python3 with PyYAML, git.
 set -u
 
-HERE="$(cd "$(dirname "$0")/../.." && pwd)"
-GATE="$HERE/scripts/quality/check-suites-wired.sh"
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
+GATE="$HERE/scripts/quality/coverage/check-suites-wired.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0
@@ -47,7 +47,7 @@ tree() {
 gate() {
 	local base=""
 	if [ -n "${2:-}" ]; then
-		mkdir -p "$1/scripts/quality"; printf '%s\n' "$2" > "$1/scripts/quality/suite-exemptions.txt"
+		mkdir -p "$1/scripts/quality/coverage"; printf '%s\n' "$2" > "$1/scripts/quality/coverage/suite-exemptions.txt"
 	fi
 	if [ -n "${3+set}" ]; then base="$WORK/base-exemptions"; printf '%s\n' "$3" > "$base"; fi
 	out="$(SUITE_EXEMPTIONS_BASE="$base" bash "$GATE" "$1" 2>&1)"; rc=$?
@@ -228,7 +228,7 @@ check "control: the same exemption on the base commit counts" "0" "$rc"
 gate "$dir" "# the pull request removed it" "tests/area/b.test.sh: needs a device"
 check "an exemption the pull request removes stops counting at once" "1" "$(said 'tests/area/b.test.sh is not run')"
 out="$(SUITE_EXEMPTIONS_BASE="$WORK/no-such-list" bash "$GATE" "$dir" 2>&1)"
-check "a base list that cannot be read fails" "1" "$(said 'cannot read the base copy of scripts/quality/suite-exemptions.txt')"
+check "a base list that cannot be read fails" "1" "$(said 'cannot read the base copy of scripts/quality/coverage/suite-exemptions.txt')"
 
 # --- nothing to read is a failure, not a pass --------------------------------
 
@@ -286,11 +286,11 @@ repo="$(tree repo "$SUITES")"
 git() { command git -C "$repo" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "$@"; }
 merge_pr() { # <base> <tests.yml command> <checker body or empty to delete> [exemptions]
 	git checkout -q -B main "$1"; git checkout -q -B pr
-	[ -z "${4:-}" ] || printf '%s\n' "$4" > "$repo/scripts/quality/suite-exemptions.txt"
+	[ -z "${4:-}" ] || printf '%s\n' "$4" > "$repo/scripts/quality/coverage/suite-exemptions.txt"
 	sed -i "s#^      test-command: .*#      test-command: \"$2\"#" "$repo/.github/workflows/tests.yml"
-	mkdir -p "$repo/scripts/quality"
-	if [ -n "$3" ]; then printf '%s\n' "$3" > "$repo/scripts/quality/check-suites-wired.sh"
-	else rm -f "$repo/scripts/quality/check-suites-wired.sh"; fi
+	mkdir -p "$repo/scripts/quality/coverage"
+	if [ -n "$3" ]; then printf '%s\n' "$3" > "$repo/scripts/quality/coverage/check-suites-wired.sh"
+	else rm -f "$repo/scripts/quality/coverage/check-suites-wired.sh"; fi
 	git add -A; git commit -qm pr; git checkout -q main
 	git merge -q --no-ff pr -m merge
 }
@@ -302,11 +302,11 @@ run_step() { # <event> [base sha]
 		bash -e -o pipefail "$WORK/step.sh" 2>&1)"; rc=$?
 }
 git init -q -b main
-mkdir -p "$repo/scripts/quality"; cp "$GATE" "$repo/scripts/quality/"
+mkdir -p "$repo/scripts/quality/coverage" "$repo/scripts/quality/lint"; cp "$GATE" "$repo/scripts/quality/coverage/"
 # The other two scripts the first step takes; this suite exercises only the checker.
-printf '#!/usr/bin/env bash\n' > "$repo/scripts/quality/check-test-job-not-switchable.sh"
-printf '#!/usr/bin/env bash\n' > "$repo/scripts/quality/check-tooling-isolation.sh"
-printf '# nothing exempt\n' > "$repo/scripts/quality/suite-exemptions.txt"
+printf '#!/usr/bin/env bash\n' > "$repo/scripts/quality/lint/check-test-job-not-switchable.sh"
+printf '#!/usr/bin/env bash\n' > "$repo/scripts/quality/lint/check-tooling-isolation.sh"
+printf '# nothing exempt\n' > "$repo/scripts/quality/coverage/suite-exemptions.txt"
 git add -A; git commit -qm base; base="$(git rev-parse HEAD)"
 
 merge_pr "$base" "./tests/a.test.sh ./$WATCHER" "exit 0"
@@ -323,7 +323,7 @@ merge_pr "$base" "./tests/a.test.sh ./$WATCHER" "exit 0"
 run_step push
 check "control: on a push the checkout's copy decides, and that one was disarmed" "0" "$rc"
 
-git checkout -q -B main "$base"; git rm -q scripts/quality/check-suites-wired.sh; git commit -qm before
+git checkout -q -B main "$base"; git rm -q scripts/quality/coverage/check-suites-wired.sh; git commit -qm before
 merge_pr "$(git rev-parse HEAD)" "./tests/a.test.sh ./$WATCHER" "$(cat "$GATE")"
 run_step pull_request
 check "a base without the checker uses the pull request's copy" "1" "$(said 'tests/area/b.test.sh is not run')"
@@ -336,7 +336,7 @@ check "a checkout without the checker fails" "1" "$([ "$rc" -ne 0 ] && echo 1 ||
 # merge: HEAD^1 is then the pull request's first commit, which disarms the
 # checker. The base the event names is what decides, not HEAD^1.
 git checkout -q -B pr "$base"
-printf 'exit 0\n' > "$repo/scripts/quality/check-suites-wired.sh"
+printf 'exit 0\n' > "$repo/scripts/quality/coverage/check-suites-wired.sh"
 git add -A; git commit -qm 'disarm the checker'
 sed -i "s#^      test-command: .*#      test-command: \"./tests/a.test.sh ./$WATCHER\"#" "$repo/.github/workflows/tests.yml"
 git add -A; git commit -qm 'drop a suite'

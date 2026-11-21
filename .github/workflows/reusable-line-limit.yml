@@ -68,7 +68,7 @@ jobs:
           script="$(mktemp "$RUNNER_TEMP/lint-scope.XXXXXX")"
           trap 'rm -f "$script"' EXIT
           if [ "$EVENT" = pull_request ] \
-            && git show HEAD^1:scripts/quality/ci-job-scope.sh > "$script" 2>/dev/null; then
+            && git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then
             if decision="$(bash "$script" "$SCOPE_JOB")" \
               && [[ "$decision" == true || "$decision" == false ]]; then
               needed="$decision"

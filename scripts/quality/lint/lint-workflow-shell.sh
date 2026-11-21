@@ -39,7 +39,7 @@
 set -euo pipefail
 
 severity="${1:-style}"
-root="$(cd "$(dirname "$0")/../.." && pwd)"
+root="$(cd "$(dirname "$0")/../../.." && pwd)"
 workflows="$root/.github/workflows"
 
 if ! command -v shellcheck >/dev/null 2>&1; then

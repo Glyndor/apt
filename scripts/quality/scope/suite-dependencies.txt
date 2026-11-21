@@ -58,8 +58,8 @@ tests/monitoring/check-suite-on-main.test.sh -
 tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh -
 tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh -
 tests/mutation/run-mutations.test.sh -
-tests/quality/check-mutation-coverage.test.sh -
-tests/quality/mutation-scope.test.sh -
+tests/quality/coverage/check-mutation-coverage.test.sh -
+tests/quality/scope/mutation-scope.test.sh -
 tests/publication/health-check/health-check-workflow.test.sh -
 tests/publication/publish/publish-workflow-assets.test.sh -
 tests/publication/publish/publish-workflow-pq-sidecar.test.sh -
@@ -72,14 +72,14 @@ tests/publish/purge-cache.test.sh -
 tests/publish/purge-cache/purge-cache-budget.test.sh -
 tests/publish/purge-cache/purge-cache-guards.test.sh -
 tests/publish/sync-archive.test.sh -
-tests/quality/check-action-pins.test.sh -
-tests/quality/check-editorconfig.test.sh -
-tests/quality/check-test-coverage.test.sh -
-tests/quality/check-commit-identity.test.sh -
-tests/quality/check-secrets.test.sh -
-tests/quality/ci-job-scope-suites.test.sh -
-tests/quality/ci-job-scope.test.sh -
-tests/quality/suite-scope-map.test.sh -
+tests/quality/lint/check-action-pins.test.sh -
+tests/quality/hygiene/check-editorconfig.test.sh -
+tests/quality/coverage/check-test-coverage.test.sh -
+tests/quality/hygiene/check-commit-identity.test.sh -
+tests/quality/hygiene/check-secrets.test.sh -
+tests/quality/scope/ci-job-scope-suites.test.sh -
+tests/quality/scope/ci-job-scope.test.sh -
+tests/quality/scope/suite-scope-map.test.sh -
 tests/verify/check-release-order.test.sh -
 tests/verify/distro-floor.test.sh -
 tests/verify/reference-installers.test.sh -
@@ -114,7 +114,7 @@ tests/publication/publish/publish-workflow.test.sh python3-yaml
 tests/ci/suites/lint-job-scope.test.sh python3-yaml
 tests/ci/suites/shell-ci-scope.test.sh python3-yaml
 tests/publish/purge-cache/purge-cache-pruned.test.sh python3-yaml
-tests/quality/check-suites-wired.test.sh python3-yaml
+tests/quality/coverage/check-suites-wired.test.sh python3-yaml
 tests/ci/reusable/reusable-workflow-lint.test.sh python3-yaml
 tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh python3-yaml
 tests/monitoring/check-tool-versions.test.sh python3-yaml
@@ -127,13 +127,13 @@ tests/build/build-repo.test.sh reprepro
 
 # shellcheck
 tests/ci/docs/documented-test-command.test.sh shellcheck
-tests/quality/lint-workflow-shell.test.sh shellcheck
+tests/quality/lint/lint-workflow-shell.test.sh shellcheck
 
 # python3-yaml, shellcheck
-tests/quality/check-test-job-not-switchable.test.sh python3-yaml shellcheck
+tests/quality/lint/check-test-job-not-switchable.test.sh python3-yaml shellcheck
 
 # python3-cryptography, python3-yaml, reprepro
-tests/quality/check-tooling-isolation.test.sh python3-cryptography python3-yaml reprepro
+tests/quality/lint/check-tooling-isolation.test.sh python3-cryptography python3-yaml reprepro
 
 # python3-cryptography, python3-yaml, reprepro, shellcheck
 tests/ci/reusable/reusable-shell-ci.test.sh python3-cryptography python3-yaml reprepro shellcheck

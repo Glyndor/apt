@@ -51,7 +51,7 @@
 
 set -euo pipefail
 
-root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 workflows="$root/.github/workflows"
 actions="$root/.github/actions"
 

@@ -3,7 +3,7 @@
 # each assertion it adds on top of actionlint is wired to the script that holds
 # the rule, under the condition it is meant to run under.
 #
-# The rules live in scripts/quality/ and their cases in tests/quality/: one
+# The rules live in scripts/quality/lint/ and their cases in tests/quality/lint/: one
 # suite per script. What those suites cannot see is the workflow: a step that
 # stops calling its script, or calls it under a condition that never holds,
 # leaves every case of the script green and the gate gone. So each step is read
@@ -66,16 +66,30 @@ said() { printf '%s' "$1" | grep -q -- "$2" && echo 1 || echo 0; }
 # The base carries a caller that runs a suite and a job that holds no secret,
 # and the real rule scripts unless it is a first adoption.
 RULES=(check-test-job-not-switchable.sh check-tooling-isolation.sh)
+# Where each script the picker takes lives under scripts/quality/, and where it
+# lived before the folders were split by responsibility.
+declare -A DIR=(
+	[check-suites-wired.sh]=coverage
+	[check-test-job-not-switchable.sh]=lint
+	[check-tooling-isolation.sh]=lint
+)
+src() { printf 'scripts/quality/%s/%s' "${DIR[$1]}" "$1"; }
+plant() { # <script> <tree>: the real script, at its folder
+	mkdir -p "$2/$(dirname "$(src "$1")")"
+	cp "$HERE/$(src "$1")" "$2/$(src "$1")"
+}
 gitt() { git -C "$WORK/t" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "$@"; }
 base_repo() { # $1=with|without the rule scripts in the base
 	local x
 	rm -rf "$WORK/t"
-	mkdir -p "$WORK/t/.github/workflows" "$WORK/t/scripts/quality"
+	mkdir -p "$WORK/t/.github/workflows"
 	gitt init -q -b main
 	# The picker also takes the checker of the suites; it is not under test here.
-	cp "$HERE/scripts/quality/check-suites-wired.sh" "$WORK/t/scripts/quality/"
+	plant check-suites-wired.sh "$WORK/t"
 	if [ "$1" = with ]; then
-		for x in "${RULES[@]}"; do cp "$HERE/scripts/quality/$x" "$WORK/t/scripts/quality/"; done
+		for x in "${RULES[@]}"; do plant "$x" "$WORK/t"; done
+		mkdir -p "$WORK/t/scripts/quality/coverage"
+		printf '# nothing exempt\n' > "$WORK/t/scripts/quality/coverage/suite-exemptions.txt"
 	fi
 	cat > "$WORK/t/.github/workflows/tests.yml" <<'EOF'
 name: Tests
@@ -126,7 +140,7 @@ refusal() { # $1=rule -> a fragment of that rule's refusal
 	esac
 }
 hollow() { # $1=rule: the pull request replaces the rule with one that passes
-	printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/t/scripts/quality/$1"
+	printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/t/$(src "$1")"
 }
 
 PICK="$(field "Take the rule scripts from the base commit" run)"
@@ -184,13 +198,92 @@ for r in "${RULES[@]}"; do
 
 	# First adoption: the base has no rule, so the checkout's copy decides.
 	base_repo without
-	for x in "${RULES[@]}"; do cp "$HERE/scripts/quality/$x" "$WORK/t/scripts/quality/"; done
+	for x in "${RULES[@]}"; do plant "$x" "$WORK/t"; done
 	violate "$r"; merge_pr
 	pick pull_request
 	check "$name: a base without the rule falls back to the checkout" "0" "$(said "$out" "$r read from the base commit")"
 	rule "$run"
 	check "$name: and the checkout's rule refuses the violation" "1" "$rc"
 done
+
+# The pull request that moves the scripts into their folders. The base carries
+# them, and the list of exempt suites, where they were before, so none of the new
+# paths is in the base. A pull request that moves a rule and weakens it in the
+# same change must not be judged by its own weakened copy, so the picker looks in
+# the base for the file of the same name at any depth, reads that one, and says
+# it did and from where. A base with two files of that name cannot say which is
+# the rule and fails the job; only a base with none (a rule that is new, which
+# the loop above holds) uses the checkout's copy.
+ALL_RULES=(check-suites-wired.sh "${RULES[@]}")
+legacy_base() { # the base carries every script and the list flat, as it was before the folders
+	local x extra="${1:-}"
+	base_repo without
+	gitt checkout -q main
+	gitt rm -q -r scripts/quality
+	mkdir -p "$WORK/t/scripts/quality"
+	for x in "${ALL_RULES[@]}"; do cp "$HERE/$(src "$x")" "$WORK/t/scripts/quality/$x"; done
+	printf '# nothing exempt\n' > "$WORK/t/scripts/quality/suite-exemptions.txt"
+	if [ -n "$extra" ]; then # a second file of that name somewhere else in the base
+		mkdir -p "$WORK/t/scripts/quality/old"
+		cp "$HERE/$(src "$extra")" "$WORK/t/scripts/quality/old/$extra"
+	fi
+	gitt add -A; gitt commit -qm 'the scripts before they moved'
+	gitt checkout -q -B pr
+}
+moving_pr() { # the pull request moves everything into its folder, weakens each rule and plants its violation
+	local x r
+	gitt rm -q -r scripts/quality
+	for x in "${ALL_RULES[@]}"; do plant "$x" "$WORK/t"; done
+	mkdir -p "$WORK/t/scripts/quality/coverage"
+	printf '# nothing exempt\n' > "$WORK/t/scripts/quality/coverage/suite-exemptions.txt"
+	for r in "${RULES[@]}"; do violate "$r"; hollow "$r"; done
+	merge_pr
+}
+legacy_base; moving_pr
+pick pull_request
+check "the move: the picker succeeds" "0" "$rc"
+for r in "${ALL_RULES[@]}"; do
+	check "the move: $r is read from the base at its earlier path, and the picker says so" "1" \
+		"$(said "$out" "${DIR[$r]}/$r read from the base commit .* at its earlier path scripts/quality/$r\.")"
+	check "the move: and does not use the checkout's copy" "0" "$(said "$out" "the checkout's copy runs")"
+done
+check "the move: the base's list of exemptions is handed to the checker from its earlier path" "1" \
+	"$([ -e "$WORK/rt/lint-rules/suite-exemptions.base" ] && echo 1 || echo 0)"
+for r in "${RULES[@]}"; do
+	rule "$(field "${STEP[$r]}" run)"
+	check "the move: a rule moved and weakened in the same change still refuses the violation" "1" "$rc"
+	check "the move: and refuses it for that rule, the base's" "1" "$(said "$out" "$(refusal "$r")")"
+done
+cp "$WORK/rt/lint-rules/check-tooling-isolation.sh" "$WORK/taken.sh"
+check "the move: what the picker took is the base's text and not the weakened one" "0" \
+	"$(cmp -s "$WORK/taken.sh" "$WORK/t/$(src check-tooling-isolation.sh)" && echo 1 || echo 0)"
+
+legacy_base check-tooling-isolation.sh; moving_pr
+pick pull_request
+check "two files of that name in the base fail the picker" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+check "and the error says how many and where" "1" "$(said "$out" 'holds 2 files named check-tooling-isolation.sh under scripts/quality/')"
+
+# The file at its path in the base is preferred to a search by name, so a stray
+# file of the same name elsewhere in a base that is already in the new layout is
+# not an ambiguity.
+base_repo with
+gitt checkout -q main
+mkdir -p "$WORK/t/scripts/quality/old"
+cp "$HERE/$(src check-tooling-isolation.sh)" "$WORK/t/scripts/quality/old/check-tooling-isolation.sh"
+gitt add -A; gitt commit -qm 'a stray file of the same name'
+gitt checkout -q -B pr
+merge_pr
+pick pull_request
+check "a base in the new layout with a stray file of the same name still reads the one at the new path" "0" "$rc"
+check "and says it read it from the base at that path" "1" \
+	"$(said "$out" "check-tooling-isolation.sh read from the base commit [0-9a-f]*\.$")"
+
+base_repo with; merge_pr
+pick pull_request
+check "after the move the picker reads the base's exemptions list as well" "1" \
+	"$([ -e "$WORK/rt/lint-rules/suite-exemptions.base" ] && echo 1 || echo 0)"
+check "after the move every script is read from the base commit, at its path there" "3" \
+	"$(printf '%s\n' "$out" | grep -c 'read from the base commit [0-9a-f]*\.$')"
 
 base_repo without; merge_pr
 pick pull_request

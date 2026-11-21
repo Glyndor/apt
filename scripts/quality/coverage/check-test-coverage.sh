@@ -4,7 +4,7 @@
 #
 # This file lives in scripts/, so it is in its own input set and needs its own
 # test like anything else here. Removing that test, or exempting this file,
-# turns tests/quality/check-test-coverage.test.sh red. A gate that exempts itself is how
+# turns tests/quality/coverage/check-test-coverage.test.sh red. A gate that exempts itself is how
 # a checker ends up being the only unchecked thing in the repository.
 #
 # It asserts one direction only: every script has a test. The reverse -- a test
@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 [ -d "$root/scripts" ] || { echo "no scripts/ directory under $root" >&2; exit 1; }
 
 # Any depth under scripts/: scripts/<area>/x.sh needs tests/<area>/x.test.sh, and a

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Behaviour tests for .github/workflows/reusable-line-limit.yml.
 #
-# The lint added in `scripts/quality/lint-workflow-shell.sh` checks that this workflow`\s
+# The lint added in `scripts/quality/lint/lint-workflow-shell.sh` checks that this workflow`\s
 # shell is well formed. It cannot check that the shell does what the gate claims,
 # and a counter that counts the wrong files is perfectly well formed. These tests
 # plant a file that must be reported and require red, which is the only way to

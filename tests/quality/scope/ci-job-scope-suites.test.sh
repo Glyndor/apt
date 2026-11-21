@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The `suites` mode of scripts/quality/ci-job-scope.sh decides which suites a
+# The `suites` mode of scripts/quality/scope/ci-job-scope.sh decides which suites a
 # pull request can affect. A wrong skip lets a change merge untested, so most of
 # the cases here plant a way to slip through and require every suite to run, and
 # the few that require a skip only mean something because those prove the
@@ -10,8 +10,8 @@
 # Requires: bash, git, python3.
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RESOLVER="$HERE/scripts/quality/ci-job-scope.sh"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+RESOLVER="$HERE/scripts/quality/scope/ci-job-scope.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pass=0; fail=0
@@ -32,11 +32,11 @@ MAP=$'tests/a/one.test.sh\n\tscripts/a/**\n\ttests/a/**\n\ntests/b/two.test.sh\n
 # repo <name>: a base commit with the map and the resolver, and the checkout on
 # a branch ready to take the pull request's changes.
 repo() {
-	R="$WORK/$1"; rm -rf "$R"; mkdir -p "$R/scripts/quality" "$R/scripts/a" "$R/scripts/b" "$R/tests/a" "$R/tests/b" "$R/tests/c" "$R/tests/ci/suites"
+	R="$WORK/$1"; rm -rf "$R"; mkdir -p "$R/scripts/quality/scope" "$R/scripts/a" "$R/scripts/b" "$R/tests/a" "$R/tests/b" "$R/tests/c" "$R/tests/ci/suites"
 	git -C "$R" init -q -b main
 	git -C "$R" config user.name t; git -C "$R" config user.email t@example.invalid; git -C "$R" config commit.gpgsign false
-	cp "$RESOLVER" "$R/scripts/quality/ci-job-scope.sh"
-	printf '%s' "$MAP" > "$R/scripts/quality/suite-scope.txt"
+	cp "$RESOLVER" "$R/scripts/quality/scope/ci-job-scope.sh"
+	printf '%s' "$MAP" > "$R/scripts/quality/scope/suite-scope.txt"
 	printf 'runner\n' > "$R/tests/ci/suites/check-suite-completeness.test.sh"
 	printf 'x\n' > "$R/scripts/a/x.sh"; printf 'x\n' > "$R/scripts/b/y.sh"; printf 'readme\n' > "$R/README.md"
 	printf 'docs\n' > "$R/DOCS.md"; printf 'x\n' > "$R/tests/a/one.test.sh"; printf 'x\n' > "$R/tests/b/two.test.sh"; printf 'x\n' > "$R/tests/c/three.test.sh"
@@ -47,8 +47,8 @@ repo() {
 # request, and branch the pull request from there. "-" removes the map.
 base_map() {
 	git -C "$R" checkout -q main
-	if [ "$1" = "-" ]; then git -C "$R" rm -q scripts/quality/suite-scope.txt
-	else printf '%s' "$1" > "$R/scripts/quality/suite-scope.txt"; fi
+	if [ "$1" = "-" ]; then git -C "$R" rm -q scripts/quality/scope/suite-scope.txt
+	else printf '%s' "$1" > "$R/scripts/quality/scope/suite-scope.txt"; fi
 	git -C "$R" add -A; git -C "$R" commit -qm "base map"
 	git -C "$R" branch -D pr -q; git -C "$R" checkout -q -b pr
 }
@@ -62,7 +62,7 @@ merge() {
 # $SUITES is a list of plain words, so it is expanded unquoted on purpose.
 decide() {
 	# shellcheck disable=SC2086
-	( cd "$R" && bash scripts/quality/ci-job-scope.sh suites $SUITES 2>/dev/null | tr '\n' ' ' | sed 's/ $//' )
+	( cd "$R" && bash scripts/quality/scope/ci-job-scope.sh suites $SUITES 2>/dev/null | tr '\n' ' ' | sed 's/ $//' )
 }
 ALL="$SUITES"
 
@@ -79,7 +79,7 @@ check "a suite whose entry omits its own file still runs when only it changes" \
 	"tests/d/four.test.sh" "$(decide)"
 sed 's/if candidate in paths or affects/if affects/' "$RESOLVER" > "$WORK/resolver-cut.sh"
 check "the sabotage changed the resolver" "1" "$(cmp -s "$RESOLVER" "$WORK/resolver-cut.sh" && echo 0 || echo 1)"
-cp "$WORK/resolver-cut.sh" "$R/scripts/quality/ci-job-scope.sh"
+cp "$WORK/resolver-cut.sh" "$R/scripts/quality/scope/ci-job-scope.sh"
 check "without the condition that suite is skipped (the run is the condition's)" \
 	"" "$(decide)"
 SUITES="tests/a/one.test.sh tests/b/two.test.sh tests/c/three.test.sh"
@@ -106,14 +106,14 @@ check "a path with spaces under ** is matched" \
 
 repo spelling; echo more >> "$R/scripts/a/x.sh"; merge
 check "the workflow's ./ spelling is normalised" \
-	"tests/a/one.test.sh tests/c/three.test.sh" "$( ( cd "$R" && bash scripts/quality/ci-job-scope.sh suites ./tests/a/one.test.sh ./tests/b/two.test.sh ./tests/c/three.test.sh | tr '\n' ' ' | sed 's/ $//' ) )"
+	"tests/a/one.test.sh tests/c/three.test.sh" "$( ( cd "$R" && bash scripts/quality/scope/ci-job-scope.sh suites ./tests/a/one.test.sh ./tests/b/two.test.sh ./tests/c/three.test.sh | tr '\n' ' ' | sed 's/ $//' ) )"
 
 # --- the things a pull request must not be able to do to its own scope ---------
 
-repo map; printf 'tests/a/one.test.sh\n\tnothing/**\n' > "$R/scripts/quality/suite-scope.txt"; merge
+repo map; printf 'tests/a/one.test.sh\n\tnothing/**\n' > "$R/scripts/quality/scope/suite-scope.txt"; merge
 check "a pull request that rewrites the map runs every suite" "$ALL" "$(decide)"
 
-repo resolver; echo '# edited' >> "$R/scripts/quality/ci-job-scope.sh"; merge
+repo resolver; echo '# edited' >> "$R/scripts/quality/scope/ci-job-scope.sh"; merge
 check "a pull request that edits the resolver runs every suite" "$ALL" "$(decide)"
 
 repo runner; echo more >> "$R/tests/ci/suites/check-suite-completeness.test.sh"; merge
@@ -137,6 +137,22 @@ check "an empty diff runs every suite" "$ALL" "$(decide)"
 
 repo nomap; base_map -; echo more >> "$R/DOCS.md"; merge
 check "a base commit without the map runs every suite" "$ALL" "$(decide)"
+
+# The pull request that moves the map into its folder: the base carries it at
+# the path it had before, so the map is not where the resolver looks in the
+# base. Reading the pull request's own copy there would let it choose its scope,
+# and the one it brings says every suite can be skipped. Its text shares nothing
+# with the old one, so git sees a deletion and an addition and not a rename,
+# which would run everything for a different reason.
+repo moved
+git -C "$R" checkout -q main
+git -C "$R" mv scripts/quality/scope/suite-scope.txt scripts/quality/suite-scope.txt
+git -C "$R" commit -qm "the map before it moved"
+git -C "$R" branch -D pr -q; git -C "$R" checkout -q -b pr
+git -C "$R" rm -q scripts/quality/suite-scope.txt
+printf 'tests/a/one.test.sh\n\tnothing/**\ntests/b/two.test.sh\n\tnothing/**\ntests/c/three.test.sh\n\tnothing/**\n' > "$R/scripts/quality/scope/suite-scope.txt"
+echo more >> "$R/DOCS.md"; merge
+check "a base that holds the map at the path it had before the move runs every suite" "$ALL" "$(decide)"
 
 repo badmap; base_map $'tests/a/one.test.sh\n'; echo more >> "$R/DOCS.md"; merge
 check "a map entry with no pattern runs every suite" "$ALL" "$(decide)"

@@ -8,8 +8,8 @@
 # whether a catalogued guard is still noticed, and a run would learn nothing.
 # An entry is selected when its file changed, when its catalogue line is new or
 # changed, or when a suite it names can be affected by the change. The last
-# question is the one scripts/quality/ci-job-scope.sh answers for the suite job
-# from scripts/quality/suite-scope.txt, so it is asked of that resolver here
+# question is the one scripts/quality/scope/ci-job-scope.sh answers for the suite job
+# from scripts/quality/scope/suite-scope.txt, so it is asked of that resolver here
 # rather than answered a second time.
 #
 # Run the copy of this script taken from the BASE commit, like the resolver it
@@ -30,11 +30,11 @@ import subprocess
 import sys
 
 CATALOG = "tests/mutation/catalog.txt"
-RESOLVER = "scripts/quality/ci-job-scope.sh"
+RESOLVER = "scripts/quality/scope/ci-job-scope.sh"
 # A change to any of these changes what the sweep does or who decides it.
 GLOBAL_INPUTS = {
     "tests/mutation/run-mutations.sh",
-    "scripts/quality/mutation-scope.sh",
+    "scripts/quality/scope/mutation-scope.sh",
     ".github/workflows/mutation.yml",
 }
 ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")

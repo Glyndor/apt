@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for scripts/quality/check-editorconfig.sh.
+# Tests for scripts/quality/hygiene/check-editorconfig.sh.
 #
 # Every case plants a file that breaks one declared rule and requires the check
 # to report that rule by name. A test that only ran the checker against a clean
@@ -8,8 +8,8 @@
 # close in the first place.
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SCRIPT="$HERE/scripts/quality/check-editorconfig.sh"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+SCRIPT="$HERE/scripts/quality/hygiene/check-editorconfig.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -34,18 +34,18 @@ check() { # <description> <expected> <actual>
 sandbox() { # $1=name -> prints the path
 	local dir="$WORK/$1"
 	rm -rf "$dir"
-	mkdir -p "$dir/scripts/quality"
+	mkdir -p "$dir/scripts/quality/hygiene"
 	git init -q -b main "$dir"
 	git -C "$dir" config user.email t@example.invalid
 	git -C "$dir" config user.name t
-	cp "$SCRIPT" "$dir/scripts/quality/check-editorconfig.sh"
-	chmod +x "$dir/scripts/quality/check-editorconfig.sh"
+	cp "$SCRIPT" "$dir/scripts/quality/hygiene/check-editorconfig.sh"
+	chmod +x "$dir/scripts/quality/hygiene/check-editorconfig.sh"
 	cp "$HERE/.editorconfig" "$dir/.editorconfig"
 	printf '%s' "$dir"
 }
 
 commit_all() { git -C "$1" add -A && git -C "$1" commit -qm fixture; }
-run() { ( cd "$1" && ./scripts/quality/check-editorconfig.sh 2>&1 ); }
+run() { ( cd "$1" && ./scripts/quality/hygiene/check-editorconfig.sh 2>&1 ); }
 
 # --- this repository ------------------------------------------------------
 
@@ -130,11 +130,11 @@ check "an untracked offender is not reported" "0" "$rc"
 
 d="$(sandbox empty)"
 rm -f "$d/.editorconfig"
-git -C "$d" rm -q --cached scripts/quality/check-editorconfig.sh 2>/dev/null || true
+git -C "$d" rm -q --cached scripts/quality/hygiene/check-editorconfig.sh 2>/dev/null || true
 rm -rf "$d/scripts" "$d/.editorconfig"
-mkdir -p "$d/scripts/quality"
-cp "$SCRIPT" "$d/scripts/quality/check-editorconfig.sh"
-chmod +x "$d/scripts/quality/check-editorconfig.sh"
+mkdir -p "$d/scripts/quality/hygiene"
+cp "$SCRIPT" "$d/scripts/quality/hygiene/check-editorconfig.sh"
+chmod +x "$d/scripts/quality/hygiene/check-editorconfig.sh"
 git -C "$d" commit -q --allow-empty -m empty >/dev/null 2>&1
 out="$(run "$d")"; rc=$?
 check "a tree with no tracked files fails rather than reporting success" "1" "$rc"

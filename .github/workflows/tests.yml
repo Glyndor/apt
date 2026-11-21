@@ -48,8 +48,8 @@ jobs:
       test-command: >-
         ./tests/ci/suites/check-suite-completeness.test.sh
         ./tests/mutation/run-mutations.test.sh
-        ./tests/quality/check-mutation-coverage.test.sh
-        ./tests/quality/mutation-scope.test.sh
+        ./tests/quality/coverage/check-mutation-coverage.test.sh
+        ./tests/quality/scope/mutation-scope.test.sh
         ./tests/ci/policy/mutation-workflow.test.sh
         ./tests/verify/verify-debs.test.sh
         ./tests/verify/verify-debs-hybrid.test.sh
@@ -121,16 +121,16 @@ jobs:
         ./tests/ci/docs/documented-test-command.test.sh
         ./tests/ci/policy/gpgconf-kill-is-bounded.test.sh
         ./tests/ci/policy/publish-workflow-triggers.test.sh
-        ./tests/quality/check-test-coverage.test.sh
-        ./tests/quality/check-action-pins.test.sh
-        ./tests/quality/check-commit-identity.test.sh
-        ./tests/quality/check-secrets.test.sh
-        ./tests/quality/ci-job-scope.test.sh
-        ./tests/quality/ci-job-scope-suites.test.sh
-        ./tests/quality/suite-scope-map.test.sh
+        ./tests/quality/coverage/check-test-coverage.test.sh
+        ./tests/quality/lint/check-action-pins.test.sh
+        ./tests/quality/hygiene/check-commit-identity.test.sh
+        ./tests/quality/hygiene/check-secrets.test.sh
+        ./tests/quality/scope/ci-job-scope.test.sh
+        ./tests/quality/scope/ci-job-scope-suites.test.sh
+        ./tests/quality/scope/suite-scope-map.test.sh
         ./tests/ci/suites/ci-runs-every-test.test.sh
-        ./tests/quality/check-suites-wired.test.sh
-        ./tests/quality/lint-workflow-shell.test.sh
+        ./tests/quality/coverage/check-suites-wired.test.sh
+        ./tests/quality/lint/lint-workflow-shell.test.sh
         ./tests/ci/reusable/reusable-line-limit.test.sh
         ./tests/ci/reusable/reusable-shell-ci.test.sh
         ./tests/ci/suites/shell-ci-scope.test.sh
@@ -138,7 +138,7 @@ jobs:
         ./tests/ci/policy/cancel-policy.test.sh
         ./tests/ci/reusable/reusable-empty-diff.test.sh
         ./tests/ci/reusable/reusable-dco.test.sh
-        ./tests/quality/check-editorconfig.test.sh
+        ./tests/quality/hygiene/check-editorconfig.test.sh
         ./tests/monitoring/check-reusable-drift.test.sh
         ./tests/ci/policy/jobs-are-bounded.test.sh
         ./tests/ci/policy/workflow-shape.test.sh
@@ -153,17 +153,17 @@ jobs:
         ./tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh
         ./tests/ci/reusable/reusable-workflow-lint.test.sh
         ./tests/monitoring/check-tool-versions.test.sh
-        ./tests/quality/check-test-job-not-switchable.test.sh
-        ./tests/quality/check-tooling-isolation.test.sh
-      # shellcheck: tests/quality/lint-workflow-shell.test.sh plants a violation and
+        ./tests/quality/lint/check-test-job-not-switchable.test.sh
+        ./tests/quality/lint/check-tooling-isolation.test.sh
+      # shellcheck: tests/quality/lint/lint-workflow-shell.test.sh plants a violation and
       # requires the linter to report it, so it needs the linter. The reusable
       # installs the release the shellcheck job pins, never the distribution's,
       # so the suite asks the linter the gate uses. On a pull request only the
       # packages of the suites it selects are installed, as
-      # scripts/quality/suite-dependencies.txt lists them.
+      # scripts/quality/scope/suite-dependencies.txt lists them.
       # python3-yaml: the two workflow-lint scripts import it, and their suites,
-      # tests/quality/check-test-job-not-switchable.test.sh and
-      # tests/quality/check-tooling-isolation.test.sh, run them exactly as the
+      # tests/quality/lint/check-test-job-not-switchable.test.sh and
+      # tests/quality/lint/check-tooling-isolation.test.sh, run them exactly as the
       # workflow-lint job does.
       apt-packages: python3-cryptography reprepro shellcheck python3-yaml
 

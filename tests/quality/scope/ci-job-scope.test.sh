@@ -2,7 +2,7 @@
 # Removing a route classifier, the old-blob inspection or a fail-open branch
 # must change a decision below. All diffs and blobs come from real git commits.
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 python3 - "$HERE" <<'PY'
 import os
 from pathlib import Path
@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 
-script = Path(sys.argv[1]) / "scripts/quality/ci-job-scope.sh"
+script = Path(sys.argv[1]) / "scripts/quality/scope/ci-job-scope.sh"
 passed = failed = 0
 jobs = ("shellcheck", "workflow-lint", "line-limit")
 
@@ -96,14 +96,14 @@ with tempfile.TemporaryDirectory() as tmp:
         # The rules the workflow-lint steps run live in two scripts; a change to
         # either one changes that job's verdict. Any other script under
         # scripts/quality/ does not, which the "shell extension" case holds.
-        ("test-job rule", {"scripts/quality/check-test-job-not-switchable.sh": "echo changed\n"}, (True, True, True)),
-        ("tooling rule", {"scripts/quality/check-tooling-isolation.sh": "echo changed\n"}, (True, True, True)),
-        ("other quality script", {"scripts/quality/check-editorconfig.sh": "echo changed\n"}, (True, False, True)),
+        ("test-job rule", {"scripts/quality/lint/check-test-job-not-switchable.sh": "echo changed\n"}, (True, True, True)),
+        ("tooling rule", {"scripts/quality/lint/check-tooling-isolation.sh": "echo changed\n"}, (True, True, True)),
+        ("other quality script", {"scripts/quality/hygiene/check-editorconfig.sh": "echo changed\n"}, (True, False, True)),
         ("shell caller config", {".github/workflows/tests.yml": "jobs: {}\n"}, (True, True, True)),
         ("shell reusable config", {".github/workflows/reusable-shell-ci.yml": "jobs: {}\n"}, (True, True, True)),
         ("line caller config", {".github/workflows/line-limit.yml": "jobs: {}\n"}, (False, True, True)),
         ("line reusable config", {".github/workflows/reusable-line-limit.yml": "jobs: {}\n"}, (False, True, True)),
-        ("scope itself", {"scripts/quality/ci-job-scope.sh": "# changed\n"}, (True, True, True)),
+        ("scope itself", {"scripts/quality/scope/ci-job-scope.sh": "# changed\n"}, (True, True, True)),
         ("shebang removed", {"hook": "plain text\n"}, (True, False, False)),
         ("shebang deleted", {"hook": None}, (True, False, False)),
         ("rename", {"hook": None, "docs/hook.md": "#!/bin/sh\necho before\n"}, (True, True, True)),
