@@ -108,8 +108,8 @@ jobs:
             n="$(awk -v hc="$hash_comment" '
               { line = $0; sub(/^[[:space:]]+/, "", line)
                 if (line == "") next
-                if (line ~ /^(\/\/|\*|\/\*|\*\/|<!--)/) next
-                if (hc == 1 && line ~ /^#/) next
+                if (hc == 1) { if (line ~ /^#/) next }
+                else if (line ~ /^(\/\/|\*|\/\*|\*\/|<!--)/) next
                 code++ }
               END { print code + 0 }' "$f")"
             if [ "$n" -gt "$HARD" ]; then

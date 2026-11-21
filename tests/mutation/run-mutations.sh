@@ -201,6 +201,11 @@ syntax_ok() { # <file> -> 0 when it parses, 1 when it does not, 2 when no check 
 	*.py)
 		PYTHONPYCACHEPREFIX="$WORK/pycache" python3 -m py_compile "$1" >/dev/null 2>&1 || rc=1
 		;;
+	*.yml | *.yaml)
+		# A workflow is a control too: its suite list is what a pull request
+		# can shorten, and the tests that read it parse it as YAML.
+		python3 -I -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$1" >/dev/null 2>&1 || rc=1
+		;;
 	*.sh | *.bash)
 		bash -n "$1" >/dev/null 2>&1 || rc=1
 		# A shell script of this repository carries python in a heredoc, and

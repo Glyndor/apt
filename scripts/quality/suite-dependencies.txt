@@ -109,6 +109,7 @@ tests/ci/policy/workflow-shape.test.sh python3-yaml
 tests/ci/suites/lint-job-scope.test.sh python3-yaml
 tests/ci/suites/shell-ci-scope.test.sh python3-yaml
 tests/publish/purge-cache/purge-cache-pruned.test.sh python3-yaml
+tests/quality/check-suites-wired.test.sh python3-yaml
 tests/verify/verify-published/verify-published-build.test.sh python3-yaml
 
 # reprepro

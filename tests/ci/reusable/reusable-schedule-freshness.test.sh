@@ -113,6 +113,9 @@ ago() { date -u -d "$1 days ago" +%Y-%m-%dT%H:%M:%SZ; }
 
 # Run the step with the stub on PATH. Combined stdout+stderr in `out`, exit
 # code in `rc`. The stub log is reset per call so each case starts at index 1.
+# MAX_AGE_HOURS passes through from the caller's environment; a case that
+# wants the limit in hours sets it and passes 0 days, which is what GitHub
+# hands the step for a number input the caller left out.
 run_step() { # $1=MAX_AGE_DAYS  $2=responses file  $3=JSON page (optional)
 	local max="$1" resp="$2" json="${3:-}"
 	rm -f "$WORK/gh.log" "$WORK/sleep.log"
@@ -121,6 +124,7 @@ run_step() { # $1=MAX_AGE_DAYS  $2=responses file  $3=JSON page (optional)
 	STUB_LOG="$WORK/gh.log" STUB_RESPONSES="$resp" STUB_JSON="$json" \
 	SLEEP_LOG="$WORK/sleep.log" \
 	ANY_CONCLUSION="${ANY_CONCLUSION:-}" \
+	MAX_AGE_HOURS="${MAX_AGE_HOURS:-}" \
 	PATH="$WORK/bin:$PATH" \
 	GH_TOKEN=dummy REPO="$REPO" WORKFLOW="$WF" MAX_AGE_DAYS="$max" \
 	bash "$WORK/step.sh" 2>&1
@@ -338,6 +342,75 @@ check "G: gh was called exactly 4 times" "4" \
 	"$(grep -acz . "$WORK/gh.log" | tr -d ' ')"
 check "G: output names both the windowed emptiness and the unwindowed timestamp" "1" \
 	"$(printf '%s' "$out" | grep -q 'saw nothing 3 times' && printf '%s' "$out" | grep -q "$g_seen" && echo 1 || echo 0)"
+
+# --- a limit in hours, for a schedule that fires more than once a day ----
+#
+# A limit in whole days cannot say "a day" to an hourly cron without also
+# tolerating the dozens of missed runs before it, so the step takes the
+# limit in hours as well. GitHub hands a number input the caller left out to
+# the step as 0, which is how these cases leave max-age-days out.
+
+hours_ago() { date -u -d "$1 hours ago" +%Y-%m-%dT%H:%M:%SZ; }
+
+printf '%s\n' "$(hours_ago 23)" > "$WORK/hours-recent.resp"
+out="$(MAX_AGE_HOURS=24 run_step 0 "$WORK/hours-recent.resp")"; rc=$?
+check "a 23-hour-old run passes the 24-hour limit" "0" "$rc"
+check "and the success line reports the age in hours" "1" \
+	"$(printf '%s' "$out" | grep -c '(23h ago)')"
+check "and names the limit in hours" "1" \
+	"$(printf '%s' "$out" | grep -c 'Within the 24-hour limit')"
+
+printf '%s\n%s\n%s\n%s\n' "$(hours_ago 26)" "" "" "$(hours_ago 26)" > "$WORK/hours-old.resp"
+out="$(MAX_AGE_HOURS=24 run_step 0 "$WORK/hours-old.resp")"; rc=$?
+check "a 26-hour-old run fails the 24-hour limit" "1" "$rc"
+check "and the error names the age and the limit in hours" "1" \
+	"$(printf '%s' "$out" | grep -c 'last succeeded on a schedule 26 hours ago, over the 24-hour limit')"
+
+printf '%s\n' "$(hours_ago 24)" > "$WORK/hours-boundary.resp"
+out="$(MAX_AGE_HOURS=24 run_step 0 "$WORK/hours-boundary.resp")"; rc=$?
+check "exactly 24 hours old passes the 24-hour limit" "0" "$rc"
+
+# The window is one unit wider than the limit, in the limit's unit: 25
+# hours here, not 25 days. Read on both sides of the step for the same
+# reason as the day window above.
+printf '\n' > "$WORK/hours-window.resp"
+before=$(date -u -d "25 hours ago" +%Y-%m-%dT%H)
+MAX_AGE_HOURS=24 run_step 0 "$WORK/hours-window.resp" >/dev/null
+after=$(date -u -d "25 hours ago" +%Y-%m-%dT%H)
+check "the hours window cutoff is 25 hours back" "1" \
+	"$(awk -v RS='\0' 'NR==1 {print; exit}' "$WORK/gh.log" | grep -qE "created=%3E%3D(${before}|${after}):" && echo 1 || echo 0)"
+
+# --- exactly one of the two limits --------------------------------------
+#
+# Both set is a caller that does not know which one it asked for, and
+# neither set is a caller that asked for nothing. Each fails before any
+# call to the API, with an error that names the inputs.
+
+printf '%s\n' "$(ago 1)" > "$WORK/limits.resp"
+out="$(MAX_AGE_HOURS=24 run_step 3 "$WORK/limits.resp")"; rc=$?
+check "max-age-days and max-age-hours together fail" "1" "$rc"
+check "and the error says both are set" "1" \
+	"$(printf '%s' "$out" | grep -c 'Both max-age-days (3) and max-age-hours (24) are set')"
+check "and no API call was made" "0" "$(grep -acz . "$WORK/gh.log" | tr -d ' ')"
+
+for none in 0 ""; do
+	out="$(MAX_AGE_HOURS="$none" run_step "$none" "$WORK/limits.resp")"; rc=$?
+	check "neither limit set ('$none') fails" "1" "$rc"
+	check "and the error says neither is set ('$none')" "1" \
+		"$(printf '%s' "$out" | grep -c 'Neither max-age-days nor max-age-hours is set')"
+	check "and no API call was made ('$none')" "0" "$(grep -acz . "$WORK/gh.log" | tr -d ' ')"
+done
+
+for bad in 1.5 08 -2; do
+	out="$(MAX_AGE_HOURS="$bad" run_step 0 "$WORK/limits.resp")"; rc=$?
+	check "a limit of '$bad' hours fails" "1" "$rc"
+	check "and the error says it is not a whole number ('$bad')" "1" \
+		"$(printf '%s' "$out" | grep -c "must be a whole number of hours; got '$bad'")"
+done
+
+out="$(MAX_AGE_HOURS=0 run_step "$MAX_AGE_DAYS" "$WORK/limits.resp")"; rc=$?
+check "a limit in days with max-age-hours left out (0) still passes" "0" "$rc"
+check "and reports the age in days" "1" "$(printf '%s' "$out" | grep -c '(1d ago)')"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

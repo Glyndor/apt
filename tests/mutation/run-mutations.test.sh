@@ -112,6 +112,10 @@ fi
 exit 0
 SH
 printf 'hello\n' > "$TOY/scripts/notes.txt"
+# A workflow and a suite that reads it, for the mutations that target YAML.
+mkdir -p "$TOY/.github/workflows"
+printf 'suites: [a, b]\n' > "$TOY/.github/workflows/w.yml"
+printf '#!/usr/bin/env bash\ngrep -qF "[a, b]" "$(dirname "$0")/../.github/workflows/w.yml"\n' > "$TOY/tests/w.test.sh"
 git -C "$TOY" init -q .
 git -C "$TOY" add -A
 git -C "$TOY" -c user.name=t -c user.email=t@example.invalid commit -q -m base
@@ -152,6 +156,13 @@ check "and says the text is not there exactly once" "1" "$(has 'exactly once' "$
 entry syntax 'echo "ok"' 'echo "ok'
 check "a mutation that breaks the syntax fails the runner" "1" "$(run)"
 check "and says the file has a syntax error" "1" "$(has 'syntax error' "$WORK/out")"
+
+# A workflow is mutated like a script, and its syntax is checked as YAML.
+printf '%s\t%s\t%s\t%s\t%s\n' yml-dies .github/workflows/w.yml "[a, b]" "[a, c]" tests/w.test.sh >"$CATALOG"
+check "a mutation of a workflow that its suite notices passes the runner" "0" "$(run)"
+printf '%s\t%s\t%s\t%s\t%s\n' yml-syntax .github/workflows/w.yml "[a, b]" "[a, b" tests/w.test.sh >"$CATALOG"
+check "a mutation that breaks a workflow's YAML fails the runner" "1" "$(run)"
+check "and says the workflow has a syntax error" "1" "$(has 'syntax error' "$WORK/out")"
 
 # The python of a heredoc is part of the file: `bash -n` cannot see it, and a
 # mutation that breaks it would read as a kill of a guard that was never removed.

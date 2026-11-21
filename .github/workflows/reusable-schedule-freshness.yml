@@ -35,11 +35,19 @@ on:
         required: true
       max-age-days:
         description: >-
-          Fail when the newest successful scheduled run is older than this.
-          Allow about two periods, so a weekly job tolerates one miss: 15 for a
-          weekly schedule, 3 for a daily one.
+          Fail when the newest successful scheduled run is older than this
+          many whole days. Allow about two periods, so a weekly job tolerates
+          one miss: 15 for a weekly schedule, 3 for a daily one. Give exactly
+          one of max-age-days and max-age-hours.
         type: number
-        required: true
+        required: false
+      max-age-hours:
+        description: >-
+          The same limit in whole hours, for a schedule that fires more than
+          once a day, where a limit in days tolerates dozens of missed runs.
+          Give exactly one of max-age-days and max-age-hours.
+        type: number
+        required: false
       count-any-conclusion:
         description: >-
           Measure the newest scheduled run whatever its conclusion, instead of
@@ -86,9 +94,40 @@ jobs:
           REPO: ${{ github.repository }}
           WORKFLOW: ${{ inputs.workflow }}
           MAX_AGE_DAYS: ${{ inputs.max-age-days }}
+          MAX_AGE_HOURS: ${{ inputs.max-age-hours }}
           ANY_CONCLUSION: ${{ inputs.count-any-conclusion }}
         run: |
           set -euo pipefail
+
+          # Exactly one of the two limits. A number input the caller leaves
+          # out arrives as 0, so zero cannot be told from absent and is read
+          # as not given; a limit under a day is written in hours. Anything
+          # that is not a whole number would reach the arithmetic below and
+          # die there with a message about bash, not about the input.
+          days="${MAX_AGE_DAYS:-}"
+          hours="${MAX_AGE_HOURS:-}"
+          [ "$days" = 0 ] && days=""
+          [ "$hours" = 0 ] && hours=""
+          if [ -n "$days" ] && [ -n "$hours" ]; then
+            echo "::error::Both max-age-days (${days}) and max-age-hours (${hours}) are set; give exactly one."
+            exit 1
+          fi
+          if [ -z "$days" ] && [ -z "$hours" ]; then
+            echo "::error::Neither max-age-days nor max-age-hours is set; give exactly one, greater than zero."
+            exit 1
+          fi
+          if [ -n "$days" ]; then
+            limit="$days" unit_seconds=86400 unit=days short=d
+          else
+            limit="$hours" unit_seconds=3600 unit=hours short=h
+          fi
+          if ! [[ "$limit" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::The limit must be a whole number of ${unit}; got '${limit}'."
+            exit 1
+          fi
+          # The age is counted in whole units, so a run exactly at the limit
+          # passes and one a full unit past it fails.
+          limit_name="${limit}-${unit%s}"
 
           # status=success is the question for a workflow watched from
           # outside. A workflow watching itself cannot ask it: a run that
@@ -123,7 +162,7 @@ jobs:
           # between. A listing served stale is what the retry exists for; the
           # cost is at most forty seconds on a job that is not a required
           # check.
-          cutoff=$(date -u -d "$((MAX_AGE_DAYS + 1)) days ago" +%Y-%m-%dT%H:%M:%SZ)
+          cutoff=$(date -u -d "$((limit + 1)) ${unit} ago" +%Y-%m-%dT%H:%M:%SZ)
           now_s=$(date -u +%s)
           base="repos/${REPO}/actions/workflows/${WORKFLOW}/runs?event=schedule&${status_filter}&per_page=30"
           windowed_url="${base}&created=%3E%3D${cutoff}"
@@ -135,8 +174,8 @@ jobs:
               --jq '[.workflow_runs[].created_at] | max // empty')
             if [ -n "$latest" ]; then
               age_seconds=$(( now_s - $(date -u -d "$latest" +%s) ))
-              age_days=$(( age_seconds / 86400 ))
-              if [ "$age_days" -le "$MAX_AGE_DAYS" ]; then
+              age=$(( age_seconds / unit_seconds ))
+              if [ "$age" -le "$limit" ]; then
                 good="yes"
                 break
               fi
@@ -147,8 +186,8 @@ jobs:
           done
 
           if [ -n "$good" ]; then
-            echo "Newest ${what} scheduled run of ${WORKFLOW}: ${latest} (${age_days}d ago)."
-            echo "Within the ${MAX_AGE_DAYS}-day limit."
+            echo "Newest ${what} scheduled run of ${WORKFLOW}: ${latest} (${age}${short} ago)."
+            echo "Within the ${limit_name} limit."
             exit 0
           fi
 
@@ -170,16 +209,16 @@ jobs:
           fi
 
           age_seconds=$(( now_s - $(date -u -d "$latest" +%s) ))
-          age_days=$(( age_seconds / 86400 ))
+          age=$(( age_seconds / unit_seconds ))
 
-          if [ "$age_days" -le "$MAX_AGE_DAYS" ]; then
+          if [ "$age" -le "$limit" ]; then
             echo "::error::The windowed query saw nothing 3 times, but the unwindowed query returned ${latest}."
             echo "The gate cannot reconcile this: a recent run exists but three windowed" >&2
             echo "pages did not include it. Treat as a stale listing index and re-run later." >&2
             exit 1
           fi
 
-          echo "::error::${WORKFLOW} last ${verb} ${age_days} days ago, over the ${MAX_AGE_DAYS}-day limit."
+          echo "::error::${WORKFLOW} last ${verb} ${age} ${unit} ago, over the ${limit_name} limit."
           echo "A schedule that stops firing reports nothing, so treat this as the alert it never sent." >&2
           echo "GitHub runs crons hours late, so a small overrun right at the boundary is not the problem;" >&2
           echo "a multiple of the period is. Toggle the workflow off and on to re-register it, then check" >&2

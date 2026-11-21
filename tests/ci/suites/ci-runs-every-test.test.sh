@@ -72,6 +72,11 @@ check "every test a workflow invokes exists" "" "${absent% }"
 # The watcher is inside its own input set. Removing it from the workflow makes
 # the first case red, and this one names it directly so the reason is not
 # buried in a list.
+#
+# That holds only while something runs this file. Dropped from the test job's
+# list, it does not run and reports nothing, so the same question is also asked
+# outside that job: reusable-workflow-lint.yml runs
+# scripts/quality/check-suites-wired.sh, and that check goes red instead.
 check "this watcher is itself invoked by a workflow" "1" \
 	"$(invoked | grep -cx 'tests/ci/suites/ci-runs-every-test.test.sh')"
 
