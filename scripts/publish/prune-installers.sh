@@ -49,6 +49,15 @@ if [ -z "$BUILT_DIR" ] || [ -z "$BUCKET" ] || [ -z "${AWS_ENDPOINT_URL:-}" ]; th
 	echo "usage: prune-installers.sh <built-install-dir> <bucket> [<removed-list>], with AWS_ENDPOINT_URL set" >&2
 	exit 2
 fi
+# AWS_ENDPOINT_URL_S3 takes precedence over AWS_ENDPOINT_URL for S3, and
+# AWS_IGNORE_CONFIGURED_ENDPOINT_URLS makes the CLI ignore both and talk to
+# AWS. A listing and deletes sent anywhere else are refused before they start.
+for v in AWS_ENDPOINT_URL_S3 AWS_IGNORE_CONFIGURED_ENDPOINT_URLS; do
+	if [ -n "${!v+set}" ]; then
+		echo "::error::$v is set, and it would decide the S3 endpoint instead of AWS_ENDPOINT_URL; refusing to prune" >&2
+		exit 1
+	fi
+done
 
 # The prefix the installers live under. It is a constant of the archive layout
 # rather than an argument: a prune that could be pointed at another prefix

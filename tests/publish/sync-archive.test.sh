@@ -163,7 +163,7 @@ with tempfile.TemporaryDirectory() as temp:
                 put(work / 'edge', key, value, 1000)
         put(work / 'edge', 'pool/shared.deb', b'bad cached copy', 1000)
 
-    def run(fail_pass=0, after=0, fail_purge=0, order='forward', missing=None, version=None):
+    def run(fail_pass=0, after=0, fail_purge=0, order='forward', missing=None, version=None, extra=None):
         for name in ('state', 'aws-calls', 'writes', 'purges'):
             (work / name).unlink(missing_ok=True)
         current = dict(env, FAIL_PASS=str(fail_pass), FAIL_AFTER=str(after),
@@ -172,6 +172,7 @@ with tempfile.TemporaryDirectory() as temp:
             current.pop(missing)
         if version:
             current['FAKE_AWS_VERSION'] = version
+        current.update(extra or {})
         return subprocess.run(['bash', '-e', 'job.sh'], cwd=work, env=current,
                               capture_output=True, text=True)
 
@@ -213,6 +214,16 @@ with tempfile.TemporaryDirectory() as temp:
             check(result.returncode != 0 and 'does not read AWS_ENDPOINT_URL' in result.stdout,
                   version + ': refused for the endpoint it would ignore')
             check(not records('aws-calls') and tree(work / 'bucket') == old, version + ': and nothing is written')
+
+    # Two variables decide the endpoint ahead of AWS_ENDPOINT_URL. Set, even empty,
+    # each one stops the sync before its first call.
+    for name, value in (('AWS_ENDPOINT_URL_S3', 'https://elsewhere.invalid'), ('AWS_ENDPOINT_URL_S3', ''),
+                        ('AWS_IGNORE_CONFIGURED_ENDPOINT_URLS', 'true')):
+        reset()
+        result = run(extra={name: value})
+        check(result.returncode != 0 and f'{name} is set, and it would decide the S3 endpoint' in result.stdout,
+              f'{name}={value!r}: refused for the endpoint it would decide')
+        check(not records('aws-calls') and tree(work / 'bucket') == old, f'{name}={value!r}: and nothing is written')
 
     # Every point a pass can fail at, from an archive already offered by hash and
     # from one before the field: the first publish that carries it starts from

@@ -21,6 +21,15 @@ case "${cli_major:-}:${cli_minor:-}" in
   1:* ) [ "$cli_minor" -ge 29 ] ;;
   * ) false ;;
 esac || { echo "::error::this AWS CLI ($(aws --version 2>&1 | head -n 1)) does not read AWS_ENDPOINT_URL; refusing to sync to an endpoint it would ignore."; exit 1; }
+# Two other variables decide the endpoint ahead of it: AWS_ENDPOINT_URL_S3
+# takes precedence for S3, and AWS_IGNORE_CONFIGURED_ENDPOINT_URLS makes the
+# CLI ignore both and talk to AWS. Either one set is refused, empty or not.
+for v in AWS_ENDPOINT_URL_S3 AWS_IGNORE_CONFIGURED_ENDPOINT_URLS; do
+  if [ -n "${!v+set}" ]; then
+    echo "::error::$v is set, and it would decide the S3 endpoint instead of AWS_ENDPOINT_URL; refusing to sync."
+    exit 1
+  fi
+done
 # Five passes: the Cache-Control differs per file class, and the
 # ordering keeps the live archive consistent for clients mid-publish:
 # new packages land before the metadata that references them, and old

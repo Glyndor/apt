@@ -429,3 +429,5 @@ sync-by-hash-before-index	scripts/publish/sync-archive.sh	--include "dists/*/by-
 build-repo-offers-by-hash	scripts/build/build-repo.sh	"$(dirname "$0")/add-by-hash.sh" "$OUT_DIR/dists/stable" "$FPR" "$PUBKEY_ASC"	:	tests/build/build-repo.test.sh
 sync-archive-cli-reads-endpoint	scripts/publish/sync-archive.sh	esac || { echo "::error::this AWS CLI	esac || true || { echo "::error::this AWS CLI	tests/publish/sync-archive.test.sh
 verify-debs-pq-state-reported	scripts/verify/verify-debs.sh	echo "ML-DSA-65 second signature: ${#MLDSA_KEYS[@]} public key(s) configured in	: "ML-DSA-65 second signature: ${#MLDSA_KEYS[@]} public key(s) configured in	tests/verify/verify-debs-hybrid.test.sh
+sync-archive-endpoint-overridden	scripts/publish/sync-archive.sh	  if [ -n "${!v+set}" ]; then	  if false; then	tests/publish/sync-archive.test.sh
+prune-installers-endpoint-overridden	scripts/publish/prune-installers.sh	if [ -n "${!v+set}" ]; then	if false; then	tests/publish/prune-installers.test.sh

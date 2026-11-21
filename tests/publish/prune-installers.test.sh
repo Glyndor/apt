@@ -197,6 +197,16 @@ with tempfile.TemporaryDirectory() as temp:
     check(result.returncode == 2 and 'usage: prune-installers.sh' in result.stderr
           and 'AWS_ENDPOINT_URL' in result.stderr, 'an empty endpoint is refused with the usage and exit 2')
     check(keys() == before and not records(), 'and the refusal reads and removes nothing')
+    for variable, value in (('AWS_ENDPOINT_URL_S3', 'https://elsewhere.invalid'),
+                            ('AWS_IGNORE_CONFIGURED_ENDPOINT_URLS', 'true')):
+        reset()
+        before = keys()
+        result = subprocess.run(['bash', str(root / 'scripts/publish/prune-installers.sh'),
+                                 str(built), 'glyndor-apt', str(journal)],
+                                env=dict(env, **{variable: value}), capture_output=True, text=True)
+        check(result.returncode == 1 and variable + ' is set, and it would decide the S3 endpoint' in result.stderr,
+              variable + ' set is refused, since it would decide the endpoint')
+        check(keys() == before and not records(), 'and the refusal reads and removes nothing')
     for position, name in ((0, 'built directory'), (1, 'bucket')):
         reset()
         before = keys()
