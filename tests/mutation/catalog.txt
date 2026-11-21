@@ -172,6 +172,8 @@ tools-unreadable	scripts/monitoring/check-tool-versions.sh	        problems.appe
 tools-no-release	scripts/monitoring/check-tool-versions.sh	    if not found:	    if False:	tests/monitoring/check-tool-versions.test.sh
 tools-pins-disagree	scripts/monitoring/check-tool-versions.sh	    if len(shellcheck) != 1:	    if False:	tests/monitoring/check-tool-versions.test.sh
 tools-verdict	scripts/monitoring/check-tool-versions.sh	if problems or behind:	if False:	tests/monitoring/check-tool-versions.test.sh
+tools-lag-constant	scripts/monitoring/check-tool-versions.sh	lag_days = LAG_DAYS	lag_days = int(os.environ.get("MAX_LAG_DAYS", LAG_DAYS))	tests/monitoring/check-tool-versions.test.sh
+tools-overrides	scripts/monitoring/check-tool-versions.sh	            if given:	            if False:	tests/monitoring/check-tool-versions.test.sh
 fresh-mutation-watched	.github/workflows/freshness.yml	      workflow: mutation.yml	      workflow: unwatched.yml	tests/ci/policy/scheduled-workflows-are-watched.test.sh
 shell-pinned-shellcheck	.github/workflows/reusable-shell-ci.yml	            if [ "$package" = shellcheck ]; then	            if false; then	tests/ci/reusable/reusable-shell-ci.test.sh
 shell-pinned-sha256	.github/workflows/reusable-shell-ci.yml	            printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -	            true	tests/ci/reusable/reusable-shell-ci.test.sh

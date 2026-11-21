@@ -115,8 +115,9 @@ run
 check "a pin behind an old release and a new one fails on the old one" "1" "$rc"
 check "and the age is the old release's" "1" "$(said "$out" 'has been out 40 days')"
 
+# The lag is the script's own: a workflow cannot widen it from the environment.
 MAX_LAG_DAYS=60 run
-check "the lag comes from MAX_LAG_DAYS, and sixty days admits the same pin" "0" "$rc"
+check "MAX_LAG_DAYS in the environment does not move the lag" "1" "$rc"
 
 # --- upstream cannot be read ----------------------------------------------------
 upstream rhysd_actionlint v1.7.12 50
@@ -156,6 +157,24 @@ tree v0.11.0 v0.11.0 v1.9.0
 run
 check "a pin newer than every upstream release fails" "1" "$rc"
 check "and says the pin is not an upstream release" "1" "$(said "$out" 'newer than every release of rhysd/actionlint')"
+
+# --- a caller that overrides the pin ---------------------------------------------
+# The version that runs is the caller's, so comparing the default would compare
+# the wrong pin.
+tree v0.11.0 v0.11.0 v1.7.12
+upstream rhysd_actionlint v1.7.12 50
+for input in shellcheck-version shellcheck-sha256; do
+	printf 'on: push\njobs:\n  lint:\n    uses: ./.github/workflows/reusable-workflow-lint.yml\n    with:\n      %s: x\n' \
+		"$input" > "$WORK/t/.github/workflows/caller.yml"
+	run
+	check "a caller that passes $input fails" "1" "$rc"
+	check "and is named with the input" "1" "$(said "$out" "job \`lint\` in caller.yml passes $input")"
+done
+printf 'on: push\njobs:\n  shell:\n    uses: ./.github/workflows/reusable-shell-ci.yml\n    with:\n      test-command: ./tests/a.test.sh\n' \
+	> "$WORK/t/.github/workflows/caller.yml"
+run
+check "a caller that passes other inputs only passes" "0" "$rc"
+rm "$WORK/t/.github/workflows/caller.yml"
 
 # --- the real reusables --------------------------------------------------------
 # The pins of this repository, read the way the job reads them, against an

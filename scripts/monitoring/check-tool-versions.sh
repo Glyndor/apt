@@ -33,7 +33,8 @@
 #
 # THE LAG
 #
-# MAX_LAG_DAYS, 30 by default. A new linter release is not free to adopt: it
+# Thirty days, written in this script and read from nowhere else, so a workflow
+# cannot widen it from its environment. A new linter release is not free to adopt: it
 # can report findings the old one did not, the version and its sha256 move
 # together in the reusables of three channel repositories, and the reusable
 # drift check holds those copies to each other, so the bump is three pull
@@ -51,13 +52,18 @@
 #                    pin newer than every upstream release; failure, never a
 #                    skip, because a watcher that drops what it cannot read
 #                    reports success over a smaller set than it claims
+#   overridden       a caller that passes the version input of the linter, or
+#                    its sha256 input, to either reusable runs a version this
+#                    does not read; failure, because the pin compared would not
+#                    be the pin that runs
 #
 # Usage: check-tool-versions.sh [repo-root]   (default: the repo this lives in)
-# Environment: MAX_LAG_DAYS; CHECK_TOOL_VERSIONS_NOW (epoch seconds, for tests).
+# Environment: CHECK_TOOL_VERSIONS_NOW (epoch seconds), so the tests can fix the clock.
 set -euo pipefail
 root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 python3 -I - "$root" <<'PY'
 import datetime
+import glob
 import json
 import os
 import re
@@ -109,7 +115,28 @@ def pins():
     for tool, _, pinned in found:
         if version(pinned) is None:
             problems.append(f"{tool}: the pinned version {pinned!r} is not vMAJOR.MINOR.PATCH")
+    overrides(("reusable-shell-ci.yml", "reusable-workflow-lint.yml"),
+              ("shellcheck-version", "shellcheck-sha256"))
     return [entry for entry in found if version(entry[2]) is not None]
+
+
+def overrides(reusables, inputs):
+    """A caller that passes a pinned input runs a version the defaults do not say."""
+    for path in sorted(glob.glob(os.path.join(ROOT, ".github/workflows/*.y*ml"))):
+        try:
+            with open(path) as fh:
+                spec = yaml.safe_load(fh) or {}
+        except (OSError, yaml.YAMLError) as exc:
+            problems.append(f"cannot read {os.path.basename(path)} to look for callers: {exc}")
+            continue
+        for job_id, job in ((spec.get("jobs") or {}) if isinstance(spec, dict) else {}).items():
+            if not isinstance(job, dict) or not any(r in str(job.get("uses", "")) for r in reusables):
+                continue
+            given = sorted(set(inputs) & set((job.get("with") or {}).keys()))
+            if given:
+                problems.append(f"job `{job_id}` in {os.path.basename(path)} passes {', '.join(given)} "
+                                "to the reusable, so the version that runs is not the pin this compares; "
+                                "move the pin in the reusable's default instead")
 
 
 def releases(upstream):
@@ -141,7 +168,8 @@ def releases(upstream):
     return found
 
 
-lag_days = int(os.environ.get("MAX_LAG_DAYS", "30"))
+LAG_DAYS = 30
+lag_days = LAG_DAYS
 now_epoch = os.environ.get("CHECK_TOOL_VERSIONS_NOW")
 now = (datetime.datetime.fromtimestamp(int(now_epoch), datetime.timezone.utc)
        if now_epoch else datetime.datetime.now(datetime.timezone.utc))

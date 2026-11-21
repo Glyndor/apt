@@ -561,12 +561,12 @@ tests/quality/check-test-job-not-switchable.test.sh
 tests/quality/check-tooling-isolation.test.sh
 	scripts/quality/check-tooling-isolation.sh
 
-# The tool-version watcher reads the pins from the two reusables that carry them.
+# The tool-version watcher reads the pins from the two reusables that carry
+# them, and every workflow for a caller that would override them.
 
 tests/monitoring/check-tool-versions.test.sh
 	scripts/monitoring/check-tool-versions.sh
-	.github/workflows/reusable-shell-ci.yml
-	.github/workflows/reusable-workflow-lint.yml
+	.github/workflows/**
 
 # The suites that check the wiring itself. ci-runs-every-test walks tests/
 # and every workflow, so a new test file or a new workflow is an input of its
