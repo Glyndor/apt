@@ -67,6 +67,61 @@ jobs:
           persist-credentials: false
           fetch-depth: 2
 
+      # The scripts that hold the rules of this job, and the list of exempt
+      # suites, are read from the base commit of a pull request: the commit
+      # the event names in github.event.pull_request.base.sha, fetched if the
+      # checkout lacks it, and not HEAD^1 of a checkout the pull request could
+      # point elsewhere. So the CONTENT of each rule is the base's, and a pull
+      # request that weakens a rule is judged by the rule as it was; its own
+      # suite tests the new form, which judges from the next pull request on.
+      # What this cannot hold is the workflow that runs the rules: this file
+      # comes from the pull request, and a change to it is for the owner's
+      # review of .github/workflows/, which CODEOWNERS routes to the owner, to
+      # catch, not this step.
+      #
+      # A base commit that cannot be fetched or read fails the job. A base that
+      # can be read but does not carry a script (the pull request that adopts
+      # it) uses the checkout's copy and says so, and another event uses the
+      # checkout's copies.
+      - name: Take the rule scripts from the base commit
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/lint-rules"
+          mkdir -p "$dir"
+          from_base=false
+          if [ "$EVENT" = pull_request ]; then
+            if ! [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::The pull request event names no base commit, so the rules cannot be read from it." >&2
+              exit 1
+            fi
+            if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+            fi
+            if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+              echo "::error::Could not fetch the base commit ${BASE_SHA}, so the rules cannot be read from it." >&2
+              exit 1
+            fi
+            from_base=true
+          fi
+          for file in check-suites-wired.sh check-test-job-not-switchable.sh check-tooling-isolation.sh; do
+            if [ "$from_base" = true ] && git cat-file -e "${BASE_SHA}:scripts/quality/${file}" 2>/dev/null; then
+              git show "${BASE_SHA}:scripts/quality/${file}" > "$dir/$file"
+              echo "$file read from the base commit ${BASE_SHA}."
+            else
+              if [ "$from_base" = true ]; then
+                echo "$file is not in the base commit ${BASE_SHA}; the checkout's copy runs."
+              fi
+              cp "scripts/quality/${file}" "$dir/$file"
+            fi
+          done
+          if [ "$from_base" = true ] \
+            && git cat-file -e "${BASE_SHA}:scripts/quality/suite-exemptions.txt" 2>/dev/null; then
+            git show "${BASE_SHA}:scripts/quality/suite-exemptions.txt" > "$dir/suite-exemptions.base"
+          fi
+
       # Every suite under tests/ must be run by a workflow on a pull request.
       #
       # tests/ci/suites/ci-runs-every-test.test.sh asserts this from inside
@@ -80,34 +135,19 @@ jobs:
       # does not count as a workflow-lint input, and it reads two directories
       # and costs about a second.
       #
-      # The checker is taken from the base commit on a pull request, as the
-      # scope helper below is, so a pull request cannot weaken the checker
-      # that judges it. A base without it (first adoption) or another event
-      # uses the checkout's copy, and a checkout without it fails. The list
-      # of exempt suites is a file of the repository and is read from the
-      # base commit too, so the pull request cannot exempt what it unwires;
-      # the checker counts an exemption only when both copies carry it.
+      # The checker is the copy taken above. The list of exempt suites is a
+      # file of the repository, and on a pull request the base commit's copy
+      # is handed to the checker too, so the pull request cannot exempt what
+      # it unwires: the checker counts an exemption only when both copies
+      # carry it.
       - name: Every suite is run by a workflow
-        env:
-          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          checker=scripts/quality/check-suites-wired.sh
-          exemptions=scripts/quality/suite-exemptions.txt
-          script="$(mktemp "$RUNNER_TEMP/suites-wired.XXXXXX")"
-          trap 'rm -f "$script" "$script.exempt"' EXIT
-          if [ "$EVENT" = pull_request ] \
-            && git show "HEAD^1:$checker" > "$script" 2>/dev/null; then
-            echo "Checker read from the base commit."
-          else
-            cp "$checker" "$script"
-          fi
           base_exemptions=""
-          if [ "$EVENT" = pull_request ] \
-            && git show "HEAD^1:$exemptions" > "$script.exempt" 2>/dev/null; then
-            base_exemptions="$script.exempt"
+          if [ -f "$RUNNER_TEMP/lint-rules/suite-exemptions.base" ]; then
+            base_exemptions="$RUNNER_TEMP/lint-rules/suite-exemptions.base"
           fi
-          SUITE_EXEMPTIONS_BASE="$base_exemptions" bash "$script" "$PWD"
+          SUITE_EXEMPTIONS_BASE="$base_exemptions" bash "$RUNNER_TEMP/lint-rules/check-suites-wired.sh" "$PWD"
 
       # Keep the required check present. Read the classifier from the PR base,
       # so a changed helper cannot skip its own validation. First adoption (no
@@ -182,38 +222,13 @@ jobs:
           SHELLCHECK_BIN: ${{ env.SHELLCHECK_BIN }}
         run: actionlint -color "-shellcheck=${SHELLCHECK_BIN}"
 
-      # The two rules below are scripts, and on a pull request the copy that
-      # runs is the one in the base commit, as check-suites-wired.sh above is,
-      # so a pull request cannot rewrite the rule that judges it. The cost is
-      # deliberate: a pull request that changes a rule is judged by the rule as
-      # it was, its own suite tests the new form, and the new form judges from
-      # the next pull request on. A base without the script (first adoption)
-      # or another event uses the checkout's copy, and a checkout without it
-      # fails. The rules read nothing else from the repository but the
-      # workflows they judge, which come from the checkout.
-      - name: Take the rule scripts from the base commit
-        if: steps.scope.outputs.needed != 'false'
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          dir="$RUNNER_TEMP/lint-rules"
-          mkdir -p "$dir"
-          for rule in check-test-job-not-switchable.sh check-tooling-isolation.sh; do
-            if [ "$EVENT" = pull_request ] \
-              && git show "HEAD^1:scripts/quality/$rule" > "$dir/$rule" 2>/dev/null; then
-              echo "$rule read from the base commit."
-            else
-              cp "scripts/quality/$rule" "$dir/$rule"
-            fi
-          done
-
       # A required test job must not be switchable off: every caller of
       # reusable-shell-ci.yml passes a test-command that runs a suite, carries
       # no job-level `if:` or `needs:`, and at least one caller exists. The
-      # rule and its reasons are in the script, taken as above. It runs here
-      # rather than in the shell job because that is the job an `if:` would
-      # skip, and a check inside it would share the fate of what it checks.
+      # rule and its reasons are in the script, taken from the base commit
+      # above. It runs here rather than in the shell job because that is the
+      # job an `if:` would skip, and a check inside it would share the fate of
+      # what it checks.
       - name: A required test job must not be switchable off
         if: steps.scope.outputs.needed != 'false'
         run: bash "$RUNNER_TEMP/lint-rules/check-test-job-not-switchable.sh"

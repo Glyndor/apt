@@ -254,33 +254,33 @@ check "every suite of this repository is run by a workflow" "0" "$rc"
 # and replaces the checker with one that passes everything: the base copy has
 # to be the one that decides.
 
+# The step that takes the scripts from the base commit runs first, and the
+# check runs the copy it took, so both are cut out and run in that order.
 python3 -I - "$HERE/.github/workflows/reusable-workflow-lint.yml" > "$WORK/step.sh" <<'PY'
-import sys
-lines = open(sys.argv[1]).read().splitlines()
-start = next(i for i, l in enumerate(lines) if "name: Every suite is run by a workflow" in l)
-run = next(i for i, l in enumerate(lines) if i > start and l.strip() == "run: |")
-body = []
-for line in lines[run + 1:]:
-    if line.strip() and not line.startswith(" " * 10):
-        break
-    body.append(line[10:])
-print("\n".join(body))
+import sys, yaml
+steps = yaml.safe_load(open(sys.argv[1]))["jobs"]["workflow-lint"]["steps"]
+for name in ("Take the rule scripts from the base commit", "Every suite is run by a workflow"):
+    print(next(s for s in steps if s.get("name") == name)["run"])
 PY
-check "the step was extracted from the workflow" "1" "$(grep -c 'check-suites-wired.sh' "$WORK/step.sh")"
+check "the steps were extracted from the workflow" "1" "$(grep -c 'lint-rules/check-suites-wired.sh' "$WORK/step.sh")"
 
-# What the extracted body cannot show: the step runs on every event, whatever
-# the scope decision, it is handed the event, and no input of the caller, which
-# the pull request controls, reaches the checker.
+# What the extracted bodies cannot show: both steps run on every event, whatever
+# the scope decision; the first is handed the event and the base commit the
+# event names, and no input of the caller, which the pull request controls,
+# reaches either of them.
 wiring="$(python3 -I - "$HERE/.github/workflows/reusable-workflow-lint.yml" <<'PY'
 import sys, yaml
 spec = yaml.safe_load(open(sys.argv[1]))
-step = next(s for s in spec["jobs"]["workflow-lint"]["steps"]
-            if s.get("name") == "Every suite is run by a workflow")
-print("if" in step, sorted(step.get("env", {}).items()), "inputs." in step["run"])
+steps = spec["jobs"]["workflow-lint"]["steps"]
+take = next(s for s in steps if s.get("name") == "Take the rule scripts from the base commit")
+step = next(s for s in steps if s.get("name") == "Every suite is run by a workflow")
+print("if" in take, sorted(take.get("env", {}).items()), "inputs." in take["run"],
+      "if" in step, sorted(step.get("env", {}).items()), "inputs." in step["run"],
+      steps.index(take) < steps.index(step))
 PY
 )"
-check "the step has no condition, gets the event and reads no caller input" \
-	"False [('EVENT', '\${{ github.event_name }}')] False" "$wiring"
+check "the steps have no condition, read the event and its base commit, and no caller input" \
+	"False [('BASE_SHA', '\${{ github.event.pull_request.base.sha }}'), ('EVENT', '\${{ github.event_name }}')] False False [] False True" "$wiring"
 
 repo="$(tree repo "$SUITES")"
 git() { command git -C "$repo" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "$@"; }
@@ -294,9 +294,18 @@ merge_pr() { # <base> <tests.yml command> <checker body or empty to delete> [exe
 	git add -A; git commit -qm pr; git checkout -q main
 	git merge -q --no-ff pr -m merge
 }
-run_step() { out="$(cd "$repo" && EVENT="$1" RUNNER_TEMP="$WORK" bash "$WORK/step.sh" 2>&1)"; rc=$?; }
+# The base the event names is the merge commit's first parent unless a case
+# says otherwise, which is what a pull request is checked out as.
+run_step() { # <event> [base sha]
+	rm -rf "$WORK/rt"; mkdir -p "$WORK/rt"
+	out="$(cd "$repo" && EVENT="$1" BASE_SHA="${2-$(git rev-parse HEAD^1)}" RUNNER_TEMP="$WORK/rt" \
+		bash -e -o pipefail "$WORK/step.sh" 2>&1)"; rc=$?
+}
 git init -q -b main
 mkdir -p "$repo/scripts/quality"; cp "$GATE" "$repo/scripts/quality/"
+# The other two scripts the first step takes; this suite exercises only the checker.
+printf '#!/usr/bin/env bash\n' > "$repo/scripts/quality/check-test-job-not-switchable.sh"
+printf '#!/usr/bin/env bash\n' > "$repo/scripts/quality/check-tooling-isolation.sh"
 printf '# nothing exempt\n' > "$repo/scripts/quality/suite-exemptions.txt"
 git add -A; git commit -qm base; base="$(git rev-parse HEAD)"
 
@@ -322,6 +331,23 @@ check "a base without the checker uses the pull request's copy" "1" "$(said 'tes
 merge_pr "$base" "$SUITES" ""
 run_step push
 check "a checkout without the checker fails" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+
+# A pull request of two commits, checked out at its own head rather than at the
+# merge: HEAD^1 is then the pull request's first commit, which disarms the
+# checker. The base the event names is what decides, not HEAD^1.
+git checkout -q -B pr "$base"
+printf 'exit 0\n' > "$repo/scripts/quality/check-suites-wired.sh"
+git add -A; git commit -qm 'disarm the checker'
+sed -i "s#^      test-command: .*#      test-command: \"./tests/a.test.sh ./$WATCHER\"#" "$repo/.github/workflows/tests.yml"
+git add -A; git commit -qm 'drop a suite'
+run_step pull_request "$base"
+check "a pull request whose HEAD^1 is its own commit is judged by the base the event names" "1" "$rc"
+check "and the base's checker names the suite" "1" "$(said 'tests/area/b.test.sh is not run')"
+run_step pull_request "$(printf '%040d' 0)"
+check "a base commit that cannot be read fails the step" "1" "$rc"
+check "and says it could not fetch it" "1" "$(said 'Could not fetch the base commit')"
+run_step pull_request ""
+check "a pull request event with no base commit fails the step" "1" "$rc"
 
 echo
 echo "$pass passed, $fail failed"

@@ -44,10 +44,12 @@
 # python3 runs isolated (-I): the pull request controls the working
 # directory, and a module planted there must not be what gets imported.
 #
-# On a pull request the workflow runs the copy of this script taken from the
-# base commit, from a temporary file outside the checkout, so a pull request
-# cannot rewrite the rule that judges it. That is why the default root is the
-# working directory and not this file's location.
+# On a pull request reusable-workflow-lint.yml runs the copy of this script in
+# the base commit the event names, from a temporary file outside the checkout,
+# so the rule that judges a pull request is the base's. The workflow that runs
+# it comes from the pull request, and a change there is for the owner's review
+# of .github/workflows/ to catch. That is why the default root is the working
+# directory and not this file's location.
 #
 # Usage: check-test-job-not-switchable.sh [repo-root]   (default: the current directory)
 set -euo pipefail

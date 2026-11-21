@@ -72,6 +72,8 @@ base_repo() { # $1=with|without the rule scripts in the base
 	rm -rf "$WORK/t"
 	mkdir -p "$WORK/t/.github/workflows" "$WORK/t/scripts/quality"
 	gitt init -q -b main
+	# The picker also takes the checker of the suites; it is not under test here.
+	cp "$HERE/scripts/quality/check-suites-wired.sh" "$WORK/t/scripts/quality/"
 	if [ "$1" = with ]; then
 		for x in "${RULES[@]}"; do cp "$HERE/scripts/quality/$x" "$WORK/t/scripts/quality/"; done
 	fi
@@ -126,10 +128,12 @@ hollow() { # $1=rule: the pull request replaces the rule with one that passes
 }
 
 PICK="$(field "Take the rule scripts from the base commit" run)"
-pick() { # $1=event -> output, status in rc
+pick() { # $1=event [$2=base sha the event names, default the merge's first parent]
 	rm -rf "$WORK/rt"
 	mkdir -p "$WORK/rt"
-	out="$(cd "$WORK/t" && EVENT="$1" RUNNER_TEMP="$WORK/rt" bash -e -o pipefail -c "$PICK" 2>&1)"
+	local base
+	base="${2-$(gitt rev-parse HEAD^1)}"
+	out="$(cd "$WORK/t" && EVENT="$1" BASE_SHA="$base" RUNNER_TEMP="$WORK/rt" bash -e -o pipefail -c "$PICK" 2>&1)"
 	rc=$?
 }
 rule() { # $1=run line -> output, status in rc
@@ -137,8 +141,8 @@ rule() { # $1=run line -> output, status in rc
 	rc=$?
 }
 
-check "the rule scripts are taken whenever the scope says workflow-lint is needed" \
-	"steps.scope.outputs.needed != 'false'" "$(field "Take the rule scripts from the base commit" if)"
+check "the rule scripts are taken on every event, before anything uses them" \
+	"" "$(field "Take the rule scripts from the base commit" if)"
 
 declare -A STEP=(
 	[check-test-job-not-switchable.sh]="A required test job must not be switchable off"
@@ -189,6 +193,41 @@ done
 base_repo without; merge_pr
 pick pull_request
 check "a rule in neither the base nor the checkout fails the picker" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+
+# The base is the commit the event names, not HEAD^1 of the checkout. A pull
+# request of two commits checked out at its own head has its first commit as
+# HEAD^1, and that commit hollows the tooling rule out.
+base_repo with; base="$(gitt rev-parse HEAD)"
+hollow check-tooling-isolation.sh; gitt add -A; gitt commit -qm 'hollow the rule'
+violate check-tooling-isolation.sh; gitt add -A; gitt commit -qm 'break it'
+TOOLING_RUN="$(field "${STEP[check-tooling-isolation.sh]}" run)"
+pick pull_request "$base"
+check "with HEAD^1 inside the pull request, the picker reads the base the event names" "1" \
+	"$(said "$out" "check-tooling-isolation.sh read from the base commit $base")"
+rule "$TOOLING_RUN"
+check "and that base's rule refuses the violation" "1" "$rc"
+pick pull_request "$(gitt rev-parse HEAD^1)"
+rule "$TOOLING_RUN"
+check "control: had HEAD^1 been taken as the base, the hollowed rule would pass" "0" "$rc"
+
+# A base the checkout lacks is fetched from origin; one that cannot be fetched,
+# or no base at all on a pull request, fails rather than falling back.
+base_repo with; base="$(gitt rev-parse HEAD)"; merge_pr
+git clone -q --bare "$WORK/t" "$WORK/origin.git"
+git -C "$WORK/origin.git" config uploadpack.allowAnySHA1InWant true
+rm -rf "$WORK/t2"; git clone -q --depth 1 --branch main "file://$WORK/origin.git" "$WORK/t2"
+check "the shallow checkout lacks the base commit" "1" \
+	"$(git -C "$WORK/t2" cat-file -e "$base^{commit}" 2>/dev/null && echo 0 || echo 1)"
+mv "$WORK/t" "$WORK/t.full"; mv "$WORK/t2" "$WORK/t"
+pick pull_request "$base"
+check "a base the checkout lacks is fetched and read" "1" \
+	"$(said "$out" "check-tooling-isolation.sh read from the base commit $base")"
+pick pull_request "$(printf '%040d' 7)"
+check "a base that cannot be fetched fails the picker" "1" "$rc"
+check "and says so rather than using the checkout" "1" "$(said "$out" 'Could not fetch the base commit')"
+pick pull_request ""
+check "a pull request event that names no base fails the picker" "1" "$rc"
+rm -rf "$WORK/t" "$WORK/origin.git"; mv "$WORK/t.full" "$WORK/t"
 check "and tooling-isolation is on unless a caller turns it off" "True" "$(default_of tooling-isolation)"
 
 # ===========================================================================
