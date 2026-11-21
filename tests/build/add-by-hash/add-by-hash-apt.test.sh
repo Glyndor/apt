@@ -1,23 +1,30 @@
 #!/usr/bin/env bash
 #
 # What the by-hash copies are for, shown with a real apt client. A publish
-# replaces the index files under their fixed names before it replaces InRelease,
-# so for a moment the archive serves the InRelease of one build and the Packages
-# of the next. A client that asks for Packages by name in that moment gets bytes
-# its InRelease does not declare, and `apt update` fails with a hash mismatch.
-# With `Acquire-By-Hash: yes` in the signed index, apt asks for
-# by-hash/SHA256/<the hash it read>, which still holds the bytes it expects.
+# uploads the by-hash copies of the new index files first, then the signed index
+# (InRelease, Release and Release.gpg), and only then the index files under
+# their fixed names (scripts/publish/sync-archive.sh, passes 2 to 4). So for a
+# moment the archive serves the InRelease of the new build beside the Packages
+# of the previous one. A client that asks for Packages by name in that moment
+# gets bytes its InRelease does not declare, and `apt update` fails with a hash
+# mismatch. With `Acquire-By-Hash: yes` in the signed index, apt asks for
+# by-hash/SHA256/<the hash it read>, which already holds the bytes it expects.
+# The opposite state, an older InRelease beside newer files, is the order a
+# publish used before and what a cache in front of the archive can still serve,
+# and it is kept.
 #
 # The archive is served from a local HTTP server that records every path asked
 # for, and apt runs with its own configuration, lists and cache, as the current
 # user, reading nothing of the host's. Three cases:
 #
-#   * the midway archive, signed by scripts/build/add-by-hash.sh: apt updates,
-#     asks only for by-hash names, and offers the version its InRelease declares;
-#   * the same midway archive with an index signed without the field, which is
-#     the archive before this change: apt fails with the mismatch, so the first
-#     case passes because of the copies and not because the moment was missed;
-#   * the archive once the new InRelease has landed: apt offers the new version.
+#   * the archive in the moment the current order produces (new index, old
+#     fixed-name files), and in the opposite one (old index, new files), the
+#     index signed by scripts/build/add-by-hash.sh: apt updates, asks only for
+#     by-hash names, and offers the version its InRelease declares;
+#   * the same moments with an index signed without the field, which is the
+#     archive before this change: apt fails with the mismatch, so the cases
+#     above pass because of the copies and not because the moment was missed;
+#   * the archive once both have landed: apt offers the new version.
 #
 # Requires: apt-get, apt-cache, gpg, gpgv, gzip, curl, python3.
 set -u
@@ -62,19 +69,36 @@ gpg --batch --export "$FPR" > "$WORK/archive-key.gpg" 2>/dev/null
 mkdist "$WORK/old" 1.0
 mkdist "$WORK/new" 2.0
 mkdist "$WORK/plain" 1.0
+mkdist "$WORK/newplain" 2.0
 cp "$WORK/old/dists/stable/Release" "$WORK/plain/dists/stable/Release"
+cp "$WORK/new/dists/stable/Release" "$WORK/newplain/dists/stable/Release"
 for build in old new; do
 	bash "$SCRIPT" "$WORK/$build/dists/stable" "$FPR" "$WORK/archive-key.asc" >/dev/null \
 		|| { echo "FAIL  the $build build could not be offered by hash"; exit 1; }
 done
-gpg --batch --yes --local-user "$FPR" --clearsign --output "$WORK/plain/dists/stable/InRelease" "$WORK/plain/dists/stable/Release"
-check "the build without the field really has none" "0" "$(grep -c '^Acquire-By-Hash:' "$WORK/plain/dists/stable/InRelease")"
+for build in plain newplain; do
+	gpg --batch --yes --local-user "$FPR" --clearsign --output "$WORK/$build/dists/stable/InRelease" "$WORK/$build/dists/stable/Release"
+	check "the $build build really has no field" "0" "$(grep -c '^Acquire-By-Hash:' "$WORK/$build/dists/stable/InRelease")"
+done
 
-# The moment inside a publish: the new index files and their copies are in
-# place, the InRelease (and the Release beside it) is still the old one.
+# A moment inside a publish under the order the sync used before: the new index
+# files and their copies are in place, the InRelease (and the Release beside
+# it) is still the old one.
 midway() { # $1=destination $2=the build whose InRelease is served
 	local arch copies
 	rm -rf "$1"; cp -a "$WORK/new" "$1"
+	for arch in amd64 arm64; do
+		copies="$WORK/$2/dists/stable/main/binary-$arch/by-hash/SHA256"
+		[ -d "$copies" ] && cp -a "$copies/." "$1/dists/stable/main/binary-$arch/by-hash/SHA256/"
+	done
+	cp "$WORK/$2/dists/stable/InRelease" "$WORK/$2/dists/stable/Release" "$1/dists/stable/"
+}
+# The moment inside a publish under the order the sync has now: the copies of
+# the new build and its signed index are in place, and the index files under
+# their fixed names are still the previous build's.
+ahead() { # $1=destination $2=the build whose InRelease is served
+	local arch copies
+	rm -rf "$1"; cp -a "$WORK/old" "$1"
 	for arch in amd64 arm64; do
 		copies="$WORK/$2/dists/stable/main/binary-$arch/by-hash/SHA256"
 		[ -d "$copies" ] && cp -a "$copies/." "$1/dists/stable/main/binary-$arch/by-hash/SHA256/"
@@ -154,6 +178,21 @@ rc=0; apt_update plain || rc=$?
 check "the same midway archive without the field fails apt update" "100" "$rc"
 check "on the index whose bytes are not the declared ones" "1" \
 	"$(grep -cE 'Hash Sum mismatch|unexpected size|Mirror sync in progress' "$WORK/apt-plain.log" | awk '{ print ($1 > 0) }')"
+check "having asked for it by its fixed name" "1" "$([ "$(grep -cE '/binary-amd64/Packages(\.gz)?$' "$WORK/requests")" -ge 1 ] && echo 1 || echo 0)"
+
+# --- the moment the current order of the sync produces ------------------------------
+ahead "$SITE" new
+rc=0; apt_update ahead-by-hash || rc=$?
+check "apt updates when the new index is served beside the old fixed-name files" "0" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/        /' "$WORK/apt-ahead-by-hash.log"
+check "and offers the version the new InRelease declares" "2.0" "$(candidate ahead-by-hash)"
+check "it asked for the index by its hash" "1" "$([ "$(asked '/by-hash/SHA256/')" -ge 1 ] && echo 1 || echo 0)"
+check "and never by its fixed name" "0" "$(grep -cE '/binary-amd64/Packages(\.gz)?$' "$WORK/requests")"
+ahead "$SITE" newplain
+rc=0; apt_update ahead-plain || rc=$?
+check "the same moment with the new index signed without the field fails apt update" "100" "$rc"
+check "on the index whose bytes are not the declared ones" "1" \
+	"$(grep -cE 'Hash Sum mismatch|unexpected size|Mirror sync in progress' "$WORK/apt-ahead-plain.log" | awk '{ print ($1 > 0) }')"
 check "having asked for it by its fixed name" "1" "$([ "$(grep -cE '/binary-amd64/Packages(\.gz)?$' "$WORK/requests")" -ge 1 ] && echo 1 || echo 0)"
 
 # --- once the new InRelease has landed ---------------------------------------------
