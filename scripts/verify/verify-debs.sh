@@ -149,6 +149,21 @@ if [ "${#PQ_REQUIRED[@]}" -ge 1 ] && [ -z "$EXPECTED_PACKAGE" ]; then
 	exit 1
 fi
 
+# The state of the second signature, said once per run: how many public keys
+# are configured and which products require it. A product entering the required
+# list is the step that makes the signature a protection, and without this line
+# nothing in the log of a publish says whether that has happened. The keys are
+# counted, never printed.
+required_list="none"
+[ "${#PQ_REQUIRED[@]}" -eq 0 ] || required_list="${PQ_REQUIRED[*]}"
+this_required=no
+for name in "${PQ_REQUIRED[@]}"; do
+	if [ "$name" = "$EXPECTED_PACKAGE" ]; then
+		this_required=yes
+	fi
+done
+echo "ML-DSA-65 second signature: ${#MLDSA_KEYS[@]} public key(s) configured in $(basename "$MLDSA_KEY_FILE"); required for ${EXPECTED_PACKAGE:-these packages}: $this_required (required products: $required_list)"
+
 # Check the ML-DSA-65 key file, or one signature against it. Exit 0 verified, 1
 # the downloaded signature is bad, 2 our own key file is malformed, 3 the
 # installed cryptography cannot verify ML-DSA. The library is imported only
