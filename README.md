@@ -103,13 +103,27 @@ a post-quantum signature.
 Rebuilt from scratch every run, so the failure mode is *an archive that does not update*, never *one that serves something
 unverified*.
 
-**An update during a publish does not fail.** The signed index says
-`Acquire-By-Hash: yes`, so apt asks for each index file under the SHA-256 the
-index declares for it (`dists/stable/main/binary-amd64/by-hash/SHA256/<hash>`)
-rather than under its fixed name. A publish uploads those copies before the new
-index, and keeps the old ones, so an `apt update` that read the index of one
-publish while the next one lands still gets the bytes it was told to expect,
-instead of `Hash Sum mismatch`.
+**An update during a publish does not fail, from the second publish that offers
+the index by hash.** The signed index says `Acquire-By-Hash: yes`, so apt asks
+for each index file under the SHA-256 the index declares for it
+(`dists/stable/main/binary-amd64/by-hash/SHA256/<hash>`) rather than under its
+fixed name. A publish uploads those copies before the new index, and keeps the
+old ones, so an `apt update` that read the index of one publish while the next
+one lands still gets the bytes it was told to expect, instead of
+`Hash Sum mismatch`.
+
+The first publish with the field replaces an index without it, whose clients
+ask by the fixed name. The new index lands before the files under fixed names
+change, so only a client that read the old index just before and asks for
+`Packages` just after can still see the mismatch: the same window every publish
+had before. `apt update` succeeds again on the next try.
+
+A publish cut short does not leave a client that asks by hash without its
+files: cut before the new index lands, the previous one is still served with
+everything it declares; cut after, the new one is served with all its copies,
+and some files under fixed names may still be the previous ones. That case
+fails the publish, whose last step reads the archive back by those names, and
+the health check every six hours, until a publish completes.
 
 ## Verify the signing key
 
