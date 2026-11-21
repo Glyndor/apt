@@ -227,6 +227,11 @@ tests/verify/verify-debs-control-fields.test.sh
 	scripts/verify/**
 	tests/verify/**
 
+tests/verify/verify-debs-same-bytes.test.sh
+	scripts/verify/**
+	tests/verify/**
+	keyring/**
+
 # The same check with the ML-DSA-65 library, which only the `ML-DSA-65 verifier`
 # job of tests.yml runs, in a virtual environment built from
 # scripts/verify/verify-debs-requirements.txt. It has an entry so that job can

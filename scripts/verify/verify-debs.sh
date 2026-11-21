@@ -57,6 +57,13 @@
 # check off by handing over an empty value, and no check of its own has to stay
 # in place for the binding to hold.
 #
+# Everything this script decides about a package is read from the bytes the
+# release key verified, never from the file again. The Ed25519 check keeps the
+# exact buffer it verified in a private directory of this run, the second signature
+# is checked against that copy, and the Package, Version and Architecture fields are
+# read from it. A file that changes between those reads, or is not the one that was
+# verified once they are done, is refused.
+#
 # When expected_package is given, every .deb in debs-dir must also declare it
 # as the control Package field AND carry it as the filename prefix
 # ("<expected_package>_..."). The release key is shared by every Glyndor
@@ -282,6 +289,11 @@ if [ "${#MLDSA_KEYS[@]}" -ge 1 ] && ! mldsa check-keys "${MLDSA_KEYS[@]}"; then
 	exit 1
 fi
 
+# A directory only this run can enter, for the copy of each package that was verified.
+WORK="$(mktemp -d)" || { echo "::error::cannot create a private directory to hold the verified packages" >&2; exit 1; }
+trap 'rm -rf "$WORK"' EXIT
+verified="$WORK/package.deb"
+
 shopt -s nullglob
 debs=("$DEBS_DIR"/*.deb)
 [ "${#debs[@]}" -ge 1 ] || { echo "::error::no .deb files to verify in $DEBS_DIR" >&2; exit 1; }
@@ -316,15 +328,17 @@ for deb in "${debs[@]}"; do
 	# two previously reported "release may be tampered" even when the real
 	# cause was our own key file, which sent whoever was debugging it looking
 	# for an attack that wasn't there.
+	rm -f "$verified"
 	python_rc=0
-	python3 - "$sig" "$deb" "${KEYS[@]}" <<'PYEOF' || python_rc=$?
+	python3 - "$sig" "$deb" "$verified" "${KEYS[@]}" <<'PYEOF' || python_rc=$?
 import base64
+import os
 import sys
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-sig_path, data_path, keys_b64 = sys.argv[1], sys.argv[2], sys.argv[3:]
+sig_path, data_path, copy_path, keys_b64 = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
 
 
 def load(b64):
@@ -373,13 +387,24 @@ if len(sig) != 64:
 with open(data_path, "rb") as f:
 	data = f.read()
 
-# Admit the package if any trusted key verifies it (rotation overlap).
+# Admit the package if any trusted key verifies it (rotation overlap). What is
+# kept for the rest of the run is this buffer, the bytes the key vouched for: the
+# file is not read again, because whoever can change it between two reads would
+# otherwise get the fields of one package and the signature of another. Exit 4
+# means the copy could not be written, which says nothing about the signature.
 for key in keys:
 	try:
 		key.verify(sig, data)
-		sys.exit(0)
 	except InvalidSignature:
 		continue
+	try:
+		fd = os.open(copy_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+		with os.fdopen(fd, "wb") as copy:
+			copy.write(data)
+	except OSError as err:
+		sys.stderr.write(f"cannot keep the verified bytes: {err}\n")
+		sys.exit(4)
+	sys.exit(0)
 sys.exit(1)
 PYEOF
 	if [ "$python_rc" -ne 0 ]; then
@@ -387,6 +412,10 @@ PYEOF
 			# Our bug: the committed release public key file failed to load, so
 			# no key was even available to check the signature against.
 			echo "::error::local release trust file is malformed; could not load a release public key to verify $(basename "$deb") against" >&2
+		elif [ "$python_rc" -eq 4 ]; then
+			# Neither theirs nor ours: the signature may be fine, but the bytes it
+			# vouched for could not be kept, and nothing is read from the original.
+			echo "::error::could not keep a private copy of the verified bytes of $(basename "$deb"); refusing a package that cannot be read from what was verified" >&2
 		else
 			# Their bug: a key loaded fine, but $(basename "$deb")'s signature did
 			# not verify against any of them.
@@ -406,7 +435,7 @@ PYEOF
 			exit 1
 		fi
 		pq_rc=0
-		mldsa verify "$pq_sig" "$deb" "${MLDSA_KEYS[@]}" || pq_rc=$?
+		mldsa verify "$pq_sig" "$verified" "${MLDSA_KEYS[@]}" || pq_rc=$?
 		case "$pq_rc" in
 			0) ;;
 			2)
@@ -424,7 +453,8 @@ PYEOF
 		esac
 	fi
 
-	# Only now is the package opened. dpkg-deb parses the archive to read its
+	# Only now is the package opened, and it is the copy of the verified bytes that
+	# is opened, never the file again. dpkg-deb parses the archive to read its
 	# control fields, and every byte of it comes from whoever can attach a
 	# release asset: a parser bug reached by those bytes would run in the
 	# publish job, which later holds the archive signing key and the bucket
@@ -441,7 +471,7 @@ PYEOF
 	# keyring in the archive. The keyring is built locally, never downloaded.
 	# A control field dpkg-deb cannot read is a hard error: an unreadable
 	# package must not slip past the reserved-name gate unclassified.
-	if ! pkg="$(dpkg-deb -f "$deb" Package)"; then
+	if ! pkg="$(dpkg-deb -f "$verified" Package)"; then
 		echo "::error::cannot read the Package control field of $(basename "$deb"); refusing an unreadable package" >&2
 		exit 1
 	fi
@@ -482,7 +512,7 @@ PYEOF
 	# rejecting those would refuse a legitimate repackage. The tag's leading `v`
 	# is dropped for the same reason, in the other direction.
 	if [ -n "$EXPECTED_TAG" ]; then
-		if ! ver="$(dpkg-deb -f "$deb" Version)"; then
+		if ! ver="$(dpkg-deb -f "$verified" Version)"; then
 			echo "::error::cannot read the Version control field of $(basename "$deb"); refusing a package whose version cannot be bound to its release" >&2
 			exit 1
 		fi
@@ -512,7 +542,7 @@ PYEOF
 	# both, leaving arm64 users with no package. The control Architecture field
 	# is inside the signed payload, so I read it back to learn the architecture
 	# the build actually produced and trust that one instead.
-	if ! ctrl_arch="$(dpkg-deb -f "$deb" Architecture)"; then
+	if ! ctrl_arch="$(dpkg-deb -f "$verified" Architecture)"; then
 		echo "::error::cannot read the Architecture control field of $(basename "$deb"); refusing a package whose architecture cannot be bound to its name" >&2
 		exit 1
 	fi
@@ -538,6 +568,14 @@ PYEOF
 	done
 	if [ "$required" -eq 1 ] && [ ! -e "$pq_sig" ] && [ ! -L "$pq_sig" ]; then
 		echo "::error::no ML-DSA-65 signature ($pq_sig) for $(basename "$deb"); $pkg requires the hybrid release signature" >&2
+		exit 1
+	fi
+
+	# The caller goes on with the file in the directory, not with the copy. If it is
+	# no longer the bytes that were verified and read above, what was decided is
+	# about another package, so it is not admitted.
+	if ! cmp -s "$deb" "$verified"; then
+		echo "::error::$(basename "$deb") changed while it was being verified; refusing a file that is no longer the one the release key vouched for" >&2
 		exit 1
 	fi
 
