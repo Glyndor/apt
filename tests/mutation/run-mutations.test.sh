@@ -111,6 +111,15 @@ if [ "$rc" -ne 1 ] || [ "$out" != "refused" ]; then
 fi
 exit 0
 SH
+cat > "$TOY/tests/crash.test.sh" <<'SH'
+#!/usr/bin/env bash
+# A suite that dies instead of failing an assertion: it prints no FAIL line.
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+rc=0
+bash "$HERE/scripts/guard.sh" bad >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 1 ] || { echo "died with $rc" >&2; exit 3; }
+exit 0
+SH
 printf 'hello\n' > "$TOY/scripts/notes.txt"
 # A workflow and a suite that reads it, for the mutations that target YAML.
 mkdir -p "$TOY/.github/workflows"
@@ -135,6 +144,16 @@ entry dies 'if [ "${1:-}" = "bad" ]; then' 'if false; then'
 check "a mutation the suite notices passes the runner" "0" "$(run)"
 check "and the message names the test that noticed it" "1" "$(has 'killed by tests/guard.test.sh' "$WORK/out")"
 check "and the reason the suite went red, not only the colour" "1" "$(has 'the guard did not refuse' "$WORK/out")"
+
+check "and a kill that shows its FAIL line raises no warning" "0" "$(has 'without a FAIL line' "$WORK/out")"
+
+# A suite that dies instead of failing: it is still a kill, and the runner says it
+# showed no reason, at the entry and again at the end of the sweep.
+entry crashes 'if [ "${1:-}" = "bad" ]; then' 'if false; then' tests/crash.test.sh
+check "a suite that dies counts as a kill" "0" "$(run)"
+check "and the entry is flagged as one with no FAIL line" "1" "$(has 'went red without a FAIL line' "$WORK/out")"
+check "and the sweep counts it at the end" "1" "$(has '1 kill(s) with no FAIL line' "$WORK/out")"
+entry dies 'if [ "${1:-}" = "bad" ]; then' 'if false; then'
 
 # A mutation no test notices: the runner has to fail and name it.
 entry survives 'echo "ok"' 'echo "fine"'
