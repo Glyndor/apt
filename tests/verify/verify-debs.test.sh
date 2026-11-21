@@ -354,6 +354,36 @@ assert_error 1 "malformed release public key" \
 	"a key with a character outside the base64 alphabet is refused" \
 	-- "$VERIFY" "$d" "$WORK/key-stray.b64" podup v5.9.2
 
+# A rotation file pasted badly: a key that is valid base64 but not 32 bytes,
+# before the good one. Admit-if-any is a rule over keys, so a line that is not a
+# key refuses the whole file as our own configuration error, never skipped to
+# reach the next line, and never reported as a tampered release.
+#
+# The length is checked before the key reaches the library, which refuses it
+# too, with its own wording and its own exception type. The check is what keeps
+# the refusal in the malformed-trust-file branch whatever the library raises,
+# and the needle is its wording, so this case is what fails when it is removed.
+python3 - "$WORK/key.b64" "$WORK" <<'PYEOF'
+import base64
+import os
+import sys
+
+good = open(sys.argv[1]).read().strip()
+work = sys.argv[2]
+for size in (31, 33):
+	short = base64.b64encode(os.urandom(size)).decode()
+	with open(os.path.join(work, f"keys-rotation-{size}.b64"), "w") as f:
+		f.write(short + "\n" + good + "\n")
+PYEOF
+for size in 31 33; do
+	assert_error 1 "not a 32-byte Ed25519 key" \
+		"a $size-byte key before a good one refuses the trust file for its length" \
+		-- "$VERIFY" "$d" "$WORK/keys-rotation-$size.b64" podup v5.9.2
+	assert_error 1 "local release trust file is malformed" \
+		"and it is reported as our trust file, not as a tampered release" \
+		-- "$VERIFY" "$d" "$WORK/keys-rotation-$size.b64" podup v5.9.2
+done
+
 # --- Case 18: with no tag given the binding is skipped, which is why the ------
 #             workflow passes --require-tag.
 #

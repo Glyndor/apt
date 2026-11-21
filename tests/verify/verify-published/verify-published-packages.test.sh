@@ -41,9 +41,13 @@ rm "$SITE/$PODUP_POOL/podup_1.12.0_amd64.deb"
 assert_error 1 "podup_1.12.0_amd64.deb" \
 	"a package whose stanza lost its separator is still verified" -- run
 
-# --- Paths made only of dots -------------------------------------------------
-
-for bad in . .. ./x a/./b a/.; do
+# --- Paths made only of dots, absolute paths and empty segments ---------------
+#
+# An absolute path is the pool path a client would fetch with a leading slash.
+# Without its refusal it is admitted: the URL becomes BASE//pool/..., which this
+# fixture's server and most others answer with the very same object, so nothing
+# later in the chain disagrees. The same holds for an empty segment.
+for bad in . .. ./x a/./b a/. "/$PODUP_POOL/podup_1.12.0_amd64.deb" "pool//main/p/podup/podup_1.12.0_amd64.deb"; do
 	build_archive
 	sed -i "s|Filename: $PODUP_POOL/podup_1.12.0_amd64.deb|Filename: $bad|" \
 		"$DIST/main/binary-amd64/Packages"
