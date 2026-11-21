@@ -100,6 +100,30 @@ git -C "$WORK/b" add -A && git -C "$WORK/b" commit -qm comments
 out="$(run_step "$WORK/b" "$SH_EXTS")"; rc=$?
 check "1400 lines of comments and blanks are not 1400 code lines" "0" "$rc"
 
+# --- a line that starts with `*` is code in a hash-comment language -----------
+#
+# The counter dropped every line starting with `*`, `//`, `/*` or `<!--` in every
+# language, so the patterns of a shell `case` (`*)`, `*[!0-9]*)`), which is most of
+# what a validation script is made of, never counted. The C-style comment forms
+# belong only to the languages that have them.
+
+sandbox "$WORK/f"
+mkdir -p "$WORK/f/scripts"
+# shellcheck disable=SC2016 # the planted file is meant to hold a literal $1
+{ printf 'case "$1" in\n'; for _ in $(seq 520); do printf '\t*) : ;;\n'; done; printf 'esac\n'; } > "$WORK/f/scripts/cases.sh"
+git -C "$WORK/f" add -A && git -C "$WORK/f" commit -qm cases
+out="$(run_step "$WORK/f" "$SH_EXTS")"; rc=$?
+check "522 lines of case patterns in a shell script fail the hard limit" "1" "$rc"
+check "and the count includes the patterns" "1" \
+	"$(printf '%s' "$out" | grep -q '522 code lines' && echo 1 || echo 0)"
+
+sandbox "$WORK/g"
+mkdir -p "$WORK/g/src"
+{ printf '/**\n'; for _ in $(seq 700); do printf ' * doc line\n'; done; printf ' */\n'; for _ in $(seq 700); do printf '// note\n'; done; } > "$WORK/g/src/docs.ts"
+git -C "$WORK/g" add -A && git -C "$WORK/g" commit -qm docs
+out="$(run_step "$WORK/g" "$SH_EXTS")"; rc=$?
+check "1400 lines of block and line comments in a TypeScript file are still not code" "0" "$rc"
+
 # --- the blindness this gate had until 2026-08-29 ------------------------
 #
 # A workflow over the limit passes when `yml` is absent from the extension
