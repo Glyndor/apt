@@ -99,6 +99,9 @@ verify-debs-pq-signature-length	scripts/verify/verify-debs.sh	if len(pq_sig) != 
 verify-debs-pq-signature-size	scripts/verify/verify-debs.sh	if len(pq_sig) > MAX_SIG_BYTES:	if False:	tests/verify/verify-debs-hybrid.test.sh
 verify-debs-pq-no-library	scripts/verify/verify-debs.sh	sys.exit(3)	sys.exit(0)	tests/verify/verify-debs-hybrid.test.sh
 verify-debs-pq-unreadable-list	scripts/verify/verify-debs.sh	|| { echo "::error::cannot read the required-products file $PQ_REQUIRED_FILE" >&2; exit 1; }	|| true	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-required-grammar	scripts/verify/verify-debs.sh	if ! [[ "$name" =~ ^[a-z0-9][a-z0-9+.-]+$ ]]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-required-trim	scripts/verify/verify-debs.sh	pq_required="$(read_list "$PQ_REQUIRED_FILE" trim)" \	pq_required="$(read_list "$PQ_REQUIRED_FILE")" \	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-expected-package	scripts/verify/verify-debs.sh	if [ "${#PQ_REQUIRED[@]}" -ge 1 ] && [ -z "$EXPECTED_PACKAGE" ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
 purge-cache-missing-release	scripts/publish/purge-cache.sh	|| { echo "::error::no signed Release at $release; nothing to derive a purge list from"; exit 1; }	|| true	tests/publish/purge-cache.test.sh
 purge-cache-no-index-files	scripts/publish/purge-cache.sh	|| { echo "::error::the built Release declares no index files to purge"; exit 1; }	|| true	tests/publish/purge-cache/purge-cache-guards.test.sh
 purge-cache-index-dotdot	scripts/publish/purge-cache.sh	*..*) echo "::error::the built Release names an index path containing '..'"; exit 1 ;;	*..*) : ;;	tests/publish/purge-cache.test.sh

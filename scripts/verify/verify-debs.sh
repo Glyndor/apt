@@ -34,9 +34,16 @@
 #                  [<mldsa65-pubkey-b64-file>] [<pq-required-file>]
 #
 # The ML-DSA-65 key file has the same format as the Ed25519 one, a raw 1952-byte
-# key per line. The required file names one Debian package per line, with '#'
-# comments. Either may be absent, which reads as no key and no product
-# required.
+# key per line. The required file names one Debian package per line, and a
+# comment takes a line of its own: an entry that is not a Debian package name
+# (`podup # since 2.0`, `Podup`) refuses the run as a malformed local file, since
+# read as a name it would match nothing and drop the requirement in silence.
+# Either file may be absent, which reads as no key and no product required.
+#
+# Whether a .deb is required is decided by its control Package field, which is
+# bound to the product only when expected_package is given. So while the
+# required file lists any product, expected_package is mandatory and its
+# absence refuses the run; with the list empty nothing changes.
 #
 # When expected_tag is given, every .deb must declare a Version whose upstream
 # part equals that tag without its leading `v`. The signature covers the bytes
@@ -78,11 +85,16 @@ done < "$KEY_FILE"
 # One entry per non-empty, non-comment line, whitespace stripped, as above. A
 # missing file reads as empty: no ML-DSA-65 key is configured yet, and the
 # caller may run this from a tree that predates the second signature.
-read_list() { # <file>
+read_list() { # <file> [trim]: with `trim` only the ends of a line are stripped
 	local line
 	[ -e "$1" ] || return 0
 	while IFS= read -r line || [ -n "$line" ]; do
-		line="$(printf '%s' "$line" | tr -d '[:space:]')"
+		if [ "${2:-}" = trim ]; then
+			line="${line#"${line%%[![:space:]]*}"}"
+			line="${line%"${line##*[![:space:]]}"}"
+		else
+			line="$(printf '%s' "$line" | tr -d '[:space:]')"
+		fi
 		case "$line" in '' | '#'*) continue ;; esac
 		printf '%s\n' "$line"
 	done < "$1"
@@ -91,12 +103,22 @@ read_list() { # <file>
 # unreadable required file would otherwise drop every product from it.
 mldsa_keys="$(read_list "$MLDSA_KEY_FILE")" \
 	|| { echo "::error::cannot read the ML-DSA-65 release public key file $MLDSA_KEY_FILE" >&2; exit 1; }
-pq_required="$(read_list "$PQ_REQUIRED_FILE")" \
+pq_required="$(read_list "$PQ_REQUIRED_FILE" trim)" \
 	|| { echo "::error::cannot read the required-products file $PQ_REQUIRED_FILE" >&2; exit 1; }
 MLDSA_KEYS=()
 [ -z "$mldsa_keys" ] || mapfile -t MLDSA_KEYS <<< "$mldsa_keys"
 PQ_REQUIRED=()
 [ -z "$pq_required" ] || mapfile -t PQ_REQUIRED <<< "$pq_required"
+for name in "${PQ_REQUIRED[@]}"; do
+	if ! [[ "$name" =~ ^[a-z0-9][a-z0-9+.-]+$ ]]; then
+		echo "::error::local required-products file $PQ_REQUIRED_FILE is malformed: '$name' is not a Debian package name; a comment takes a line of its own" >&2
+		exit 1
+	fi
+done
+if [ "${#PQ_REQUIRED[@]}" -ge 1 ] && [ -z "$EXPECTED_PACKAGE" ]; then
+	echo "::error::$PQ_REQUIRED_FILE requires the ML-DSA-65 signature of some products and no expected_package was given, so whether these packages are required cannot be decided; pass the product name" >&2
+	exit 1
+fi
 
 # Check the ML-DSA-65 key file, or one signature against it. Exit 0 verified, 1
 # the downloaded signature is bad, 2 our own key file is malformed, 3 the

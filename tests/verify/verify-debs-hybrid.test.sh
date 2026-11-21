@@ -103,8 +103,14 @@ assert_error 0 "verified podup_1.0_amd64.deb" "and with another product required
 
 # The committed defaults are what publish.yml uses: today no key and no product
 # required, so a release without a second signature is admitted exactly as before.
-assert_error 0 "verified podup_1.0_amd64.deb" "the committed key and required files admit a release without one" \
-	-- "$VERIFY" "$d" "$WORK/ed.b64" podup
+# Once podup is required this no longer holds, and the case says it did not run.
+committed() { grep -vcE '^[[:space:]]*(#|$)' "$HERE/keyring/$1" || true; }
+if grep -qx '[[:space:]]*podup[[:space:]]*' "$HERE/keyring/pq-required-products" 2>/dev/null; then
+	echo "not run - the committed files admit podup without a second signature (podup is required)"
+else
+	assert_error 0 "verified podup_1.0_amd64.deb" "the committed key and required files admit a release without one" \
+		-- "$VERIFY" "$d" "$WORK/ed.b64" podup
+fi
 
 # --- row 3: no second signature, product required: refused for that -----------
 assert_error 1 "no ML-DSA-65 signature" "a required product without its second signature is refused for it" \
@@ -112,12 +118,31 @@ assert_error 1 "no ML-DSA-65 signature" "a required product without its second s
 assert_error 1 "podup requires the hybrid release signature" "and the refusal names the product" \
 	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq-none.b64" "$WORK/required-podup"
 
-# The list is read from the control Package field, inside the signed bytes, so
-# an asset renamed out of its product's name is still required.
-d="$WORK/renamed"; deb="$(make_case "$d" podup)"
-mv "$deb" "$d/renamed.deb"; mv "$deb.sig" "$d/renamed.deb.sig"
-assert_error 1 "no ML-DSA-65 signature" "the requirement follows the control Package, not the filename" \
-	-- "$VERIFY" "$d" "$WORK/ed.b64" "" "" "$WORK/pq.b64" "$WORK/required-podup"
+# --- an entry that is not a package name: our own file is malformed ----------
+# Read as a name it would match nothing, and the requirement would be gone with
+# no signal. Each one is refused before any package, with no second signature
+# present, and the same file with the entry written correctly still refuses
+# podup for the missing signature (the case above).
+for entry in 'podup # required from now on' 'Podup' 'pod up' 'podup,epistle' '-podup' 'p'; do
+	printf '# products\n%s\n' "$entry" > "$WORK/required-bad"
+	assert_error 1 "local required-products file $WORK/required-bad is malformed" \
+		"the required entry '$entry' is refused as a malformed local file" \
+		-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-bad"
+done
+refute "release may be tampered" "and it is not reported as a tampered release" \
+	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-bad"
+printf '  podup  \n\tepistle-panel\n' > "$WORK/required-spaced"
+assert_error 1 "no ML-DSA-65 signature" "an entry padded with blanks is still a name, and still required" \
+	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-spaced"
+
+# --- a required list and no expected_package: cannot be decided -------------
+# The list is matched against the control Package field, which is bound to the
+# product only through expected_package. Without it the run is refused; with an
+# empty list the same call is admitted, as it always was.
+assert_error 1 "no expected_package was given" "a required list with no expected_package is refused" \
+	-- "$VERIFY" "$d" "$WORK/ed.b64" "" "" "$WORK/pq.b64" "$WORK/required-other"
+assert_error 0 "verified podup_1.0_amd64.deb" "and with the list empty the same call is admitted" \
+	-- "$VERIFY" "$d" "$WORK/ed.b64" "" "" "$WORK/pq.b64" "$WORK/required-none"
 
 # --- row 5: a second signature and no ML-DSA-65 key configured ------------------
 d="$WORK/row5"; deb="$(make_case "$d" podup)"
@@ -127,8 +152,12 @@ assert_error 1 "no ML-DSA-65 release public key is configured" \
 	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq-none.b64" "$WORK/required-none"
 assert_error 1 "no ML-DSA-65 release public key is configured" "and so it is with no key file" \
 	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/absent.b64" "$WORK/required-none"
-assert_error 1 "no ML-DSA-65 release public key is configured" "and with the committed key file, which holds none" \
-	-- "$VERIFY" "$d" "$WORK/ed.b64" podup
+if [ "$(committed glyndor-release-mldsa65.b64)" -eq 0 ]; then
+	assert_error 1 "no ML-DSA-65 release public key is configured" "and with the committed key file, which holds none" \
+		-- "$VERIFY" "$d" "$WORK/ed.b64" podup
+else
+	echo "not run - the committed key file refuses a second signature (it holds a key now)"
+fi
 
 # --- row 6: the Ed25519 signature decides first ------------------------------
 d="$WORK/row6"; deb="$(make_case "$d" podup)"
@@ -201,7 +230,6 @@ assert_error 0 "verified podup_1.0_amd64.deb" "and without a second signature th
 # --- the committed files -----------------------------------------------------
 # A product required while no key is configured refuses every release of it,
 # with or without the second signature, so the rollout order is pinned here.
-committed() { grep -vcE '^[[:space:]]*(#|$)' "$HERE/keyring/$1" || true; }
 if [ -f "$HERE/keyring/glyndor-release-mldsa65.b64" ] && [ -f "$HERE/keyring/pq-required-products" ]; then
 	echo "ok   - the ML-DSA-65 key file and the required file are committed"; pass=$((pass + 1))
 else
