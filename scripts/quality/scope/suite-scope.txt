@@ -202,6 +202,22 @@ tests/verify/verify-debs-control-fields.test.sh
 	scripts/verify/**
 	tests/verify/**
 
+# The same check with the ML-DSA-65 library, which only the `ML-DSA-65 verifier`
+# job of tests.yml runs, in a virtual environment built from
+# scripts/verify/verify-debs-requirements.txt. It has an entry so that job can
+# skip the wheel install and the suite when nothing here changed
+# (`ci-job-scope.sh suite-needed`, on a pull request and on a push to main). It
+# reads the verifier and everything beside it, the committed keys and the list of
+# products that require the second signature, the requirements file with its
+# hashes, the vector under tests/fixtures/verify-debs, and the job that runs it.
+# The suite and the runner are inputs of every decision by rule.
+tests/verify/verify-debs-mldsa.test.sh
+	scripts/verify/**
+	tests/verify/**
+	tests/fixtures/verify-debs/**
+	keyring/**
+	.github/workflows/tests.yml
+
 # The distro floor reads the table README.md carries and the workflow that
 # enforces it.
 
@@ -608,6 +624,18 @@ tests/ci/suites/lint-job-scope.test.sh
 	scripts/quality/scope/ci-job-scope.sh
 	.github/workflows/**
 
+# The ML-DSA-65 job reads the classifier and the map the way the scope step of
+# the reusables does, and runs its own decision step: the workflow, the map entry
+# of the suite it decides for, the requirements file and that suite.
+
+tests/ci/suites/mldsa-job-scope.test.sh
+	scripts/quality/scope/ci-job-scope.sh
+	scripts/quality/scope/suite-scope.txt
+	scripts/verify/**
+	.github/workflows/tests.yml
+	tests/ci/suites/mldsa-job-scope.test.sh
+	tests/verify/verify-debs-mldsa.test.sh
+
 # The drift check compares the seven reusables of this repository against the
 # copies the two sibling repositories carry.
 
@@ -669,6 +697,13 @@ tests/quality/scope/ci-job-scope.test.sh
 tests/quality/scope/ci-job-scope-suites.test.sh
 	scripts/quality/scope/ci-job-scope.sh
 	scripts/quality/scope/suite-scope.txt
+	tests/quality/**
+
+# The suite-needed mode of the same classifier. It builds its own repositories
+# and reads the classifier only.
+
+tests/quality/scope/ci-job-scope-suite-needed.test.sh
+	scripts/quality/scope/ci-job-scope.sh
 	tests/quality/**
 
 tests/quality/scope/suite-scope-map.test.sh

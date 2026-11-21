@@ -78,6 +78,7 @@ tests/quality/coverage/check-test-coverage.test.sh -
 tests/quality/hygiene/check-commit-identity.test.sh -
 tests/quality/hygiene/check-secrets.test.sh -
 tests/quality/scope/ci-job-scope-suites.test.sh -
+tests/quality/scope/ci-job-scope-suite-needed.test.sh -
 tests/quality/scope/ci-job-scope.test.sh -
 tests/quality/scope/suite-scope-map.test.sh -
 tests/verify/check-release-order.test.sh -
@@ -94,6 +95,9 @@ tests/verify/verify-published/verify-published-budget.test.sh -
 tests/verify/verify-published/verify-published-collision.test.sh -
 tests/verify/verify-published/verify-published-object-size.test.sh -
 tests/verify/verify-published/verify-published-packages.test.sh -
+
+# Run by the ML-DSA-65 job of tests.yml, which installs nothing from apt.
+tests/verify/verify-debs-mldsa.test.sh -
 
 # python3-cryptography
 tests/publication/publish/publish-workflow-verify-debs.test.sh python3-cryptography
@@ -112,6 +116,7 @@ tests/ci/policy/publish-workflow-triggers.test.sh python3-yaml
 tests/ci/policy/workflow-shape.test.sh python3-yaml
 tests/publication/publish/publish-workflow.test.sh python3-yaml
 tests/ci/suites/lint-job-scope.test.sh python3-yaml
+tests/ci/suites/mldsa-job-scope.test.sh python3-yaml
 tests/ci/suites/shell-ci-scope.test.sh python3-yaml
 tests/publish/purge-cache/purge-cache-pruned.test.sh python3-yaml
 tests/quality/coverage/check-suites-wired.test.sh python3-yaml

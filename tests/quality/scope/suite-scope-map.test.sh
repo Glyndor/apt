@@ -9,7 +9,12 @@
 #     names a suite the workflow no longer runs;
 #   * an entry cites a path that does not exist, so a rename left a pattern that
 #     matches nothing and the suite is silently skipped for the files that moved;
-#   * an entry has no pattern at all.
+#   * an entry has no pattern at all;
+#   * a suite that only a job of its own runs, such as the ML-DSA-65 verifier,
+#     is named in no test-command, so the first rule cannot see it. That job
+#     decides from this map whether to run, and a suite with no entry always
+#     runs: safe, but the map has stopped saying what it was written to say.
+#     A suite a step hands to the suite runner is held to the same two rules.
 #
 # This reads the workflow's suite list and the map from the working tree and
 # requires them to agree, with planted copies of each defect so the checker can
@@ -40,6 +45,10 @@ root = sys.argv[1]
 wf = open(os.path.join(root, ".github/workflows/tests.yml")).read()
 block = re.search(r"test-command: >-\n(.*?)(\n      #|\n\n|\Z)", wf, re.S).group(1)
 suites = [l.strip()[2:] for l in block.splitlines() if l.strip().startswith("./tests/")]
+# The suites a step of any job hands to the runner, outside the test-command.
+alone = re.findall(r"check-suite-completeness\.test\.sh((?:[ \t]+\./tests/[A-Za-z0-9_./-]+\.test\.sh)+)", wf)
+for chunk in alone:
+    suites += [token[2:] for token in chunk.split() if token[2:] not in suites]
 scope, current = {}, None
 for raw in open(os.path.join(root, "scripts/quality/scope/suite-scope.txt")):
     line = raw.rstrip()
@@ -100,6 +109,14 @@ check "an entry with no pattern is reported" "no pattern: tests/a/one.test.sh" "
 
 D="$(tree twice)"; printf '\ntests/a/one.test.sh\n\tscripts/a/**\n' >> "$D/scripts/quality/scope/suite-scope.txt"
 check "a suite listed twice is reported" "listed twice: tests/a/one.test.sh" "$(problems "$D")"
+
+D="$(tree alone)"; printf '  m:\n    steps:\n      - run: ./tests/ci/suites/check-suite-completeness.test.sh ./tests/a/five.test.sh\n' >> "$D/.github/workflows/tests.yml"
+: > "$D/tests/a/five.test.sh"
+check "a suite only a job of its own runs, with no entry, is reported" "no entry: tests/a/five.test.sh" "$(problems "$D")"
+printf '\ntests/a/five.test.sh\n\ttests/a/five.test.sh\n' >> "$D/scripts/quality/scope/suite-scope.txt"
+check "and is not once it has an entry" "" "$(problems "$D")"
+sed -i 's|^      - run: .*five.test.sh|      - run: true|' "$D/.github/workflows/tests.yml"
+check "an entry for a suite no job runs any more is reported" "not run by the workflow: tests/a/five.test.sh" "$(problems "$D")"
 
 check "the real map agrees with the real workflow and the real tree" "" "$(problems "$HERE")"
 
