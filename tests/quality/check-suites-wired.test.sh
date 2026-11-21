@@ -120,6 +120,36 @@ gate "$(tree step-needs "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.t
 # shellcheck disable=SC2016 # the backticks are the literal text of the message
 check "a suite in a step of a job with needs: does not count" "1" "$(said 'tests.yml#other: the job has `needs:`')"
 
+# A line whose verdict a shell operator can throw away does not count, nor
+# does a block that may hold the path as data or runs without errexit.
+# shellcheck disable=SC2016,SC1003 # the suffixes are literal shell text, never expanded here
+for tail in ' || true' ' && :' ' | tee log' ' &' ' ; true' ' > /dev/null' ' 2>&1' ' $(true)' ' \'; do
+	gate "$(tree "op" "./tests/a.test.sh ./$WATCHER" "$(step "./tests/area/b.test.sh$tail")")"
+	check "a suite followed by '$tail' does not count" "1" \
+		"$(said 'tests.yml#other: the line goes on with a shell operator')"
+done
+gate "$(tree args "./tests/a.test.sh ./$WATCHER" "$(step "./$RUNNER ./tests/area/b.test.sh --quiet")")"
+check "control: a line with plain arguments still counts" "0" "$rc"
+gate "$(tree heredoc "./tests/a.test.sh ./$WATCHER" "$(step "cat <<'EOF' > list
+          ./tests/area/b.test.sh
+          EOF")")"
+check "a suite inside a here-doc does not count" "1" "$(said 'tests.yml#other: the step'"'"'s run: holds a here-doc')"
+gate "$(tree set-e "./tests/a.test.sh ./$WATCHER" "$(step "set +e
+          ./tests/area/b.test.sh")")"
+check "a suite in a block that turns errexit off does not count" "1" "$(said 'tests.yml#other: the step turns errexit off')"
+gate "$(tree pwsh "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.sh' '        shell: pwsh')")"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a suite in a step under another shell does not count" "1" "$(said 'the step runs under `shell: pwsh`')"
+gate "$(tree job-shell "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.sh' '' '    defaults: {run: {shell: pwsh}}
+')")"
+check "a job whose default shell is another does not count" "1" "$(said 'tests.yml#other: the step runs under')"
+dir="$(tree wf-shell "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.sh')")"
+sed -i 's/^jobs:$/defaults: {run: {shell: pwsh}}\njobs:/' "$dir/.github/workflows/tests.yml"
+gate "$dir"
+check "a workflow whose default shell is another does not count" "1" "$(said 'tests.yml#other: the step runs under')"
+gate "$(tree bash-shell "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.sh' '        shell: bash')")"
+check "control: shell: bash still counts" "0" "$rc"
+
 gate "$(tree wd "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.sh' '        working-directory: sub')")"
 check "a suite run from another working directory is not the top-level one" "1" \
 	"$(said 'tests/area/b.test.sh is not run')"

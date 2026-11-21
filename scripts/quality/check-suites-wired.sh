@@ -18,6 +18,20 @@
 #     suites the line hands it, in a job and a step that carry no `if:` and
 #     no `continue-on-error`. A comment line is prose, not wiring.
 #
+# A `run:` line counts only when nothing follows the invocation but its
+# arguments: no `|`, `&`, `;`, redirection, backtick or `$(`, and no
+# continuation onto the next line. `|| true`, `&& :`, a pipe without
+# pipefail or a background `&` keep the suite running and throw its verdict
+# away. A step whose `run:` holds a here-doc wires nothing, because a path in
+# it may be data that never runs; neither does one that turns errexit off
+# (`set +e`) or runs under a `shell:` other than bash.
+#
+# What this cannot decide: a line in a branch that is never taken
+# (`if false; then`), after an unconditional `exit`, or in a function that is
+# never called still counts. Telling those apart needs the shell's own
+# reading of the script, and a check that pretended to have it would be
+# worse than one that says where it stops.
+#
 # In both places the job must carry no `needs:` either. A job whose
 # dependency is skipped is skipped too, so `needs:` on a job that GitHub skips
 # for an `if: false` switches the suites off one job away, and the skipped
@@ -63,6 +77,8 @@ SUITE = r"tests/[A-Za-z0-9_./-]+\.test\.sh"
 WORD_RE = re.compile(r"^\./(" + SUITE + r")$")
 LINE_RE = re.compile(r"^(?:bash\s+)?\./(" + SUITE + r")(?:\s|$)")
 ENTRY_RE = re.compile(r"^(" + SUITE + r"):(.*)$")
+OPERATOR_RE = re.compile(r"[|&;<>`]|\$\(")
+ERREXIT_OFF_RE = re.compile(r"\bset\s+\+[A-Za-z]*e|\bset\s+\+o\s+errexit")
 EXEMPTIONS = "scripts/quality/suite-exemptions.txt"
 errors = []
 
@@ -126,6 +142,7 @@ def wiring(specs):
     for name, spec in specs:
         gate = "" if every_pull_request(spec) else \
             "the workflow does not run on every pull request"
+        workflow_shell = ((spec.get("defaults") or {}).get("run") or {}).get("shell")
         for job_id, job in (spec.get("jobs") or {}).items():
             if not isinstance(job, dict):
                 continue
@@ -144,16 +161,28 @@ def wiring(specs):
                         note(resolve(with_block.get("working-directory"), match.group(1)),
                              job_gate, where)
                 continue
-            defaults = ((job.get("defaults") or {}).get("run") or {}).get("working-directory")
+            defaults = (job.get("defaults") or {}).get("run") or {}
+            shell_default = defaults.get("shell", workflow_shell)
             for step in job.get("steps") or []:
                 if not isinstance(step, dict) or not isinstance(step.get("run"), str):
                     continue
+                run, shell = step["run"], step.get("shell", shell_default)
                 step_gate = job_gate or ("the step has an `if:`" if "if" in step else "") \
-                    or ("the step may fail" if step.get("continue-on-error") else "")
-                here = step.get("working-directory", defaults)
-                for line in step["run"].splitlines():
+                    or ("the step may fail" if step.get("continue-on-error") else "") \
+                    or (f"the step runs under `shell: {shell}`" if shell not in (None, "bash") else "") \
+                    or ("the step's run: holds a here-doc, so a path in it may be data"
+                        if "<<" in run else "") \
+                    or ("the step turns errexit off" if ERREXIT_OFF_RE.search(run) else "")
+                here = step.get("working-directory", defaults.get("working-directory"))
+                for line in run.splitlines():
                     match = LINE_RE.match(line.strip())
                     if not match:
+                        continue
+                    rest = line.strip()[match.end():]
+                    if not step_gate and (OPERATOR_RE.search(rest) or line.rstrip().endswith("\\")):
+                        note(resolve(here, match.group(1)),
+                             "the line goes on with a shell operator, which can discard "
+                             "the suite's verdict", where)
                         continue
                     note(resolve(here, match.group(1)), step_gate, where)
                     # The suite runner runs the suites it is handed, as it does in a
