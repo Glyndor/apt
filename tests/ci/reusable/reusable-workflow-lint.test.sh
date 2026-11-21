@@ -191,6 +191,72 @@ pick pull_request
 check "a rule in neither the base nor the checkout fails the picker" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
 check "and tooling-isolation is on unless a caller turns it off" "True" "$(default_of tooling-isolation)"
 
+# ===========================================================================
+# actionlint is the release binary, verified before it is extracted
+# ===========================================================================
+
+# Read from the job, not grepped from the file, so a comment naming a step or a
+# value does not count.
+job_facts="$(python3 -I - "$WORKFLOW" <<'PY'
+import re
+import sys
+import yaml
+job = yaml.safe_load(open(sys.argv[1]))["jobs"]["workflow-lint"]
+env = job.get("env", {})
+uses = [s.get("uses", "").split("@")[0] for s in job["steps"] if s.get("uses")]
+runs = "\n".join(str(s.get("run", "")) for s in job["steps"])
+print(bool(re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", str(env.get("ACTIONLINT_VERSION", "")))),
+      bool(re.fullmatch(r"[0-9a-f]{64}", str(env.get("ACTIONLINT_SHA256", "")))),
+      "actions/setup-go" in uses, "actions/cache" in uses,
+      bool(re.search(r"(?m)^\s*go\s+install\b", runs)))
+PY
+)"
+check "the job pins an exact actionlint version and the sha256 of its tarball, and needs no Go" \
+	"True True False False False" "$job_facts"
+
+install="$(field "Install actionlint" run)"
+mkdir -p "$WORK/release/pkg" "$WORK/bin"
+printf '#!/bin/sh\necho fixture actionlint\n' > "$WORK/release/pkg/actionlint"
+chmod +x "$WORK/release/pkg/actionlint"
+tar -czf "$WORK/release/actionlint.tar.gz" -C "$WORK/release/pkg" actionlint
+good_sha="$(sha256sum "$WORK/release/actionlint.tar.gz" | cut -d' ' -f1)"
+# curl serves the fixture tarball and records the URL it was asked for.
+cat > "$WORK/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+out=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-o) out="$2"; shift 2 ;;
+	-*) shift ;;
+	*) printf '%s\n' "$1" >> "$CURL_LOG"; shift ;;
+	esac
+done
+cp "$FIXTURE_TARBALL" "$out"
+EOF
+chmod +x "$WORK/bin/curl"
+install_with() { # $1=sha256 -> status in rc
+	rm -rf "$WORK/rt"; mkdir -p "$WORK/rt"; : > "$WORK/curl.log"; : > "$WORK/path"
+	( cd "$WORK" && PATH="$WORK/bin:$PATH" CURL_LOG="$WORK/curl.log" \
+		FIXTURE_TARBALL="$WORK/release/actionlint.tar.gz" RUNNER_TEMP="$WORK/rt" \
+		GITHUB_PATH="$WORK/path" ACTIONLINT_VERSION=v9.8.7 ACTIONLINT_SHA256="$1" \
+		bash -e -o pipefail -c "$install" ) > "$WORK/install.out" 2>&1
+	rc=$?
+}
+
+install_with "$good_sha"
+check "the install with the matching sha256 succeeds" "0" "$rc"
+check "and it asked for that version's linux_amd64 release asset" \
+	"https://github.com/rhysd/actionlint/releases/download/v9.8.7/actionlint_9.8.7_linux_amd64.tar.gz" \
+	"$(cat "$WORK/curl.log")"
+check "and the extracted binary is the one put on PATH" "fixture actionlint" \
+	"$("$(cat "$WORK/path")/actionlint")"
+
+install_with "$(printf '%064d' 0)"
+check "a tarball whose sha256 does not match is refused" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+check "and nothing was extracted from it" "0" \
+	"$([ -e "$WORK/rt/actionlint-bin/actionlint" ] && echo 1 || echo 0)"
+check "and nothing was put on PATH" "" "$(cat "$WORK/path")"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

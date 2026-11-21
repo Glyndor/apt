@@ -50,7 +50,14 @@ jobs:
     # default is what a hang would otherwise cost.
     timeout-minutes: 10
     env:
+      # The actionlint release this job installs, and the sha256 of that
+      # release's linux_amd64 tarball as its checksums file lists it. The two
+      # move together, here and in the sibling channels; a version changed
+      # without its hash fails the install. Dependabot does not read a version
+      # written here, so scripts/monitoring/check-tool-versions.sh compares it
+      # with upstream from freshness.yml.
       ACTIONLINT_VERSION: v1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -126,41 +133,24 @@ jobs:
             echo "Running $SCOPE_JOB (changed inputs or scope not established)."
           fi
 
-      - if: steps.scope.outputs.needed != 'false'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: actionlint-cache
-        with:
-          path: ~/go/bin/actionlint
-          key: actionlint-${{ runner.os }}-${{ env.ACTIONLINT_VERSION }}
-
-      # `stable` rather than a number, and this is the one pin in this file that
-      # is deliberately absent.
-      #
-      # This Go compiles nothing of ours. It exists to build actionlint, and
-      # what has to be reproducible there is the tool, which is pinned by
-      # ACTIONLINT_VERSION and keyed into the cache by it. The compiler that
-      # assembles it is not part of that claim.
-      #
-      # A number here has no update path. Dependabot's github-actions ecosystem
-      # does not touch a tool version written inside a workflow, so it moves
-      # only when somebody remembers, and nothing turns red when it stops being
-      # supported: Go keeps the last two releases, so a frozen number silently
-      # becomes an unsupported compiler while the job stays green. It sat at
-      # 1.26 with 1.27 out, which is how this was noticed.
-      - if: steps.scope.outputs.needed != 'false' && steps.actionlint-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version: stable
-
       - name: Install actionlint
-        if: steps.scope.outputs.needed != 'false' && steps.actionlint-cache.outputs.cache-hit != 'true'
-        run: go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
-
-      # A cache hit skips setup-go, which is what used to put the Go bin
-      # directory on PATH, so say where the restored binary is.
-      - name: Put actionlint on PATH
         if: steps.scope.outputs.needed != 'false'
-        run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
+        run: |
+          set -euo pipefail
+          # The release's own binary, pinned by tag and checked against its
+          # sha256 before it is extracted, the same idiom as shellcheck below.
+          # It replaces `go install`, which compiled actionlint with whatever
+          # Go `stable` meant that day and kept the result in a cache keyed by
+          # the actionlint version alone, so the binary that ran was not one
+          # anybody had pinned.
+          dir="$RUNNER_TEMP/actionlint-bin"
+          tarball="$RUNNER_TEMP/actionlint.tar.gz"
+          mkdir -p "$dir"
+          curl -sSfL -o "$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION#v}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$ACTIONLINT_SHA256" "$tarball" | sha256sum -c -
+          tar -xz -f "$tarball" -C "$dir" actionlint
+          echo "$dir" >> "$GITHUB_PATH"
 
       - name: Install shellcheck
         if: steps.scope.outputs.needed != 'false'

@@ -159,6 +159,13 @@ lint-callers-wired	.github/workflows/reusable-workflow-lint.yml	run: bash "$RUNN
 lint-tooling-wired	.github/workflows/reusable-workflow-lint.yml	run: bash "$RUNNER_TEMP/lint-rules/check-tooling-isolation.sh"	run: "true"	tests/ci/reusable/reusable-workflow-lint.test.sh
 lint-rules-from-base	.github/workflows/reusable-workflow-lint.yml	              && git show "HEAD^1:scripts/quality/$rule" > "$dir/$rule" 2>/dev/null; then	              && cp "scripts/quality/$rule" "$dir/$rule" 2>/dev/null; then	tests/ci/reusable/reusable-workflow-lint.test.sh
 scope-lint-rule-scripts	scripts/quality/ci-job-scope.sh	    "scripts/quality/check-tooling-isolation.sh",	    "scripts/quality/unused.sh",	tests/quality/ci-job-scope.test.sh
+lint-actionlint-sha256	.github/workflows/reusable-workflow-lint.yml	printf '%s  %s\n' "$ACTIONLINT_SHA256" "$tarball" | sha256sum -c -	true	tests/ci/reusable/reusable-workflow-lint.test.sh
+tools-past-lag	scripts/monitoring/check-tool-versions.sh	    if days > lag_days:	    if False:	tests/monitoring/check-tool-versions.test.sh
+tools-first-newer	scripts/monitoring/check-tool-versions.sh	    days = (now - min(newer)).days	    days = (now - max(newer)).days	tests/monitoring/check-tool-versions.test.sh
+tools-unreadable	scripts/monitoring/check-tool-versions.sh	        problems.append(f"cannot read the releases of {upstream}: {exc}")	        pass	tests/monitoring/check-tool-versions.test.sh
+tools-no-release	scripts/monitoring/check-tool-versions.sh	    if not found:	    if False:	tests/monitoring/check-tool-versions.test.sh
+tools-pins-disagree	scripts/monitoring/check-tool-versions.sh	    if len(shellcheck) != 1:	    if False:	tests/monitoring/check-tool-versions.test.sh
+tools-verdict	scripts/monitoring/check-tool-versions.sh	if problems or behind:	if False:	tests/monitoring/check-tool-versions.test.sh
 suites-wired-base-exemptions	scripts/quality/check-suites-wired.sh	    return {path: why for path, why in exempt.items() if path in base}	    return exempt	tests/quality/check-suites-wired.test.sh
 lint-base-exemptions	.github/workflows/reusable-workflow-lint.yml	            && git show "HEAD^1:$exemptions" > "$script.exempt" 2>/dev/null; then	            && cp "$exemptions" "$script.exempt" 2>/dev/null; then	tests/quality/check-suites-wired.test.sh
 suites-wired-operators	scripts/quality/check-suites-wired.sh	OPERATOR_RE = re.compile(r"[|&;<>`]|\$\(")	OPERATOR_RE = re.compile(r"(?!)")	tests/quality/check-suites-wired.test.sh

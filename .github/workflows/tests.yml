@@ -149,6 +149,7 @@ jobs:
         ./tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh
         ./tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh
         ./tests/ci/reusable/reusable-workflow-lint.test.sh
+        ./tests/monitoring/check-tool-versions.test.sh
         ./tests/quality/check-test-job-not-switchable.test.sh
         ./tests/quality/check-tooling-isolation.test.sh
       # shellcheck: tests/quality/lint-workflow-shell.test.sh plants a violation and

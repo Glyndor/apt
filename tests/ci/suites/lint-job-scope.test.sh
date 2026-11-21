@@ -38,11 +38,13 @@ with tempfile.TemporaryDirectory() as tmp:
     repo.mkdir()
     out = Path(tmp) / "output"
     summary = Path(tmp) / "summary"
-    marker = Path(tmp) / "go-invoked"
+    marker = Path(tmp) / "download-invoked"
     bindir = Path(tmp) / "bin"
     bindir.mkdir()
-    (bindir / "go").write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$GO_MARKER"\n')
-    (bindir / "go").chmod(0o755)
+    # The install downloads the release tarball; a stub curl records the call
+    # and fails, so nothing is fetched and the step stops there.
+    (bindir / "curl").write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$DOWNLOAD_MARKER"\nexit 22\n')
+    (bindir / "curl").chmod(0o755)
 
     def git(*args):
         return subprocess.run(["git", *args], cwd=repo, check=True,
@@ -88,7 +90,6 @@ with tempfile.TemporaryDirectory() as tmp:
         expr = str(step.get("if", "true")).removeprefix("${{").removesuffix("}} ").removesuffix("}}")
         for key, value in {
             "steps.scope.outputs.needed": repr(decision),
-            "steps.actionlint-cache.outputs.cache-hit": "'false'",
             "inputs.check-exec-bit": "True", "inputs.tooling-isolation": "True",
             "true": "True", "false": "False",
         }.items():
@@ -143,9 +144,11 @@ with tempfile.TemporaryDirectory() as tmp:
                 install = next(s for s in later[job] if s.get("name") == "Install actionlint")
                 if active(install, decision):
                     env = dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ["PATH"],
-                               GO_MARKER=str(marker), ACTIONLINT_VERSION="fixture")
-                    subprocess.run(["bash", "-e", "-c", install["run"]], env=env, cwd=repo, check=True)
-                check(f"{label}: actionlint compilation invoked", want == "true", marker.exists())
+                               DOWNLOAD_MARKER=str(marker), ACTIONLINT_VERSION="v0.0.0",
+                               ACTIONLINT_SHA256="0" * 64, RUNNER_TEMP=tmp,
+                               GITHUB_PATH=str(Path(tmp) / "path"))
+                    subprocess.run(["bash", "-e", "-c", install["run"]], env=env, cwd=repo)
+                check(f"{label}: actionlint download invoked", want == "true", marker.exists())
 
     merge({"README.md": "push prose\n"})
     for job in specs:

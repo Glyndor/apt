@@ -19,7 +19,7 @@ from pathlib import Path
 root = Path(sys.argv[1])
 PINNED = {
     "drift.yml": ["scripts/monitoring/check-reusable-drift.sh"],
-    "freshness.yml": ["scripts/monitoring/check-suite-on-main.sh"],
+    "freshness.yml": ["scripts/monitoring/check-suite-on-main.sh", "scripts/monitoring/check-tool-versions.sh"],
     "health-check.yml": [
         "scripts/verify/verify-published.sh",
         "scripts/verify/reference-installers.sh",

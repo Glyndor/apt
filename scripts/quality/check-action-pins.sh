@@ -5,8 +5,8 @@
 # WHY THIS EXISTS
 #
 # Every job in this repository reaches outside itself: actions/checkout to get
-# the tree, actions/cache to keep a toolchain, actions/setup-go to build a
-# linter. A `uses:` that names a tag or a branch is a promise about code that
+# the tree, and in the channels that update themselves the actions that hand
+# files between jobs and mint the updater's token. A `uses:` that names a tag or a branch is a promise about code that
 # somebody else can change under the job, and only the owner of that repository
 # can keep it. A commit SHA is the only reference that says exactly which
 # bytes ran.

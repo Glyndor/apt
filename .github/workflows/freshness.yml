@@ -55,7 +55,8 @@ on:
   schedule:
     - cron: "13 8,20 * * *"
   # A pull request runs these only when it changes what these jobs are made of:
-  # this file, the two reusables it calls and the script its suite job runs.
+  # this file, the two reusables it calls, the script its suite job runs and
+  # the one its tool-versions job runs.
   # Anything else cannot change the verdict, so it would only repeat the same
   # verdicts. None of the jobs here is a
   # required check, which is what makes a path filter safe: a required check
@@ -69,6 +70,7 @@ on:
       - .github/workflows/reusable-dependabot-freshness.yml
       - .github/workflows/reusable-schedule-freshness.yml
       - scripts/monitoring/check-suite-on-main.sh
+      - scripts/monitoring/check-tool-versions.sh
   push:
     branches: [main]
 
@@ -77,7 +79,7 @@ permissions:
 
 jobs:
   # A pull request reaches this file only through the paths above, and each of
-  # them can change the answer of one group of jobs, not of all seven. This job
+  # them can change the answer of one group of jobs, not of all of them. This job
   # reads the changed files and says which groups have anything to look at. It
   # fails open: on a push or a schedule it does not run, and if it cannot read
   # the diff, or sees a path it does not know, every output is true. A job below
@@ -92,6 +94,7 @@ jobs:
       dependabot: ${{ steps.scope.outputs.dependabot }}
       schedule: ${{ steps.scope.outputs.schedule }}
       suite: ${{ steps.scope.outputs.suite }}
+      tools: ${{ steps.scope.outputs.tools }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -106,6 +109,7 @@ jobs:
           dependabot=true
           schedule=true
           suite=true
+          tools=true
           changed="$(mktemp)"
           trap 'rm -f "$changed"' EXIT
           # HEAD^1..HEAD is the pull request only on the merge commit the
@@ -117,12 +121,14 @@ jobs:
             dependabot=false
             schedule=false
             suite=false
+            tools=false
             while IFS= read -r -d '' path; do
               case "$path" in
                 .github/workflows/reusable-dependabot-freshness.yml) dependabot=true ;;
                 .github/workflows/reusable-schedule-freshness.yml) schedule=true ;;
                 scripts/monitoring/check-suite-on-main.sh) suite=true ;;
-                *) dependabot=true; schedule=true; suite=true ;;
+                scripts/monitoring/check-tool-versions.sh) tools=true ;;
+                *) dependabot=true; schedule=true; suite=true; tools=true ;;
               esac
             done < "$changed"
           fi
@@ -130,6 +136,7 @@ jobs:
             echo "dependabot=$dependabot"
             echo "schedule=$schedule"
             echo "suite=$suite"
+            echo "tools=$tools"
           } >> "$GITHUB_OUTPUT"
 
   dependabot-freshness:
@@ -353,3 +360,42 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: ./scripts/monitoring/check-suite-on-main.sh "$REPO" workflow-lint.yml main
+
+  # The versions of shellcheck and actionlint written inside the reusables have
+  # no update path: Dependabot moves `uses:` pins only, and dependabot-freshness
+  # reads only those. This compares each pinned version with the releases its
+  # upstream publishes and fails once the first release after the pin has been
+  # out longer than the lag the script states and explains (30 days). An
+  # upstream that cannot be read fails too, rather than passing unread.
+  #
+  # Here because this workflow already runs twice a day and on every push to
+  # main, and its own cron is watched by freshness-itself. Like every job here
+  # it is not a required check: a new release upstream says nothing about the
+  # pull request under review. The pull request filter names the script and not
+  # the reusables that carry the pins, so a pin bump is judged by the push that
+  # lands it.
+  #
+  # It asks GitHub for the releases of two public repositories with the job's
+  # own token, and `contents: read` is all that needs.
+  tool-versions:
+    needs: scope
+    if: ${{ !cancelled() && needs.scope.outputs.tools != 'false' }}
+    name: pinned tool versions keep up with upstream
+    runs-on: ubuntu-latest
+    # Two `gh release list` calls and a checkout, seconds when measured
+    # locally against stubs; the real calls are two API requests. Ten minutes
+    # is the floor this repository uses for a job whose honest run is seconds.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare the pinned tool versions with upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash ./scripts/monitoring/check-tool-versions.sh
