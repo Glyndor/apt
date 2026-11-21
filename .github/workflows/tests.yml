@@ -49,6 +49,7 @@ jobs:
         ./tests/ci/suites/check-suite-completeness.test.sh
         ./tests/mutation/run-mutations.test.sh
         ./tests/quality/coverage/check-mutation-coverage.test.sh
+        ./tests/quality/coverage/check-mutation-coverage-workflows.test.sh
         ./tests/quality/scope/mutation-scope.test.sh
         ./tests/ci/policy/mutation-workflow.test.sh
         ./tests/verify/verify-debs.test.sh

@@ -59,6 +59,7 @@ tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh -
 tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh -
 tests/mutation/run-mutations.test.sh -
 tests/quality/coverage/check-mutation-coverage.test.sh -
+tests/quality/coverage/check-mutation-coverage-workflows.test.sh -
 tests/quality/scope/mutation-scope.test.sh -
 tests/publication/health-check/health-check-workflow.test.sh -
 tests/publication/publish/publish-workflow-assets.test.sh -
