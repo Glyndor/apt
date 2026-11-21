@@ -477,3 +477,5 @@ netflags-max-time	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	(?:
 netflags-max-filesize	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	(?:^|\s)--max-filesize\s+[0-9$]	(?:^|\s)--max-filesize\s*	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
 netflags-comment-skipped	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	if line.lstrip().startswith("#") or not CURL.search(line):	if not CURL.search(line):	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
 netflags-empty-scan	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	if curls == 0:	if False:	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
+grace-deepen	.github/workflows/reusable-schedule-freshness.yml	git fetch --quiet --unshallow --no-tags origin >/dev/null 2>&1 || true	true	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
+grace-checkout-depth	.github/workflows/reusable-schedule-freshness.yml	fetch-depth: 1	fetch-depth: 0	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh

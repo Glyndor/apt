@@ -98,13 +98,16 @@ jobs:
       actions: read # reading this repository's workflow-run history
       contents: read # the history that dates a new workflow's grace period
     steps:
-      # The whole history, because the grace period of a new workflow is
-      # counted from the commit that added its file; a shallow checkout would
-      # date every file to its one commit and is refused below.
+      # One commit. The history is read only for the grace period of a new
+      # workflow, which is counted from the commit that added its file, and that
+      # branch is taken when no scheduled run is on record: the step below
+      # deepens the checkout there and nowhere else. A shallow checkout would
+      # date every file to its one commit, so a history that could not be
+      # deepened is refused below.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
+          fetch-depth: 1
 
       # This step runs as GITHUB_TOKEN, a job-scoped token on its own rate
       # limit, and reads nothing beyond this repository's own run history. No
@@ -229,6 +232,9 @@ jobs:
             any_runs=$(gh api "repos/${REPO}/actions/workflows/${WORKFLOW}/runs?event=schedule&per_page=1" \
               --jq '.total_count')
             added=""
+            if [ "$any_runs" = 0 ] && [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+              git fetch --quiet --unshallow --no-tags origin >/dev/null 2>&1 || true
+            fi
             if [ "$any_runs" = 0 ] \
               && [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = false ]; then
               added=$(git log -1 --diff-filter=A --format=%ct -- ".github/workflows/${WORKFLOW}" 2>/dev/null) || added=""
