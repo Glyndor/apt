@@ -46,9 +46,13 @@ def archive(generation):
             b'Package: glyndor-archive-keyring\nFilename: pool/shared.deb\n\n'
         result[prefix + 'Packages.gz'] = b'compressed ' + result[prefix + 'Packages']
         result[prefix + 'Release'] = f'architecture {arch} generation {generation}'.encode()
-    release = b'SHA256:\n' + b''.join(
+    indices = {key: value for key, value in result.items() if key.startswith('dists/')}
+    # The copy apt asks for when the index offers Acquire-By-Hash, beside each file.
+    for key, value in indices.items():
+        result[key.rsplit('/', 1)[0] + '/by-hash/SHA256/' + hashlib.sha256(value).hexdigest()] = value
+    release = b'Acquire-By-Hash: yes\nSHA256:\n' + b''.join(
         f' {hashlib.sha256(value).hexdigest()} {len(value)} {key.removeprefix("dists/stable/")}\n'.encode()
-        for key, value in result.items() if key.startswith('dists/'))
+        for key, value in indices.items())
     result.update({'dists/stable/Release': release,
                    'dists/stable/InRelease': b'signed fixture ' + release,
                    'dists/stable/Release.gpg': f'signature {generation}'.encode(),
@@ -64,7 +68,15 @@ retired = 'dists/stable/retired-index'
 old[retired] = b'allowed residual metadata'
 old_pool = {key for key in old if key.startswith('pool/') and key not in new}
 new_pool = {key for key in new if key.startswith('pool/') and key not in old}
-mutable = {key for key in new if not key.startswith('pool/')}
+copy_keys = {key for key in new if '/by-hash/' in key}
+new_copies = {key for key in copy_keys if key not in old}
+signed_index = {'dists/stable/InRelease', 'dists/stable/Release', 'dists/stable/Release.gpg'}
+mutable = {key for key in new if not key.startswith('pool/') and key not in copy_keys | signed_index}
+# What a converged bucket keeps besides the new build: no pass over dists/
+# deletes, so the residual index and every earlier by-hash copy stay.
+residual = {key: value for key, value in old.items()
+            if key == retired or ('/by-hash/' in key and key not in new)}
+check(len(new_copies) == 6 and len(residual) == 7, 'the fixture has new copies to upload and old ones to keep')
 
 # Extract the actual block bodies, so fail-fast and delegation are exercised too.
 lines = (root / '.github/workflows/publish.yml').read_text().splitlines()
@@ -85,19 +97,19 @@ publish = step('Publish to R2')
 purge = step('Purge Cloudflare cache')
 check('./scripts/publish/sync-archive.sh' in publish, 'workflow delegates to the script under test')
 check('./scripts/publish/purge-cache.sh' in purge, 'workflow delegates to the real purge script')
-expected_calls = []
-for number in (1, 2, 3):
-    args = ['s3', 'sync', 'public/', 's3://glyndor-apt/', '--endpoint-url', 'https://r2.invalid']
-    if number == 3:
-        args += ['--delete']
-    args += ['--no-progress']
-    if number != 2:
-        args += ['--size-only', '--exclude', '*', '--include', 'pool/*']
-    else:
-        args += ['--exclude', 'pool/*']
-    args += ['--cache-control', 'public, max-age=86400' if number == 2
-             else 'public, max-age=31536000, immutable']
-    expected_calls.append(args)
+immutable = ['--cache-control', 'public, max-age=31536000, immutable']
+day = ['--cache-control', 'public, max-age=86400']
+signed_names = ['dists/stable/InRelease', 'dists/stable/Release', 'dists/stable/Release.gpg']
+passes = [
+    ['--no-progress', '--size-only', '--exclude', '*', '--include', 'pool/*'] + immutable,
+    ['--no-progress', '--size-only', '--exclude', '*', '--include', 'dists/*/by-hash/*'] + immutable,
+    ['--no-progress', '--exclude', 'pool/*', '--exclude', 'dists/*/by-hash/*']
+    + [arg for name in signed_names for arg in ('--exclude', name)] + day,
+    ['--no-progress', '--exclude', '*'] + [arg for name in signed_names for arg in ('--include', name)] + day,
+    ['--delete', '--no-progress', '--size-only', '--exclude', '*', '--include', 'pool/*'] + immutable,
+]
+expected_calls = [['s3', 'sync', 'public/', 's3://glyndor-apt/', '--endpoint-url', 'https://r2.invalid'] + args
+                  for args in passes]
 
 list_call = ['s3api', 'list-objects-v2', '--bucket', 'glyndor-apt', '--prefix', 'install/',
              '--endpoint-url', 'https://r2.invalid', '--output', 'json', '--no-paginate']
@@ -149,8 +161,8 @@ with tempfile.TemporaryDirectory() as temp:
 
     def converged(result, label):
         check(result.returncode == 0 and 'PUBLICATION_COMPLETE' in result.stdout, label + ': retry succeeds')
-        check(tree(work / 'bucket') == dict(new, **{retired: old[retired]}),
-              label + ': origin converges, with allowed residual metadata')
+        check(tree(work / 'bucket') == dict(new, **residual),
+              label + ': origin converges, keeping the residual index and the earlier by-hash copies')
         edge = tree(work / 'edge')
         check(all(edge.get(key, tree(work / 'bucket').get(key)) == value for key, value in new.items()),
               label + ': all published URLs are readable through the edge with correct bytes')
@@ -168,7 +180,8 @@ with tempfile.TemporaryDirectory() as temp:
         check(not records('aws-calls') and tree(work / 'bucket') == old, 'credential rejection writes nothing')
 
     for order in ('forward', 'reverse'):
-        for phase, count in ((1, len(new_pool)), (2, len(mutable)), (3, len(old_pool))):
+        for phase, count in ((1, len(new_pool)), (2, len(new_copies)), (3, len(mutable)),
+                             (4, len(signed_index)), (5, len(old_pool))):
             for after in range(1, count + 1):
                 label = f'{order} pass {phase} after {after}/{count}'
                 reset()
@@ -184,16 +197,30 @@ with tempfile.TemporaryDirectory() as temp:
                 expected = dict(old)
                 if phase >= 2:
                     expected.update({key: new[key] for key in new_pool})
-                if phase == 3:
+                if phase >= 3:
+                    expected.update({key: new[key] for key in new_copies})
+                if phase >= 4:
                     expected.update({key: new[key] for key in mutable})
+                if phase >= 5:
+                    expected.update({key: new[key] for key in signed_index})
                 for _, action, key in last:
                     if action == 'upload':
                         expected[key] = new[key]
                     else:
                         expected.pop(key)
                 check(tree(work / 'bucket') == expected, label + ': exact accessible keys and bytes')
-                # Pass 2 may mix metadata generations; all referenced pool versions still exist.
-                if phase <= 2:
+                # Whichever InRelease is visible, every file it declares is
+                # served under its by-hash name with the declared bytes, so a
+                # client that offers by hash never meets a mismatch.
+                declared = [line.split() for line in expected['dists/stable/InRelease'].decode().splitlines()
+                            if line.startswith(' ')]
+                copies = ['dists/stable/' + path.rsplit('/', 1)[0] + '/by-hash/SHA256/' + sha
+                          for sha, _, path in declared]
+                check(declared and all(hashlib.sha256(expected.get(key, b'')).hexdigest() == key.rsplit('/', 1)[1]
+                                       for key in copies),
+                      label + ': every by-hash copy the visible InRelease declares is served')
+                # The metadata passes may mix generations; all referenced pool versions still exist.
+                if phase <= 4:
                     indices = [value for key, value in expected.items() if key.endswith('/Packages')]
                     check(all(line.split()[1] in expected for value in indices
                               for line in value.decode().splitlines() if line.startswith('Filename:')),
@@ -214,7 +241,7 @@ with tempfile.TemporaryDirectory() as temp:
               and 'injected purge failure' in result.stdout, label + ': real purge rejects API response')
         check('PUBLICATION_COMPLETE' not in result.stdout and 'Cloudflare cache purged,' not in result.stdout,
               label + ': no success declared')
-        check(tree(work / 'bucket') == dict(new, **{retired: old[retired]}), label + ': origin already replaced')
+        check(tree(work / 'bucket') == dict(new, **residual), label + ': origin already replaced')
         check(len(records('purges')) == batch, label + ': no subsequent purge batch')
         edge = tree(work / 'edge')
         check(edge['dists/stable/InRelease'] == old['dists/stable/InRelease'], label + ': stale index stays cached')

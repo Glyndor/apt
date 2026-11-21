@@ -487,7 +487,7 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/publish/sync-archive.sh
-          # 4. Remove the installers of the products that left the roster.
+          # 6. Remove the installers of the products that left the roster.
           # The sync deletes what it can compare, and the installer of a product
           # that left the roster is not in the tree any more: it is only in the
           # bucket. A sync with --delete over install/ would upload and delete in

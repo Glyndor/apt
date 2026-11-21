@@ -102,7 +102,7 @@ with tempfile.TemporaryDirectory() as temp:
         check(not any(u == 'https://apt.invalid/' for u in urls), label + ': never purges archive root')
         calls = records('calls')
         delete_at = next(i for i, record in enumerate(calls) if record[1] == 'delete-object')
-        check(len([c for c in calls[:delete_at] if c[:2] == ['s3', 'sync']]) == 3
+        check(len([c for c in calls[:delete_at] if c[:2] == ['s3', 'sync']]) == 5
               and (work / 'bucket/dists/stable/Release').read_bytes()
               == (work / 'public/dists/stable/Release').read_bytes(),
               label + ': metadata published before the first installer delete')
@@ -120,7 +120,8 @@ with tempfile.TemporaryDirectory() as temp:
           'failed prune stops the job before any purge')
     covered(job(), 'retry after partial prune')
     reset()
-    result = job(FAIL_PASS='2', FAIL_AFTER='1')
+    # Pass 3 is the metadata pass; pass 2 uploads the by-hash copies, which this tree has none of.
+    result = job(FAIL_PASS='3', FAIL_AFTER='1')
     check(result.returncode == 42 and not any(c[1] == 'delete-object' for c in records('calls')),
           'metadata failure prevents installer pruning')
     check(not records('purges'), 'metadata failure prevents purge')
