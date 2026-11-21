@@ -49,11 +49,18 @@ done
 #     content, so a name never changes its bytes: a year as well, and
 #     no purge.
 #   - everything else (the dists/ metadata, index.html, the keyring
-#     .deb) shares a fixed name but changes every rebuild. Cache it a
-#     day AND purge it from Cloudflare below on every publish, so a
-#     fresh release is visible at once; the long TTL is safe because
-#     each rebuild (daily + manual) purges, and nothing changes between
-#     rebuilds; it just cuts needless origin revalidations.
+#     .deb, install/) shares a fixed name but changes every rebuild.
+#     It is uploaded with max-age=86400, and that is what the edge
+#     caches it by: measured on 2026-11-21, InRelease was a HIT at the
+#     edge with an Age of 13457 s, which a 300 s edge lifetime would
+#     not allow. What the edge tells clients is something else:
+#     `public, max-age=300` on every file outside pool/, on a HIT and
+#     on a HEAD it answers without its cache, while pool/ keeps the
+#     header uploaded with it. That 300 is set in the configuration
+#     of the zone, which this repository cannot read, and not by this
+#     upload. So a client or a proxy revalidates every five minutes,
+#     the edge would serve a stale copy for up to a day, and the purge
+#     below, not the TTL, is what makes a publish visible.
 #
 # Passes 1, 2 and 5 use --size-only: a by-hash name is the hash of its
 # content, so the same name is the same bytes. A product .deb is built once and

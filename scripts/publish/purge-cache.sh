@@ -157,9 +157,10 @@ esac
 # hand-kept list drifts from what is actually served.
 #
 # These were missing, and the omission is the expensive kind. They are the
-# fixed-name mutable files this step exists for -- Cloudflare serves them with
-# `max-age=86400`, so a stale one persists for a day -- and their content is the
-# script a stranger pipes into a root shell. Measured on 2026-08-27: a fix to
+# fixed-name mutable files this step exists for -- the edge caches them for the
+# `max-age=86400` they are uploaded with, so a stale one persists there for up
+# to a day, though it tells clients `max-age=300` (measured 2026-11-21) -- and
+# their content is the script a stranger pipes into a root shell. Measured on 2026-08-27: a fix to
 # install-template.sh landed in R2 and the edge kept serving the previous script
 # to `install/podup` while `install/epistle`, less trafficked and so uncached,
 # served the new one. Every step of the publish reported success.

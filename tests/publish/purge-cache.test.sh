@@ -187,9 +187,9 @@ check "and the same 14 URLs are purged" \
 	"14" "$(jq -s -r '[.[].files[]] | length' < "$REQUESTS")"
 
 # The signature is the file this list forgot. It is served from the root under a
-# fixed name with `max-age=86400`, next to a package that is rebuilt every run,
-# so an unpurged one is the edge handing out a new package with the previous
-# signature over it. Named individually because the installer refuses to install
+# fixed name and cached by the edge for the `max-age=86400` it is uploaded
+# with, next to a package that is rebuilt every run, so an unpurged one is the
+# edge handing out a new package with the previous signature over it. Named individually because the installer refuses to install
 # the package without a signature that verifies over those exact bytes.
 check "the keyring package and its signature are purged together" \
 	"2" "$(jq -s -r '[.[].files[] | select(test("glyndor-archive-keyring[.]deb([.]asc)?$"))] | length' < "$REQUESTS")"
