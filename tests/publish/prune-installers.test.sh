@@ -27,7 +27,8 @@ with tempfile.TemporaryDirectory() as temp:
     (work / 'bin/aws').symlink_to(root / 'tests/fixtures/publish/aws.py')
     env = dict(os.environ, PATH=str(work / 'bin') + ':' + os.environ['PATH'],
                BUCKET=str(work / 'bucket'), FAKE_BUCKET=str(work / 'bucket'), AWS_CALLS=str(work / 'calls'),
-               AWS_WRITES=str(work / 'writes'), DELETE_STATE=str(work / 'deletes'))
+               AWS_WRITES=str(work / 'writes'), DELETE_STATE=str(work / 'deletes'),
+               AWS_ENDPOINT_URL='https://r2.invalid')
     built, bucket, journal = (work / name for name in ('built', 'bucket', 'pruned'))
 
     def put(base, key):
@@ -58,7 +59,7 @@ with tempfile.TemporaryDirectory() as temp:
 
     def run(**overrides):
         return subprocess.run(['bash', str(root / 'scripts/publish/prune-installers.sh'),
-                               str(built), 'glyndor-apt', 'https://r2.invalid', str(journal)],
+                               str(built), 'glyndor-apt', str(journal)],
                               env=dict(env, **overrides), capture_output=True, text=True)
 
     def refused(result, reason, before):
@@ -177,20 +178,39 @@ with tempfile.TemporaryDirectory() as temp:
     reset()
     before = keys()
     result = subprocess.run(['bash', str(root / 'scripts/publish/prune-installers.sh'),
-                             str(built), 'bad/bucket', 'https://r2.invalid', str(journal)],
+                             str(built), 'bad/bucket', str(journal)],
                             env=env, capture_output=True, text=True)
     check(result.returncode == 2 and 'the bucket must be a plain name' in result.stderr,
           'a bucket name with a slash is refused with exit 2')
     check(keys() == before and not any(c[1] == 'delete-object' for c in records()),
           'the refused bucket name makes no delete call')
 
-    # The workflow passes the endpoint from a secret, and a secret that arrives empty
-    # has to stop the run before anything is read or removed. Each of the three
-    # arguments is emptied in turn; the run that passes all three succeeds above.
-    for position, name in ((0, 'built directory'), (1, 'bucket'), (2, 'endpoint')):
+    # The workflow passes the endpoint from a secret, in AWS_ENDPOINT_URL, and a
+    # secret that arrives empty has to stop the run before anything is read or
+    # removed. Each argument is emptied in turn, and then the endpoint; the run
+    # that has all of them succeeds above.
+    reset()
+    before = keys()
+    result = subprocess.run(['bash', str(root / 'scripts/publish/prune-installers.sh'),
+                             str(built), 'glyndor-apt', str(journal)],
+                            env=dict(env, AWS_ENDPOINT_URL=''), capture_output=True, text=True)
+    check(result.returncode == 2 and 'usage: prune-installers.sh' in result.stderr
+          and 'AWS_ENDPOINT_URL' in result.stderr, 'an empty endpoint is refused with the usage and exit 2')
+    check(keys() == before and not records(), 'and the refusal reads and removes nothing')
+    for variable, value in (('AWS_ENDPOINT_URL_S3', 'https://elsewhere.invalid'),
+                            ('AWS_IGNORE_CONFIGURED_ENDPOINT_URLS', 'true')):
         reset()
         before = keys()
-        arguments = [str(built), 'glyndor-apt', 'https://r2.invalid', str(journal)]
+        result = subprocess.run(['bash', str(root / 'scripts/publish/prune-installers.sh'),
+                                 str(built), 'glyndor-apt', str(journal)],
+                                env=dict(env, **{variable: value}), capture_output=True, text=True)
+        check(result.returncode == 1 and variable + ' is set, and it would decide the S3 endpoint' in result.stderr,
+              variable + ' set is refused, since it would decide the endpoint')
+        check(keys() == before and not records(), 'and the refusal reads and removes nothing')
+    for position, name in ((0, 'built directory'), (1, 'bucket')):
+        reset()
+        before = keys()
+        arguments = [str(built), 'glyndor-apt', str(journal)]
         arguments[position] = ''
         result = subprocess.run(['bash', str(root / 'scripts/publish/prune-installers.sh')] + arguments,
                                 env=env, capture_output=True, text=True)
@@ -202,7 +222,7 @@ with tempfile.TemporaryDirectory() as temp:
     reset()
     before = keys()
     result = subprocess.run(['bash', str(root / 'scripts/publish/prune-installers.sh'),
-                             str(work / 'no-such-directory'), 'glyndor-apt', 'https://r2.invalid', str(journal)],
+                             str(work / 'no-such-directory'), 'glyndor-apt', str(journal)],
                             env=env, capture_output=True, text=True)
     check(result.returncode == 1 and 'no built installer directory at' in result.stderr,
           'a built directory that does not exist is refused for it')

@@ -101,6 +101,20 @@ assert_error 0 "verified podup_1.0_amd64.deb" "and so it is with no key file and
 assert_error 0 "verified podup_1.0_amd64.deb" "and with another product required" \
 	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-other"
 
+# The log of every run says the state of the second signature: the keys
+# configured, whether this product requires it, and the required list. It
+# counts the keys and never prints one.
+assert_error 0 "ML-DSA-65 second signature: 1 public key(s) configured in pq.b64; required for podup: no (required products: none)" \
+	"the run says a key is configured and the product is not required" \
+	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-none"
+assert_error 0 "ML-DSA-65 second signature: 0 public key(s) configured in absent.b64; required for podup: no (required products: none)" \
+	"and that none is, with no key file" \
+	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/absent.b64" "$WORK/absent-required"
+assert_error 0 "required for podup: no (required products: epistle)" "and names the products that are required" \
+	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-other"
+refute "$(grep -v '^#' "$WORK/pq.b64" | cut -c1-40)" "and prints no part of the key" \
+	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-none"
+
 # The committed defaults are what publish.yml uses: today no key and no product
 # required, so a release without a second signature is admitted exactly as before.
 # Once podup is required this no longer holds, and the case says it did not run.
@@ -117,6 +131,8 @@ assert_error 1 "no ML-DSA-65 signature" "a required product without its second s
 	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-podup"
 assert_error 1 "podup requires the hybrid release signature" "and the refusal names the product" \
 	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq-none.b64" "$WORK/required-podup"
+assert_error 1 "required for podup: yes (required products: podup epistle)" "and the run said it was required before refusing" \
+	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-podup"
 
 # --- an entry that is not a package name: our own file is malformed ----------
 # Read as a name it would match nothing, and the requirement would be gone with
@@ -165,7 +181,7 @@ head -c 3309 /dev/urandom > "$deb.mldsa65.sig"
 head -c 64 /dev/zero > "$deb.sig"
 assert_error 1 "invalid signature for podup_1.0_amd64.deb" "an invalid Ed25519 signature is refused beside a second one" \
 	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-podup"
-refute "ML-DSA-65" "and the refusal is the Ed25519 one, checked before the second" \
+refute "ML-DSA-65 signature" "and the refusal is the Ed25519 one, checked before the second" \
 	-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-podup"
 rm "$deb.sig"
 assert_error 1 "no signature" "a missing Ed25519 signature is refused beside a second one" \

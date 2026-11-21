@@ -27,25 +27,37 @@
 # The listing is also the only inventory there is: no index declares an
 # installer, so nothing in the archive says which ones exist.
 #
-# Usage: prune-installers.sh <built-install-dir> <bucket> <endpoint> [<removed-list>]
+# Usage: prune-installers.sh <built-install-dir> <bucket> [<removed-list>]
 #   <built-install-dir>  the directory the installers were generated into
 #   <bucket>             the bucket name, without the s3:// scheme
-#   <endpoint>           the S3 endpoint to talk to
 #   [<removed-list>]     a file to write the removed paths into, one per line,
 #                        for the edge purge to cover
+#
+# The S3 endpoint is read by the AWS CLI from AWS_ENDPOINT_URL, which has to be
+# set: it comes from a secret, and in argv it would be readable by any process
+# on the machine. scripts/publish/sync-archive.sh refuses a CLI too old to read
+# that variable, and runs first in the same step.
 #
 # Requires: aws, jq.
 set -euo pipefail
 
 BUILT_DIR="${1:-}"
 BUCKET="${2:-}"
-ENDPOINT="${3:-}"
-REMOVED_LIST="${4:-}"
+REMOVED_LIST="${3:-}"
 
-if [ -z "$BUILT_DIR" ] || [ -z "$BUCKET" ] || [ -z "$ENDPOINT" ]; then
-	echo "usage: prune-installers.sh <built-install-dir> <bucket> <endpoint> [<removed-list>]" >&2
+if [ -z "$BUILT_DIR" ] || [ -z "$BUCKET" ] || [ -z "${AWS_ENDPOINT_URL:-}" ]; then
+	echo "usage: prune-installers.sh <built-install-dir> <bucket> [<removed-list>], with AWS_ENDPOINT_URL set" >&2
 	exit 2
 fi
+# AWS_ENDPOINT_URL_S3 takes precedence over AWS_ENDPOINT_URL for S3, and
+# AWS_IGNORE_CONFIGURED_ENDPOINT_URLS makes the CLI ignore both and talk to
+# AWS. A listing and deletes sent anywhere else are refused before they start.
+for v in AWS_ENDPOINT_URL_S3 AWS_IGNORE_CONFIGURED_ENDPOINT_URLS; do
+	if [ -n "${!v+set}" ]; then
+		echo "::error::$v is set, and it would decide the S3 endpoint instead of AWS_ENDPOINT_URL; refusing to prune" >&2
+		exit 1
+	fi
+done
 
 # The prefix the installers live under. It is a constant of the archive layout
 # rather than an argument: a prune that could be pointed at another prefix
@@ -87,7 +99,7 @@ is_built() { # $1 = the name under install/
 list_installers() {
 	local json
 	json="$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$PREFIX" \
-		--endpoint-url "$ENDPOINT" --output json --no-paginate)"
+		--output json --no-paginate)"
 	if ! jq -se 'length == 1 and (.[0] | type == "object" and .IsTruncated == false)' <<< "$json" >/dev/null; then
 		echo "::error::the listing of $BUCKET/$PREFIX is not complete; refusing to prune a partial view" >&2
 		exit 1
@@ -170,8 +182,7 @@ if [ -n "$removed" ]; then
 	while IFS= read -r key; do
 		[ -n "$key" ] || continue
 		# Keep each exact key in one argument; never use recursive prefix removal.
-		aws s3api delete-object --bucket "$BUCKET" --key "$key" \
-			--endpoint-url "$ENDPOINT" >/dev/null
+		aws s3api delete-object --bucket "$BUCKET" --key "$key" >/dev/null
 		echo "pruned $key"
 	done <<< "$removed"
 else
