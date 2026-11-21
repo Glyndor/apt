@@ -184,8 +184,7 @@ jobs:
           set -euo pipefail
           venv="$RUNNER_TEMP/mldsa-venv"
           python3 -m venv "$venv"
-          "$venv/bin/python" -m pip install --quiet --disable-pip-version-check \
-            --require-hashes --only-binary=:all: -r scripts/verify/verify-debs-requirements.txt
+          "$venv/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r scripts/verify/verify-debs-requirements.txt
           echo "$venv/bin" >> "$GITHUB_PATH"
 
       - name: Run the ML-DSA-65 verifier suite
