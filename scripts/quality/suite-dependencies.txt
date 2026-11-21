@@ -60,6 +60,7 @@ tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh -
 tests/mutation/run-mutations.test.sh -
 tests/publication/health-check/health-check-workflow.test.sh -
 tests/publication/publish/publish-workflow-assets.test.sh -
+tests/publication/publish/publish-workflow-pq-sidecar.test.sh -
 tests/publication/publish/publish-workflow-bootstrap.test.sh -
 tests/publication/publish/publish-workflow-release-order.test.sh -
 tests/publication/publish/publish-workflow-signing-key.test.sh -

@@ -405,6 +405,10 @@ tests/publication/publish/publish-workflow-assets.test.sh
 	tests/publication/publish/**
 	.github/workflows/publish.yml
 
+tests/publication/publish/publish-workflow-pq-sidecar.test.sh
+	tests/publication/publish/**
+	.github/workflows/publish.yml
+
 tests/publication/publish/publish-workflow-verify-debs.test.sh
 	scripts/verify/verify-debs.sh
 	tests/publication/publish/**

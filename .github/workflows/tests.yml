@@ -100,6 +100,7 @@ jobs:
         ./tests/publication/publish/publish-workflow.test.sh
         ./tests/publication/publish/publish-workflow-sync.test.sh
         ./tests/publication/publish/publish-workflow-assets.test.sh
+        ./tests/publication/publish/publish-workflow-pq-sidecar.test.sh
         ./tests/publication/publish/publish-workflow-verify-debs.test.sh
         ./tests/publication/publish/publish-workflow-release-order.test.sh
         ./tests/publication/publish/publish-workflow-bootstrap.test.sh

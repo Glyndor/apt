@@ -181,6 +181,8 @@ jobs:
                   fi
                   ;;
                 *.sig)
+                  # Every signature, the ML-DSA-65 .mldsa65.sig included: at
+                  # 3309 bytes it is under the same cap verify-debs.sh reads to.
                   if [ "$size" -gt "$MAX_SIG_BYTES" ]; then
                     echo "::error::Glyndor/$p's release asset $name is $size bytes, over the ${MAX_SIG_BYTES}-byte .sig cap"
                     exit 1
@@ -199,12 +201,17 @@ jobs:
             # this is a cheaper first refusal, not a replacement.
             declare -A deb_for_arch=()
             declare -A sig_for_arch=()
+            declare -A pq_sig_for_arch=()
             for arch in $product_archs; do
               deb_names=()
               sig_names=()
+              pq_sig_names=()
               while IFS=' ' read -r size name; do
                 [ -n "$size" ] || continue
                 case "$name" in
+                  *_${arch}.deb.mldsa65.sig)
+                    pq_sig_names+=("$name")
+                    ;;
                   *_${arch}.deb.sig)
                     sig_names+=("$name")
                     ;;
@@ -231,7 +238,15 @@ jobs:
               # above (it is the only match) and then re-open the wildcard it
               # was meant to close. Refuse the metacharacters rather than
               # trying to escape them: no real asset name carries one.
-              for chosen in "${deb_names[0]}" "${sig_names[0]}"; do
+              # The ML-DSA-65 signature is optional here: no release carries
+              # one yet, and whether a product must is verify-debs.sh's call
+              # (keyring/pq-required-products), made against the bytes. Two of
+              # them are refused for the same reason as two .sig files.
+              if [ "${#pq_sig_names[@]}" -gt 1 ]; then
+                echo "::error::Glyndor/$p's $tag release carries ${#pq_sig_names[@]} ${arch} .deb.mldsa65.sig files: ${pq_sig_names[*]}; refusing to choose one without first knowing which"
+                exit 1
+              fi
+              for chosen in "${deb_names[0]}" "${sig_names[0]}" "${pq_sig_names[@]}"; do
                 case "$chosen" in
                   *[][*?]*)
                     echo "::error::Glyndor/$p's $tag release carries an asset whose name contains a glob metacharacter: $chosen"
@@ -247,6 +262,7 @@ jobs:
               done
               deb_for_arch[$arch]="${deb_names[0]}"
               sig_for_arch[$arch]="${sig_names[0]}"
+              pq_sig_for_arch[$arch]="${pq_sig_names[0]:-}"
             done
             mkdir -p "debs/$p"
             for arch in $product_archs; do
@@ -259,9 +275,12 @@ jobs:
               # above, not "latest" again, so every arch comes from the same
               # release, and the exact filenames selected above so no other
               # same-arch asset can ride in under the pattern.
+              patterns=(--pattern "${deb_for_arch[$arch]}" --pattern "${sig_for_arch[$arch]}")
+              if [ -n "${pq_sig_for_arch[$arch]}" ]; then
+                patterns+=(--pattern "${pq_sig_for_arch[$arch]}")
+              fi
               if ! gh release download "$tag" --repo "Glyndor/$p" \
-                   --pattern "${deb_for_arch[$arch]}" \
-                   --pattern "${sig_for_arch[$arch]}" \
+                   "${patterns[@]}" \
                    --dir "debs/$p" --clobber; then
                 echo "::error::could not download the ${arch} .deb (+.sig) of Glyndor/$p's $tag release; refusing to publish an archive that would drop it"
                 exit 1
@@ -298,7 +317,7 @@ jobs:
                   fi
                   ;;
               esac
-            done < <(find "debs/$p" -maxdepth 1 -type f \( -name '*.deb' -o -name '*.deb.sig' \))
+            done < <(find "debs/$p" -maxdepth 1 -type f \( -name '*.deb' -o -name '*.deb.sig' -o -name '*.deb.mldsa65.sig' \))
           done
           count=$(find debs -mindepth 2 -maxdepth 2 -name '*.deb' | wc -l)
           if [ "$count" -eq 0 ]; then
@@ -357,6 +376,12 @@ jobs:
             tag="$(cat "tags/$p" 2>/dev/null || true)"
             [ -n "$tag" ] \
               || { echo "::error::no pinned tag was recorded for $p; refusing to admit packages that cannot be bound to a release"; exit 1; }
+            # The ML-DSA-65 key and the required products are the verifier's
+            # defaults, keyring/glyndor-release-mldsa65.b64 and
+            # keyring/pq-required-products. It runs on the distribution's
+            # python3-cryptography, which has no ML-DSA: while that file holds
+            # no key, a release that attaches a .mldsa65.sig is refused before
+            # the library is needed.
             ./scripts/verify/verify-debs.sh "debs/$p" keyring/glyndor-release-ed25519.b64 "$p" "$tag"
           done
           # Flatten the per-product, now-verified .deb files into a single
