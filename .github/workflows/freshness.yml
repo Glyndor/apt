@@ -86,6 +86,8 @@ jobs:
   # is skipped only when an output here is exactly "false".
   scope:
     if: github.event_name == 'pull_request'
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -343,6 +345,8 @@ jobs:
     needs: scope
     if: ${{ !cancelled() && needs.scope.outputs.suite != 'false' }}
     name: suite on main
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
     runs-on: ubuntu-latest
     # A newer push to the same pull request supersedes the poll; on main and on
     # the schedule every run is kept, as each answers for its own commit.
@@ -418,6 +422,8 @@ jobs:
     concurrency:
       group: freshness-tool-versions-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
     runs-on: ubuntu-latest
     # Two `gh release list` calls and a checkout, seconds when measured
     # locally against stubs; the real calls are two API requests. Ten minutes

@@ -28,6 +28,8 @@ jobs:
   empty-diff:
     name: empty diff
     if: github.event_name == 'pull_request'
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
     runs-on: ubuntu-latest
     # Bound: 5 to 6s measured. Ten times that, rounded up, never under ten
     # minutes; the six-hour default is what a hang would otherwise cost.

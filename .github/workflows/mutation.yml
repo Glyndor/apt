@@ -99,7 +99,10 @@ jobs:
     name: the guards still die under their mutations
     needs: decide
     if: needs.decide.outputs.run == 'true'
-    runs-on: ubuntu-latest
+    # ubuntu-latest resolved to ubuntu-26.04 in apt's publish runs on
+    # 2026-11-20. The image is named because this job's verdict depends on the
+    # tools it ships, so a new image arrives as a commit and not overnight.
+    runs-on: ubuntu-26.04
     # Bound: about 30 minutes measured locally for every entry on 2026-11-21
     # (19.6 for the 145 entries added with the coverage check, about 10 for the
     # 76 before them), each one a copy of the tree and the suite it names. A

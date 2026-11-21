@@ -26,6 +26,8 @@ concurrency:
 jobs:
   roster:
     name: every roster product has a release
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

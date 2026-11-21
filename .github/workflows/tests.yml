@@ -176,7 +176,10 @@ jobs:
   # a library the distribution does not carry. It holds no secret.
   mldsa:
     name: ML-DSA-65 verifier
-    runs-on: ubuntu-latest
+    # ubuntu-latest resolved to ubuntu-26.04 in apt's publish runs on
+    # 2026-11-20. The image is named because this job's verdict depends on the
+    # tools it ships, so a new image arrives as a commit and not overnight.
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     # Bound: 6s measured locally for the venv, the three wheels and the suite.

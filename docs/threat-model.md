@@ -185,8 +185,10 @@ bytes, and that is the case `tests/build/keyring/build-keyring-generator.test.sh
   package is byte-for-byte reproducible for the same inputs *on the same
   tooling*: `dpkg-deb`, `tar` and `gpg` write it, and a different version of
   any of them can produce different bytes from identical inputs. The publish
-  runs on a moving runner image, so that can change without anyone editing
-  this repository, and the pool object is served under an immutable name for a
+  names its runner image, `ubuntu-26.04`, so a new Ubuntu release reaches it as
+  a commit; but GitHub still refreshes the packages of that image every week
+  under the same name, so that can change without anyone editing this
+  repository, and the pool object is served under an immutable name for a
   year. What stands in front of it is the read-back at the end of the publish,
   which compares the bytes the archive serves with the hashes the signed index
   declares and fails the run when they disagree. The version is the other half

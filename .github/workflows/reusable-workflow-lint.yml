@@ -44,7 +44,10 @@ concurrency:
 jobs:
   workflow-lint:
     name: workflow-lint
-    runs-on: ubuntu-latest
+    # ubuntu-latest resolved to ubuntu-26.04 in apt's publish runs on
+    # 2026-11-20. The image is named because this job's verdict depends on the
+    # tools it ships, so a new image arrives as a commit and not overnight.
+    runs-on: ubuntu-26.04
     # Bound: 15 to 28s measured, and it installs actionlint and shellcheck.
     # Ten times that, rounded up, never under ten minutes; the six-hour
     # default is what a hang would otherwise cost.

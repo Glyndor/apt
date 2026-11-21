@@ -27,6 +27,8 @@ concurrency:
 jobs:
   commit-identity:
     name: commit identity
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -45,6 +47,8 @@ jobs:
 
   secret-scan:
     name: secret scan
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
     runs-on: ubuntu-latest
     permissions:
       contents: read
