@@ -135,6 +135,18 @@ tests/verify/verify-published/verify-published-collision.test.sh
 	scripts/verify/**
 	tests/verify/**
 
+# The by-hash step of the build, over a distribution of the shape reprepro
+# exports, and an apt client reading what it signs.
+tests/build/add-by-hash.test.sh
+	scripts/build/add-by-hash.sh
+	tests/fixtures/build/**
+	tests/build/add-by-hash.test.sh
+
+tests/build/add-by-hash/add-by-hash-apt.test.sh
+	scripts/build/add-by-hash.sh
+	tests/fixtures/build/**
+	tests/build/add-by-hash/**
+
 # The build variant compares two signed archives kept as fixtures, so it also
 # depends on the keyring it verifies them against and on the workflow that
 # publishes them.

@@ -81,6 +81,8 @@ jobs:
         ./tests/keyring/release-key.test.sh
         ./tests/keyring/maintainer-postrm.test.sh
         ./tests/build/build-repo.test.sh
+        ./tests/build/add-by-hash.test.sh
+        ./tests/build/add-by-hash/add-by-hash-apt.test.sh
         ./tests/build/build-repo-expiry.test.sh
         ./tests/publish/purge-cache.test.sh
         ./tests/publish/purge-cache/purge-cache-budget.test.sh
