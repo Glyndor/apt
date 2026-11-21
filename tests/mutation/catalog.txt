@@ -145,6 +145,10 @@ release-order-dpkg-validate	scripts/verify/check-release-order.sh	if not version
 release-order-semver-validity	scripts/verify/check-release-order.sh	if not match:	if False:	tests/verify/check-release-order.test.sh
 release-order-arch-coverage	scripts/verify/check-release-order.sh	if declared - listed:	if False:	tests/verify/check-release-order.test.sh
 release-order-index-sha	scripts/verify/check-release-order.sh	if [ "$(sha256_of "$dest")" != "$digest" ]; then	if false; then	tests/verify/check-release-order.test.sh
+build-repo-secret-key-count	scripts/build/build-repo.sh	[ "$SEC_COUNT" -eq 1 ] || { echo "::error::expected exactly one secret key in GLYNDOR_APT_GPG_PRIVATE_KEY, found $SEC_COUNT" >&2; exit 1; }	[ "$SEC_COUNT" -eq 1 ] || true	tests/build/build-repo.test.sh,tests/publication/publish/publish-workflow-bootstrap.test.sh
+build-repo-key-in-keyring	scripts/build/build-repo.sh	if ! gpg --batch --with-colons --show-keys "$PUBKEY_ASC" \	if false && gpg --batch --with-colons --show-keys "$PUBKEY_ASC" \	tests/build/build-repo.test.sh,tests/publication/publish/publish-workflow-bootstrap.test.sh
+build-repo-bootstrap-signature	scripts/build/build-repo.sh	gpg --batch --local-user "$FPR" --armor --detach-sign \	true \	tests/build/build-repo.test.sh,tests/publication/publish/publish-workflow-bootstrap.test.sh
+publish-build-bootstrap	.github/workflows/publish.yml	build-repo.sh --bootstrap debs/glyndor-archive-keyring.deb public	build-repo.sh public	tests/publication/publish/publish-workflow-bootstrap.test.sh
 verify-published-index-cap	scripts/verify/verify-published.sh	if [ "$index_count" -gt "$MAX_ENTRIES" ]; then	if false; then	tests/verify/verify-published/verify-published-budget.test.sh
 verify-published-bootstrap-sig	scripts/verify/verify-published.sh	if [ "$bootstrap_sig_ok" -ne 1 ]; then	if false; then	tests/verify/verify-published/verify-published-bootstrap.test.sh
 quality-test-coverage	scripts/quality/check-test-coverage.sh	[ -f "$root/tests/$rel.test.sh" ] || missing+=("scripts/$rel.sh")	true || missing+=("scripts/$rel.sh")	tests/quality/check-test-coverage.test.sh

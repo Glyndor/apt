@@ -59,17 +59,12 @@ check "publish.yml declares exactly one job" "1" \
 # --- the steps exist --------------------------------------------------------
 verify_sigs="$(step_line 'Verify product .deb release signatures')"
 build_repo="$(step_line 'Build signed apt repository')"
-# Read by the loop below through eval, which shellcheck cannot follow; the
-# case that names this step is the one that asserts the step exists.
-# shellcheck disable=SC2034
-sign_keyring="$(step_line 'Sign the keyring package')"
 publish="$(step_line 'Publish to R2')"
 purge="$(step_line 'Purge Cloudflare cache')"
 verify_pub="$(step_line 'Verify the published archive')"
 
 for pair in "verify_sigs:the release signatures are verified" \
             "build_repo:the signed repository is built" \
-            "sign_keyring:the keyring package is signed" \
             "publish:the archive is published to R2" \
             "purge:the Cloudflare cache is purged" \
             "verify_pub:the published archive is read back"; do
