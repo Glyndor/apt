@@ -37,29 +37,16 @@
 # least one of the suites it names goes red, and with the tree unmutated every
 # suite of this repository that can run there passes.
 #
-# THREE GUARDS THAT ARE NOT IN THIS CATALOGUE
+# THE GUARDS THAT ARE NOT IN THIS CATALOGUE
 #
-# All three were measured and all three SURVIVED: no suite of this repository
-# goes red when the guard is removed. They are named here so that the gap is a
-# record and not a silence, and they are left out of the catalogue because an
-# entry that survives makes the whole sweep red.
-#
-#   scripts/verify/roster-has-releases.sh -- the refusal of a roster entry that
-#       is not a plain product name. The suite plants one and asks for exit 2,
-#       and the script still exits 2 when the refusal is gone, because the
-#       lookup of a name no repository has fails the same way. Nothing
-#       distinguishes the two refusals.
-#
-#   scripts/verify/verify-published.sh -- the cap on the NUMBER of packages
-#       the verified indices declare (`pool_count` against MAX_ENTRIES). The
-#       suite that exercises the caps sets MAX_ENTRIES to 3 and the archive it
-#       serves declares one package, so the cap is never the one that fires.
-#       The neighbouring cap, on the BYTES the packages declare, is covered.
-#
-#   scripts/installer/install-template.sh -- the comparison of the digest of
-#       the downloaded package with the digest of the copy dpkg is given.
-#       Nothing goes red when it is removed, because the signature check over
-#       the copy refuses the same substitution. It is redundancy, not a gap.
+# A guard with no entry here is not measured by the sweep, so every refusal of
+# the scripts under scripts/ and keyring/upgrade/ and of publish.yml has to have
+# an entry or a line in tests/mutation/exemptions.txt that says why it has none.
+# scripts/quality/check-mutation-coverage.sh fails a pull request that leaves
+# one with neither, and tests/quality/check-mutation-coverage.test.sh runs it in
+# the suite job. A guard measured to survive is recorded there with what was
+# measured, not left out in silence: an entry that survives makes the whole
+# sweep red.
 #
 # THE ML-DSA-65 GUARDS ONLY A REAL SIGNATURE REACHES
 #
@@ -113,7 +100,6 @@ purge-cache-missing-release	scripts/publish/purge-cache.sh	|| { echo "::error::n
 purge-cache-no-index-files	scripts/publish/purge-cache.sh	|| { echo "::error::the built Release declares no index files to purge"; exit 1; }	|| true	tests/publish/purge-cache/purge-cache-guards.test.sh
 purge-cache-index-dotdot	scripts/publish/purge-cache.sh	*..*) echo "::error::the built Release names an index path containing '..'"; exit 1 ;;	*..*) : ;;	tests/publish/purge-cache.test.sh
 purge-cache-pool-dotdot	scripts/publish/purge-cache.sh	*..*) echo "::error::a built Packages index names a pool path containing '..'"; exit 1 ;;	*..*) : ;;	tests/publish/purge-cache.test.sh
-purge-cache-no-packages	scripts/publish/purge-cache.sh	|| { echo "::error::the built indices declare no packages to purge"; exit 1; }	|| true	tests/publish/purge-cache/purge-cache-guards.test.sh
 purge-cache-no-install-dir	scripts/publish/purge-cache.sh	|| { echo "::error::the built tree has no install/ directory; every product's install line would stay stale"; exit 1; }	|| true	tests/publish/purge-cache.test.sh
 purge-cache-no-installer	scripts/publish/purge-cache.sh	|| { echo "::error::no bootstrap installer was built; there is nothing to purge and every product's install line is stale"; exit 1; }	|| true	tests/publish/purge-cache/purge-cache-guards.test.sh
 purge-cache-credentials	scripts/publish/purge-cache.sh	|| { echo "::error::$v is not configured."; exit 1; }	|| true	tests/publish/purge-cache/purge-cache-guards.test.sh
@@ -152,6 +138,7 @@ release-order-arch-coverage	scripts/verify/check-release-order.sh	if declared - 
 release-order-index-sha	scripts/verify/check-release-order.sh	if [ "$(sha256_of "$dest")" != "$digest" ]; then	if false; then	tests/verify/check-release-order.test.sh
 build-repo-secret-key-count	scripts/build/build-repo.sh	[ "$SEC_COUNT" -eq 1 ] || { echo "::error::expected exactly one secret key in GLYNDOR_APT_GPG_PRIVATE_KEY, found $SEC_COUNT" >&2; exit 1; }	[ "$SEC_COUNT" -eq 1 ] || true	tests/build/build-repo.test.sh,tests/publication/publish/publish-workflow-bootstrap.test.sh
 build-repo-key-in-keyring	scripts/build/build-repo.sh	if ! gpg --batch --with-colons --show-keys "$PUBKEY_ASC" \	if false && gpg --batch --with-colons --show-keys "$PUBKEY_ASC" \	tests/build/build-repo.test.sh,tests/publication/publish/publish-workflow-bootstrap.test.sh
+build-repo-bootstrap-missing	scripts/build/build-repo.sh	[ -f "$BOOTSTRAP" ] || { echo "no such keyring package: $BOOTSTRAP" >&2; exit 1; }	[ -f "$BOOTSTRAP" ] || true	tests/build/build-repo.test.sh
 build-repo-bootstrap-name	scripts/build/build-repo.sh	[ "$(basename "$BOOTSTRAP")" = glyndor-archive-keyring.deb ] \	true \	tests/build/build-repo.test.sh
 build-repo-bootstrap-package	scripts/build/build-repo.sh	[ "$(dpkg-deb -f "$BOOTSTRAP" Package 2>/dev/null)" = glyndor-archive-keyring ] \	true \	tests/build/build-repo.test.sh
 build-repo-bootstrap-signature	scripts/build/build-repo.sh	gpg --batch --local-user "$FPR" --armor --detach-sign \	true \	tests/build/build-repo.test.sh,tests/publication/publish/publish-workflow-bootstrap.test.sh
@@ -173,3 +160,150 @@ suites-wired-skip-paths	scripts/quality/check-suites-wired.sh	                  
 suites-wired-skip-literal	scripts/quality/check-suites-wired.sh	    if [[ "$f" == $pattern ]]; then	    if [[ "$f" == "$pattern" ]]; then	tests/quality/check-suites-wired.test.sh
 quality-action-pins	scripts/quality/check-action-pins.sh	if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then	if true; then	tests/quality/check-action-pins.test.sh
 quality-lint-workflow-shell	scripts/quality/lint-workflow-shell.sh	if ! out="$(shellcheck -S "$severity" -f gcc "$block" 2>&1)"; then	if false; then	tests/quality/lint-workflow-shell.test.sh
+# The refusals below were catalogued when scripts/quality/check-mutation-coverage.sh
+# started requiring an entry or an exemption for every refusal. Each one was
+# measured on 2026-11-21 against a copy of the tree: its mutation applied, the
+# suites of its script run until one failed, and that suite is the one named.
+publish-could-not-download-arch-deb	.github/workflows/publish.yml	if ! gh release download "$tag" --repo "Glyndor/$p" \	if false && ! gh release download "$tag" --repo "Glyndor/$p" \	tests/publication/publish/publish-workflow-assets.test.sh
+publish-f-sz-bytes-over-max	.github/workflows/publish.yml	if [ "$sz" -gt "$MAX_SIG_BYTES" ]; then	if false; then	tests/publication/publish/publish-workflow-assets.test.sh
+publish-f-sz-bytes-over-max-2	.github/workflows/publish.yml	if [ "$sz" -gt "$MAX_DEB_BYTES" ]; then	if false; then	tests/publication/publish/publish-workflow-assets.test.sh
+publish-glyndor-release-asset-name-has	.github/workflows/publish.yml	''|*[!0-9]*)	__mutation_never_matches__)	tests/publication/publish/publish-workflow-assets.test.sh
+publish-glyndor-release-asset-name-size	.github/workflows/publish.yml	if [ "$size" -gt "$MAX_DEB_BYTES" ]; then	if false; then	tests/publication/publish/publish-workflow-assets.test.sh
+publish-glyndor-release-asset-name-size-2	.github/workflows/publish.yml	if [ "$size" -gt "$MAX_SIG_BYTES" ]; then	if false; then	tests/publication/publish/publish-workflow-assets.test.sh
+publish-glyndor-tag-release-carries-asset	.github/workflows/publish.yml	*[][*?]*)	__mutation_never_matches__)	tests/publication/publish/publish-workflow-assets.test.sh
+publish-glyndor-tag-release-carries-asset-2	.github/workflows/publish.yml	*/* | *\\*)	__mutation_never_matches__)	tests/publication/publish/publish-workflow-assets.test.sh
+publish-glyndor-tag-release-carries-deb	.github/workflows/publish.yml	if [ "${#deb_names[@]}" -ne 1 ]; then	if false; then	tests/publication/publish/publish-workflow-assets.test.sh
+publish-glyndor-tag-release-carries-pq	.github/workflows/publish.yml	if [ "${#pq_sig_names[@]}" -gt 1 ]; then	if false; then	tests/publication/publish/publish-workflow-pq-sidecar.test.sh
+publish-glyndor-tag-release-carries-sig	.github/workflows/publish.yml	if [ "${#sig_names[@]}" -ne 1 ]; then	if false; then	tests/publication/publish/publish-workflow-assets.test.sh
+publish-no-release-tag-was-pinned	.github/workflows/publish.yml	|| { echo "::error::no release tag was pinned for $p; refusing to check a release that cannot be named"; exit 1; }	|| true || { echo "::error::no release tag was pinned for $p; refusing to check a release that cannot be named"; exit 1; }	tests/publication/publish/publish-workflow-release-order.test.sh
+publish-undeclared-architecture	.github/workflows/publish.yml	echo "::error::Glyndor/$p declares architecture $a, which is not in ARCHITECTURES ($ARCHITECTURES)"	continue	tests/publication/publish/publish-workflow-assets.test.sh
+glyndor-upgrade-glyndor-upgrade-apt-could-not	keyring/upgrade/glyndor-upgrade	if ! sim="$(apt-get -s --only-upgrade install $installed)"; then	if false; then	tests/keyring/glyndor-upgrade-errors.test.sh
+glyndor-upgrade-glyndor-upgrade-cannot-read-glyndor	keyring/upgrade/glyndor-upgrade	if ! content="$("$APT_HELPER" cat-file "$f" 2>/dev/null)"; then	if false; then	tests/keyring/glyndor-upgrade-errors.test.sh
+glyndor-upgrade-glyndor-upgrade-dpkg-could-not	keyring/upgrade/glyndor-upgrade	if [ "$query_rc" -ne 0 ]; then	if false; then	tests/keyring/glyndor-upgrade.test.sh
+glyndor-upgrade-glyndor-upgrade-no-readable-glyndor	keyring/upgrade/glyndor-upgrade	if [ -z "$names" ]; then	if false; then	tests/keyring/glyndor-upgrade.test.sh
+glyndor-upgrade-glyndor-upgrade-refusing-run-invalid	keyring/upgrade/glyndor-upgrade	if [ -n "$_bad" ]; then	if false; then	tests/keyring/glyndor-upgrade.test.sh
+build-index-page-built-indices-declare-no-installable	scripts/build/build-index-page.sh	|| { echo "the built indices declare no installable packages" >&2; exit 1; }	|| true || { echo "the built indices declare no installable packages" >&2; exit 1; }	tests/build/build-index-page.test.sh
+build-index-page-built-release-architectures-field-contains	scripts/build/build-index-page.sh	''|*[!a-z0-9.+-]*)	__mutation_never_matches__)	tests/build/build-index-page.test.sh
+build-index-page-built-release-declares-no-architectures	scripts/build/build-index-page.sh	|| { echo "the built Release declares no architectures" >&2; exit 1; }	|| true || { echo "the built Release declares no architectures" >&2; exit 1; }	tests/build/build-index-page.test.sh
+build-index-page-no-signed-release-at-release	scripts/build/build-index-page.sh	|| { echo "no signed Release at $release; nothing to build a page from" >&2; exit 1; }	|| true || { echo "no signed Release at $release; nothing to build a page from" >&2; exit 1; }	tests/build/build-index-page.test.sh
+build-index-page-usage-build-index-page-sh	scripts/build/build-index-page.sh	[ -n "$OUT_DIR" ] || { echo "usage: build-index-page.sh <built-dir>" >&2; exit 2; }	[ -n "$OUT_DIR" ] || true || { echo "usage: build-index-page.sh <built-dir>" >&2; exit 2; }	tests/build/build-index-page.test.sh
+build-installers-no-products-given	scripts/build/build-installers.sh	[ "$#" -gt 0 ] || { echo "::error::no products given" >&2; exit 1; }	[ "$#" -gt 0 ] || true || { echo "::error::no products given" >&2; exit 1; }	tests/build/build-installers.test.sh
+build-installers-out-still-contains-product	scripts/build/build-installers.sh	|| { echo "::error::$out still contains @PRODUCT@" >&2; exit 1; }	|| true || { echo "::error::$out still contains @PRODUCT@" >&2; exit 1; }	tests/build/build-installers.test.sh
+build-keyring-keyring-carries-key-that-clients	scripts/build/build-keyring.sh	if [ -n "$bad" ]; then	if false; then	tests/build/build-keyring.test.sh
+build-keyring-keyring-contains-no-usable-key	scripts/build/build-keyring.sh	[ "$key_count" -ge 1 ] || { echo "::error::keyring contains no usable key" >&2; exit 1; }	[ "$key_count" -ge 1 ] || true || { echo "::error::keyring contains no usable key" >&2; exit 1; }	tests/build/build-keyring.test.sh
+build-keyring-keyring-input-carries-secret-key	scripts/build/build-keyring.sh	if gpg --show-keys --with-colons "$ROOT/usr/share/keyrings/glyndor.gpg" 2>/dev/null | grep -q '^sec:'; then	if false; then	tests/build/build-keyring.test.sh
+build-keyring-keyring-version-not-single-debian	scripts/build/build-keyring.sh	|| { echo "::error::keyring/version is not a single Debian upstream version" >&2; exit 1; }	|| true || { echo "::error::keyring/version is not a single Debian upstream version" >&2; exit 1; }	tests/build/build-keyring.test.sh
+build-keyring-no-git-history-for-build	scripts/build/build-keyring.sh	if [ -z "$PKG_DATE" ] || [ -z "$PKG_EPOCH" ]; then	if false; then	tests/build/build-keyring.test.sh
+build-repo-missing-public-key-pubkey-asc	scripts/build/build-repo.sh	[ -f "$PUBKEY_ASC" ] || { echo "missing public key: $PUBKEY_ASC" >&2; exit 1; }	[ -f "$PUBKEY_ASC" ] || true || { echo "missing public key: $PUBKEY_ASC" >&2; exit 1; }	tests/build/build-repo.test.sh
+build-repo-no-deb-files-given	scripts/build/build-repo.sh	[ "$#" -ge 1 ] || { echo "no .deb files given" >&2; exit 1; }	[ "$#" -ge 1 ] || true || { echo "no .deb files given" >&2; exit 1; }	tests/build/build-repo.test.sh
+build-repo-no-such-deb-d	scripts/build/build-repo.sh	[ -f "$d" ] || { echo "no such .deb: $d" >&2; exit 1; }	[ -f "$d" ] || true || { echo "no such .deb: $d" >&2; exit 1; }	tests/build/build-repo.test.sh
+install-template-apt-could-not-install-product	scripts/installer/install-template.sh	if ! apt_log="$(DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>&1 </dev/null \	if false && ! apt_log="$(DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>&1 </dev/null \	tests/installer/install-template/install-template-behaviour.test.sh
+install-template-could-not-determine-owner-uid	scripts/installer/install-template.sh	_owner_uid="$(stat -c %u "$1" 2>/dev/null)" || fail "could not determine the owner uid of the temporary directory $1; nothing was installed"	_owner_uid="$(stat -c %u "$1" 2>/dev/null)" || true || fail "could not determine the owner uid of the temporary directory $1; nothing was installed"	tests/installer/install-template/install-template-tmpdir.test.sh
+install-template-could-not-extract-keyring-package	scripts/installer/install-template.sh	[ -s "$workdir/keyring.tar" ] || fail "could not extract the keyring package"	[ -s "$workdir/keyring.tar" ] || true || fail "could not extract the keyring package"	tests/installer/install-template/install-template-behaviour.test.sh
+install-template-could-not-install-gnupg	scripts/installer/install-template.sh	apt-get install -y -qq gnupg </dev/null || fail "could not install gnupg"	apt-get install -y -qq gnupg </dev/null || true || fail "could not install gnupg"	tests/installer/install-template/install-template-guards.test.sh
+install-template-extract-keyring	scripts/installer/install-template.sh	tar -x -f - -C "$workdir/extracted" --no-same-owner < "$workdir/keyring.tar" \	{ tar -x -f - -C "$workdir/extracted" --no-same-owner < "$workdir/keyring.tar" || true; } \	tests/installer/install-template.test.sh
+install-template-no-apt-get-found-product	scripts/installer/install-template.sh	|| fail "no apt-get found. @PRODUCT@ ships as a .deb; on a non-Debian system, build from source (https://github.com/Glyndor/@PRODUCT@)"	|| true || fail "no apt-get found. @PRODUCT@ ships as a .deb; on a non-Debian system, build from source (https://github.com/Glyndor/@PRODUCT@)"	tests/installer/install-template.test.sh
+install-template-no-dpkg-deb-found	scripts/installer/install-template.sh	command -v dpkg-deb >/dev/null 2>&1 || fail "no dpkg-deb found"	command -v dpkg-deb >/dev/null 2>&1 || true || fail "no dpkg-deb found"	tests/installer/install-template/install-template-guards.test.sh
+install-template-no-dpkg-found	scripts/installer/install-template.sh	command -v dpkg >/dev/null 2>&1 || fail "no dpkg found"	command -v dpkg >/dev/null 2>&1 || true || fail "no dpkg found"	tests/installer/install-template/install-template-guards.test.sh
+install-template-owner-uid	scripts/installer/install-template.sh	case "$_owner_uid" in 0|"$run_uid") return 0 ;; esac	return 0	tests/installer/install-template/install-template-tmpdir.test.sh
+install-template-package-changed-between-signature-check	scripts/installer/install-template.sh	|| fail "the package changed between the signature check and the installation; nothing was installed"	|| true || fail "the package changed between the signature check and the installation; nothing was installed"	tests/installer/install-template/install-template-tmpdir.test.sh
+install-template-product-installed-but-does-not	scripts/installer/install-template.sh	if version_line="$("@PRODUCT@" --version 2>&1)"; then	if true; then	tests/installer/install-template/install-template-behaviour.test.sh
+install-template-temporary-directory-unsafe-dir-writable	scripts/installer/install-template.sh	if [ -n "$unsafe_dir" ]; then	if false; then	tests/installer/install-template/install-template-tmpdir.test.sh
+install-template-unsafe-dir-unsafe-dir-on	scripts/installer/install-template.sh	unsafe_dir="$(unsafe_dir_on_path "$temp_root_abs")" || exit 1	unsafe_dir="$(unsafe_dir_on_path "$temp_root_abs")" || true || exit 1	tests/installer/install-template/install-template-tmpdir.test.sh
+check-reusable-drift-compared-compared-reusable-workflow-copy	scripts/monitoring/check-reusable-drift.sh	if [ "$unreachable" -ne 0 ] || [ "$absent" -ne 0 ]; then	if false; then	tests/monitoring/check-reusable-drift.test.sh
+check-reusable-drift-drifted-compared-compared-reusable-workflow	scripts/monitoring/check-reusable-drift.sh	if [ "$drifted" -ne 0 ]; then	if false; then	tests/monitoring/check-reusable-drift.test.sh
+check-reusable-drift-no-reusable-workflow-was-compared	scripts/monitoring/check-reusable-drift.sh	if [ "$compared" -eq 0 ]; then	if false; then	tests/monitoring/check-reusable-drift.test.sh
+check-suite-on-main-no-completed-run	scripts/monitoring/check-suite-on-main.sh	echo "::error::no completed run of $workflow on $branch is on record" >&2	exit 0	tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh
+check-suite-on-main-no-verdict-from-completed-runs	scripts/monitoring/check-suite-on-main.sh	if [ -z "$newest_line" ]; then	if false; then	tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh
+check-suite-on-main-push-event-received-but-github	scripts/monitoring/check-suite-on-main.sh	if [ "$event" = "push" ] && [ -z "$sha" ]; then	if false; then	tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh
+check-suite-on-main-push-no-verdict	scripts/monitoring/check-suite-on-main.sh	echo "::error::no $workflow run for commit $short on $branch finished within 20 minutes" >&2	return 0	tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh
+check-suite-on-main-push-red	scripts/monitoring/check-suite-on-main.sh	echo "::error::$workflow concluded '$conclusion' on $branch for commit $rshort: run #$number, started $created" >&2	exit 0	tests/monitoring/suite-on-main/check-suite-on-main-push.test.sh
+check-suite-on-main-red	scripts/monitoring/check-suite-on-main.sh	echo "::error::$workflow concluded '$conclusion' on $branch: run #$number for $short, started $created" >&2	exit 0	tests/monitoring/suite-on-main/check-suite-on-main-cron.test.sh
+check-suite-on-main-usage-check-suite-on-main	scripts/monitoring/check-suite-on-main.sh	if [ -z "$repo" ] || [ -z "$workflow" ]; then	if false; then	tests/monitoring/check-suite-on-main.test.sh
+prune-installers-bucket-must-be-plain-name	scripts/publish/prune-installers.sh	*[!a-z0-9.-]* | '')	__mutation_never_matches__)	tests/publish/prune-installers.test.sh
+prune-installers-bucket-still-serves-installers-this	scripts/publish/prune-installers.sh	if [ -n "$leftover" ]; then	if false; then	tests/publish/prune-installers.test.sh
+prune-installers-built-installer-missing-from-bucket	scripts/publish/prune-installers.sh	grep -qxF -- "$PREFIX$name" <<< "$1" || {	grep -qxF -- "$PREFIX$name" <<< "$1" || true || {	tests/publish/prune-installers.test.sh
+prune-installers-built-name	scripts/publish/prune-installers.sh	echo "::error::invalid built installer name" >&2; exit 1 ;;	: ;;	tests/publish/prune-installers.test.sh
+prune-installers-cannot-write-removed-paths-at	scripts/publish/prune-installers.sh	if [ -e "$REMOVED_LIST" ] && [ ! -f "$REMOVED_LIST" ]; then	if false; then	tests/publish/prune-installers.test.sh
+prune-installers-journal	scripts/publish/prune-installers.sh	*) echo "::error::invalid removed paths journal" >&2; exit 1 ;;	*) : ;;	tests/publish/prune-installers.test.sh
+prune-installers-listing-bucket-prefix-not-complete	scripts/publish/prune-installers.sh	if ! jq -se 'length == 1 and (.[0] | type == "object" and .IsTruncated == false)' <<< "$json" >/dev/null; then	if false; then	tests/publish/prune-installers.test.sh
+prune-installers-listing-outside-prefix	scripts/publish/prune-installers.sh	echo "::error::the listing returned '$key', which is not under $PREFIX; refusing to touch it" >&2	continue	tests/publish/prune-installers.test.sh
+prune-installers-listing-shape	scripts/publish/prune-installers.sh	if ! jq -e '(if has("Contents") then .Contents else [] end) | type == "array" and all(.[];	if false && ! jq -e '(if has("Contents") then .Contents else [] end) | type == "array" and all(.[];	tests/publish/prune-installers.test.sh
+prune-installers-no-bootstrap-installer-was-built	scripts/publish/prune-installers.sh	|| { echo "::error::no bootstrap installer was built at $BUILT_DIR; refusing to prune the served ones against an empty build" >&2; exit 1; }	|| true || { echo "::error::no bootstrap installer was built at $BUILT_DIR; refusing to prune the served ones against an empty build" >&2; exit 1; }	tests/publish/prune-installers.test.sh
+prune-installers-unsafe-removed-paths-journal	scripts/publish/prune-installers.sh	*..* | *'//'* | *[$'\001'-$'\037'$'\177']*)	__mutation_never_matches__)	tests/publish/prune-installers.test.sh
+purge-cache-budget-integer	scripts/publish/purge-cache.sh	case "$BUDGET" in '' | *[!0-9]*)	case "$BUDGET" in __mutation_never__)	tests/publish/purge-cache/purge-cache-budget.test.sh
+purge-cache-budget-stop	scripts/publish/purge-cache.sh	budget_stop() { # $1=group label $2=batch number $3=before|on $4=curl exit (optional)	budget_stop() { return 0; # mutated	tests/publish/purge-cache/purge-cache-budget.test.sh
+purge-cache-built-indices-declare-no-keyring	scripts/publish/purge-cache.sh	|| { echo "::error::the built indices declare no keyring package; its pool object is the one that has to be purged"; exit 1; }	|| true || { echo "::error::the built indices declare no keyring package; its pool object is the one that has to be purged"; exit 1; }	tests/publish/purge-cache/purge-cache-guards.test.sh
+purge-cache-built-tree-has-no-files	scripts/publish/purge-cache.sh	|| { echo "::error::the built tree has no files at its root; the keyring package and the landing page are served from there"; exit 1; }	|| true || { echo "::error::the built tree has no files at its root; the keyring package and the landing page are served from there"; exit 1; }	tests/publish/purge-cache/purge-cache-guards.test.sh
+purge-cache-built-tree-has-no-packages	scripts/publish/purge-cache.sh	|| { echo "::error::the built tree has no Packages index; there is nothing to purge"; exit 1; }	|| true || { echo "::error::the built tree has no Packages index; there is nothing to purge"; exit 1; }	tests/publish/purge-cache.test.sh
+purge-cache-cloudflare-purge-failed-on-2	scripts/publish/purge-cache.sh	if [ "$_rc" -ne 0 ]; then	if false; then	tests/publish/purge-cache/purge-cache-budget.test.sh
+purge-cache-list-removed-paths-at-pruned	scripts/publish/purge-cache.sh	if [ ! -f "$PRUNED_PATHS" ] || [ ! -r "$PRUNED_PATHS" ]; then	if false; then	tests/publish/purge-cache/purge-cache-pruned.test.sh
+purge-cache-per-attempt-ceiling-must-be-2	scripts/publish/purge-cache.sh	[ "$TRANSFER_MAX" -ge 1 ] || { echo "::error::the per-attempt ceiling must be at least 1 second" >&2; exit 1; }	[ "$TRANSFER_MAX" -ge 1 ] || true || { echo "::error::the per-attempt ceiling must be at least 1 second" >&2; exit 1; }	tests/publish/purge-cache/purge-cache-guards.test.sh
+purge-cache-pruned-dotdot	scripts/publish/purge-cache.sh	*..*) echo "::error::the list of removed paths names a path containing '..'"; exit 1 ;;	*..*) : ;;	tests/publish/purge-cache/purge-cache-pruned.test.sh
+purge-cache-pruned-outside-install	scripts/publish/purge-cache.sh	*) echo "::error::the list of removed paths names '$_removed', which is not under install/"; exit 1 ;;	*) : ;;	tests/publish/purge-cache/purge-cache-pruned.test.sh
+purge-cache-required-missing-from-built-dir	scripts/publish/purge-cache.sh	|| { echo "::error::$_required is missing from $BUILT_DIR; the keyring package and its signature are served together and have to be purged together"; exit 1; }	|| true || { echo "::error::$_required is missing from $BUILT_DIR; the keyring package and its signature are served together and have to be purged together"; exit 1; }	tests/publish/purge-cache.test.sh
+purge-cache-transfer-integer	scripts/publish/purge-cache.sh	case "$TRANSFER_MAX" in '' | *[!0-9]*)	case "$TRANSFER_MAX" in __mutation_never__)	tests/publish/purge-cache/purge-cache-guards.test.sh
+purge-cache-usage-purge-cache-sh-archive	scripts/publish/purge-cache.sh	if [ -z "$ARCHIVE_URL" ] || [ -z "$BUILT_DIR" ]; then	if false; then	tests/publish/purge-cache.test.sh
+sync-archive-v-not-configured	scripts/publish/sync-archive.sh	|| { echo "::error::$v is not configured."; exit 1; }	|| true || { echo "::error::$v is not configured."; exit 1; }	tests/publish/sync-archive.test.sh
+check-action-pins-no-workflow-file-was-checked	scripts/quality/check-action-pins.sh	if [ "$files" -eq 0 ]; then	if false; then	tests/quality/check-action-pins.test.sh
+check-action-pins-some-remote-action-reference-not	scripts/quality/check-action-pins.sh	if [ "$fail" -ne 0 ]; then	if false; then	tests/quality/check-action-pins.test.sh
+check-commit-identity-use-your-github-noreply-address	scripts/quality/check-commit-identity.sh	[ "$bad" -eq 0 ] || { echo "Use your GitHub noreply address (git config user.email)." >&2; exit 1; }	[ "$bad" -eq 0 ] || true || { echo "Use your GitHub noreply address (git config user.email)." >&2; exit 1; }	tests/quality/check-commit-identity.test.sh
+check-secrets-remove-value-rotate-it-if	scripts/quality/check-secrets.sh	if [ "$bad" -ne 0 ]; then	if false; then	tests/quality/check-secrets.test.sh
+check-suites-wired-if-errors-sys-exit-1	scripts/quality/check-suites-wired.sh	if errors:	if False:	tests/quality/check-suites-wired.test.sh
+check-test-coverage-missing-script-have-no-test	scripts/quality/check-test-coverage.sh	if [ ${#missing[@]} -gt 0 ]; then	if false; then	tests/quality/check-test-coverage.test.sh
+check-test-coverage-no-scripts-directory-under-root	scripts/quality/check-test-coverage.sh	[ -d "$root/scripts" ] || { echo "no scripts/ directory under $root" >&2; exit 1; }	[ -d "$root/scripts" ] || true || { echo "no scripts/ directory under $root" >&2; exit 1; }	tests/quality/check-test-coverage.test.sh
+lint-workflow-shell-found-no-run-blocks-under	scripts/quality/lint-workflow-shell.sh	if [ "$blocks" -eq 0 ]; then	if false; then	tests/quality/lint-workflow-shell.test.sh
+lint-workflow-shell-shellcheck-severity-severity-found-problems	scripts/quality/lint-workflow-shell.sh	if [ "$failed" -ne 0 ]; then	if false; then	tests/quality/lint-workflow-shell.test.sh
+check-release-order-could-not-compare-product-candidate	scripts/verify/check-release-order.sh	if ! verdict="$(release_order "$PRODUCT" "$candidate" "$DEBS_DIR" "${packages[@]}")"; then	if false; then	tests/verify/check-release-order.test.sh
+check-release-order-could-not-fetch-served-index	scripts/verify/check-release-order.sh	if ! fetch "$BASE_URL/$DIST_PATH/InRelease" "$WORK/InRelease" "$MAX_INRELEASE_BYTES"; then	if false; then	tests/verify/check-release-order.test.sh
+check-release-order-could-not-fetch-served-index-2	scripts/verify/check-release-order.sh	if ! fetch "$url" "$dest" "$MAX_INDEX_BYTES"; then	if false; then	tests/verify/check-release-order.test.sh
+check-release-order-refusing-publish-product-tag-archive	scripts/verify/check-release-order.sh	older\ *)	__mutation_never_matches__)	tests/verify/check-release-order.test.sh
+check-release-order-served-index-at-base-url	scripts/verify/check-release-order.sh	if ! gpgv --keyring "$GNUPGHOME/pubring.kbx" --quiet \	if false && ! gpgv --keyring "$GNUPGHOME/pubring.kbx" --quiet \	tests/verify/check-release-order.test.sh
+check-release-order-served-name-got-size-bytes	scripts/verify/check-release-order.sh	if [ "$got_size" != "$size" ]; then	if false; then	tests/verify/check-release-order.test.sh
+release-order-packages-readable	scripts/verify/check-release-order.sh	echo "::error::the served index does not declare a readable per-architecture Packages file" >&2	exit 0	tests/verify/check-release-order.test.sh
+distro-floor-could-not-download-base-url	scripts/verify/distro-floor.sh	|| fail "could not download $base_url/install/$product"	|| true || fail "could not download $base_url/install/$product"	tests/verify/distro-floor.test.sh
+distro-floor-expectation	scripts/verify/distro-floor.sh	*) fail "expectation must be install or refuse, got: $expect" ;;	*) : ;;	tests/verify/distro-floor.test.sh
+distro-floor-installer-exited-0-but-product	scripts/verify/distro-floor.sh	|| fail "the installer exited 0 but $product is not on PATH"	|| true || fail "the installer exited 0 but $product is not on PATH"	tests/verify/distro-floor.test.sh
+distro-floor-installer-exited-rc-on-release	scripts/verify/distro-floor.sh	|| fail "the installer exited $rc on a release the README lists as supported"	|| true || fail "the installer exited $rc on a release the README lists as supported"	tests/verify/distro-floor.test.sh
+distro-floor-installer-succeeded-on-release-readme	scripts/verify/distro-floor.sh	|| fail "the installer succeeded on a release the README lists as unsupported"	|| true || fail "the installer succeeded on a release the README lists as unsupported"	tests/verify/distro-floor.test.sh
+distro-floor-installer-was-refused-but-refusal	scripts/verify/distro-floor.sh	|| fail "the installer was refused, but the refusal does not name the floor: podman (>= 5.0) or libc6 (>= N)"	|| true || fail "the installer was refused, but the refusal does not name the floor: podman (>= 5.0) or libc6 (>= N)"	tests/verify/distro-floor.test.sh
+distro-floor-product-on-path-but-does	scripts/verify/distro-floor.sh	|| fail "$product is on PATH but does not start; the installer did not notice"	|| true || fail "$product is on PATH but does not start; the installer did not notice"	tests/verify/distro-floor.test.sh
+published-roster-published-commit	scripts/verify/published-roster.sh	echo "::error::the published commit ${sha:0:7} has no PRODUCTS list this script can read in $workflow; this check cannot tell which installers to ask for" >&2	exit 0	tests/verify/published-roster.test.sh
+roster-has-releases-no-products-or-architectures-list	scripts/verify/roster-has-releases.sh	if [ -z "$specs" ] || [ -z "$archs_all" ]; then	if false; then	tests/verify/roster-has-releases.test.sh
+verify-debs-cannot-read-architecture-control-field	scripts/verify/verify-debs.sh	if ! ctrl_arch="$(dpkg-deb -f "$deb" Architecture)"; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-cannot-read-version-control-field	scripts/verify/verify-debs.sh	if ! ver="$(dpkg-deb -f "$deb" Version)"; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-except-oserror-as-exc-sys	scripts/verify/verify-debs.sh	except OSError as exc:	except ZeroDivisionError as exc:	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-except-valueerror-base64-binascii-as	scripts/verify/verify-debs.sh	except (ValueError, base64.binascii.Error) as exc:	except ZeroDivisionError as exc:	tests/verify/verify-debs.test.sh
+verify-debs-local-release-trust-file-malformed	scripts/verify/verify-debs.sh	if [ "$python_rc" -ne 0 ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-no-library-refused	scripts/verify/verify-debs.sh	echo "::error::cannot verify the ML-DSA-65 signature of $(basename "$deb"): the installed cryptography has no ML-DSA support; refusing rather than skipping it" >&2	continue	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-signature-verify	scripts/verify/verify-debs.sh	key.verify(sig, data)	pass	tests/verify/verify-debs.test.sh
+verify-installers-installer-content-differs-at-url	scripts/verify/verify-installers.sh	if ! cmp -s "$EXPECTED/$product" "$body"; then	if false; then	tests/verify/verify-installers.test.sh
+verify-installers-installer-transfer-failed-at-url	scripts/verify/verify-installers.sh	if ! curl -fsS --connect-timeout 10 --max-time 30 "$url" -o "$body"; then	if false; then	tests/verify/verify-installers.test.sh
+verify-installers-invalid-installer-product-product	scripts/verify/verify-installers.sh	*[!a-z0-9.+-]* | '' | [!a-z0-9]* | ?)	__mutation_never_matches__)	tests/verify/verify-installers.test.sh
+verify-installers-missing-generated-installer-for-product	scripts/verify/verify-installers.sh	[ -s "$EXPECTED/$product" ] || {	[ -s "$EXPECTED/$product" ] || true || {	tests/verify/verify-installers.test.sh
+verify-installers-no-installers-verify-2-exit	scripts/verify/verify-installers.sh	[ "$#" -gt 0 ] || { echo '::error::no installers to verify' >&2; exit 1; }	[ "$#" -gt 0 ] || true || { echo '::error::no installers to verify' >&2; exit 1; }	tests/verify/verify-installers.test.sh
+verify-published-attempts-integer	scripts/verify/verify-published.sh	case "$ATTEMPTS" in '' | *[!0-9]*) echo "::error::attempts must be a positive integer, got '$ATTEMPTS'" >&2; exit 1 ;; esac	:	tests/verify/verify-published/verify-published-budget.test.sh
+verify-published-attempts-must-be-at-least	scripts/verify/verify-published.sh	[ "$ATTEMPTS" -ge 1 ] || { echo "::error::attempts must be at least 1" >&2; exit 1; }	[ "$ATTEMPTS" -ge 1 ] || true || { echo "::error::attempts must be at least 1" >&2; exit 1; }	tests/verify/verify-published/verify-published-budget.test.sh
+verify-published-budget-must-be-at-least	scripts/verify/verify-published.sh	[ "$BUDGET" -ge 1 ] || { echo "::error::budget must be at least 1 second" >&2; exit 1; }	[ "$BUDGET" -ge 1 ] || true || { echo "::error::budget must be at least 1 second" >&2; exit 1; }	tests/verify/verify-published/verify-published-budget.test.sh
+verify-published-could-not-fetch-base-url	scripts/verify/verify-published.sh	if ! fetch "$BASE_URL/$DIST_PATH/InRelease" "$WORK/InRelease"; then	if false; then	tests/verify/verify-published.test.sh
+verify-published-could-not-fetch-detached-release	scripts/verify/verify-published.sh	if ! fetch "$BASE_URL/$DIST_PATH/Release" "$WORK/Release" \	if false && ! fetch "$BASE_URL/$DIST_PATH/Release" "$WORK/Release" \	tests/verify/verify-published.test.sh
+verify-published-declared-packages-index-work-pool	scripts/verify/verify-published.sh	declared_packages "$index" >> "$WORK/pool-entries" || exit 1	declared_packages "$index" >> "$WORK/pool-entries" || true || exit 1	tests/verify/verify-published/verify-published-packages.test.sh
+verify-published-delay-integer	scripts/verify/verify-published.sh	case "$DELAY" in '' | *[!0-9]*) echo "::error::delay must be a non-negative integer, got '$DELAY'" >&2; exit 1 ;; esac	:	tests/verify/verify-published/verify-published-budget.test.sh
+verify-published-expected-inrelease-sha256-must-be	scripts/verify/verify-published.sh	if [ "$#" -ge 6 ] && ! [[ "$EXPECTED_INRELEASE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then	if false; then	tests/verify/verify-published/verify-published-build.test.sh
+verify-published-inrelease-does-not-match-published	scripts/verify/verify-published.sh	if [ "$attempt" -ge "$ATTEMPTS" ] || [ "$(elapsed)" -ge "$BUDGET" ]; then	if false; then	tests/verify/verify-published/verify-published-build.test.sh
+verify-published-inrelease-signature-verification-failed-served	scripts/verify/verify-published.sh	if ! verify_clearsigned "$WORK/InRelease" "$WORK/InRelease.body"; then	if false; then	tests/verify/verify-published.test.sh
+verify-published-label-declares-path-that-not	scripts/verify/verify-published.sh	. | .. | ./* | */./* | */. | */../* | ../* | */.. | /* | *//*)	__mutation_never_matches__)	tests/verify/verify-published.test.sh
+verify-published-label-declares-path-with-unexpected	scripts/verify/verify-published.sh	*[!A-Za-z0-9._/+~-]*)	__mutation_never_matches__)	tests/verify/verify-published/verify-published-packages.test.sh
+verify-published-release-gpg-does-not-verify	scripts/verify/verify-published.sh	if ! gpg --batch --verify "$WORK/Release.gpg" "$WORK/Release" 2>/dev/null; then	if false; then	tests/verify/verify-published.test.sh
+verify-published-release-inrelease-declare-different-files	scripts/verify/verify-published.sh	if ! diff -q <(declared_files "$WORK/InRelease.body") <(declared_files "$WORK/Release") >/dev/null; then	if false; then	tests/verify/verify-published.test.sh
+verify-published-signed-index-declares-no-sha256	scripts/verify/verify-published.sh	if [ "$index_count" -eq 0 ]; then	if false; then	tests/verify/verify-published.test.sh
+verify-published-two-signed-label-paths-map	scripts/verify/verify-published.sh	if [ -n "$shadowed" ]; then	if false; then	tests/verify/verify-published/verify-published-collision.test.sh
+verify-published-verified-indices-declare-no-keyring	scripts/verify/verify-published.sh	if [ ! -s "$WORK/bootstrap-entry" ]; then	if false; then	tests/verify/verify-published/verify-published-bootstrap.test.sh
+verify-published-verified-indices-declare-no-packages	scripts/verify/verify-published.sh	if [ "$pool_count" -eq 0 ]; then	if false; then	tests/verify/verify-published.test.sh
+verify-published-verified-indices-declare-pool-bytes	scripts/verify/verify-published.sh	if [ "$pool_bytes" -gt "$MAX_POOL_BYTES" ]; then	if false; then	tests/verify/verify-published/verify-published-budget.test.sh
+publish-no-architectures	.github/workflows/publish.yml	|| { echo "::error::Glyndor/$p declares no architectures"; exit 1; }	|| true	tests/publication/publish/publish-workflow-assets.test.sh
+health-check-valid-until	.github/workflows/health-check.yml	if [ "$valid_epoch" -le "$now_epoch" ]; then	if false; then	tests/publication/health-check/health-check-workflow.test.sh
+mutation-gate-decide	.github/workflows/mutation.yml	if [ "$DECIDE" != success ]; then	if false; then	tests/ci/policy/mutation-workflow.test.sh
+mutation-scope-global-inputs	scripts/quality/mutation-scope.sh	if paths & GLOBAL_INPUTS:	if False:	tests/quality/mutation-scope.test.sh
+mutation-coverage-errors	scripts/quality/check-mutation-coverage.sh	if errors:	if False:	tests/quality/check-mutation-coverage.test.sh
+mutation-coverage-entry-applies	scripts/quality/check-mutation-coverage.sh	applies(*fields[:4])	pass	tests/quality/check-mutation-coverage.test.sh

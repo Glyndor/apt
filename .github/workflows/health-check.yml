@@ -101,6 +101,26 @@ jobs:
             echo "::error::apt archive is stale: InRelease is ${age_h}h old (> ${MAX_AGE_HOURS}h); the publish may have stopped"
             exit 1
           fi
+          # apt refuses an index whose Valid-Until has passed, whatever its Date
+          # says, so a young index that has already expired breaks every client
+          # while the age above calls it fresh. That happens only if the window
+          # build-repo.sh stamps ever becomes shorter than MAX_AGE_HOURS, and
+          # this is what would say so. An index with no Valid-Until never
+          # expires, which is the freeze the window exists to prevent.
+          valid_line="$(grep -m1 '^Valid-Until:' "$verified" | sed 's/^Valid-Until:[[:space:]]*//')" || true
+          if [ -z "$valid_line" ]; then
+            echo "::error::no Valid-Until field in InRelease; a client would trust this index forever"
+            exit 1
+          fi
+          if ! valid_epoch="$(date -u -d "$valid_line" +%s 2>/dev/null)"; then
+            echo "::error::the Valid-Until field in InRelease could not be read ('$valid_line'); the served index is malformed"
+            exit 1
+          fi
+          if [ "$valid_epoch" -le "$now_epoch" ]; then
+            echo "::error::InRelease expired at $valid_line; apt refuses it, so clients cannot update"
+            exit 1
+          fi
+          echo "InRelease Valid-Until: $valid_line"
           echo "archive reachable and fresh"
 
       - name: Served archive matches the signed index

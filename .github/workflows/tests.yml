@@ -48,6 +48,9 @@ jobs:
       test-command: >-
         ./tests/ci/suites/check-suite-completeness.test.sh
         ./tests/mutation/run-mutations.test.sh
+        ./tests/quality/check-mutation-coverage.test.sh
+        ./tests/quality/mutation-scope.test.sh
+        ./tests/ci/policy/mutation-workflow.test.sh
         ./tests/verify/verify-debs.test.sh
         ./tests/verify/verify-debs-hybrid.test.sh
         ./tests/verify/verify-published.test.sh

@@ -431,6 +431,17 @@ check "and the refusal names it" "1" \
 	"$(printf '%s' "$out" | grep -c 'declares architecture riscv64, which is not in ARCHITECTURES')"
 check "and it refused before any download" "0" "$(download_calls)"
 
+# An entry with a colon and nothing after it declares no architecture at all.
+# Without its refusal the product's loops run zero times, nothing is downloaded
+# for it and the other products carry the publish: the archive is rebuilt from
+# scratch and synced with --delete, so the product would be evicted in silence.
+# A second product that is fine rides along, so the refusal cannot be the one
+# for an archive with nothing in it.
+out="$(run_step v1.0.0 "$ASSETS_OK" 'podup: epistle' 'amd64 arm64')"; rc=$?
+check "an entry that declares no architecture fails the publish" "1" "$rc"
+check "and the refusal says so" "1" "$(printf '%s' "$out" | grep -c 'declares no architectures')"
+check "and it refused before any download" "0" "$(download_calls)"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
