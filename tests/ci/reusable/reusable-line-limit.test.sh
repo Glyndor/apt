@@ -143,6 +143,35 @@ check "the same file fails once yml is in the list" "1" "$rc"
 check "and the error names the workflow" "1" \
 	"$(printf '%s' "$out" | grep -q '.github/workflows/huge.yml' && echo 1 || echo 0)"
 
+# --- a list or a map is counted, and its comments are not ------------------
+#
+# The map that decides which suites a pull request runs was the largest file no
+# gate opened: `txt` was in no extension list. A `.txt` here holds `#` comments,
+# so the counter reads it the way it reads a script.
+
+TXT_EXTS="$YML_EXTS txt"
+sandbox "$WORK/h" "scripts/quality/scope/map.txt:600"
+out="$(run_step "$WORK/h" "$YML_EXTS")"; rc=$?
+check "a 600-line map passes while txt is not in the extension list" "0" "$rc"
+out="$(run_step "$WORK/h" "$TXT_EXTS")"; rc=$?
+check "the same map fails once txt is in the list" "1" "$rc"
+check "and the error names it with the count it measured" "1" \
+	"$(printf '%s' "$out" | grep -q 'scripts/quality/scope/map.txt has 600 code lines' && echo 1 || echo 0)"
+
+sandbox "$WORK/i"
+mkdir -p "$WORK/i/scripts"
+{ for _ in $(seq 800); do printf '# comment\n\n'; done; for _ in $(seq 250); do printf 'entry\n'; done; } > "$WORK/i/scripts/map.txt"
+git -C "$WORK/i" add -A && git -C "$WORK/i" commit -qm map
+out="$(run_step "$WORK/i" "$TXT_EXTS")"; rc=$?
+check "a map of 250 entries under 800 comment lines is not over the limit" "0" "$rc"
+check "and raises no warning, because the comments are not counted" "0" \
+	"$(printf '%s' "$out" | grep -c 'warning')"
+
+# The caller is what puts the extension in the list, so a caller that loses it
+# leaves the map unmeasured again without any case above turning red.
+caller_exts="$(sed -n 's/^ *extensions: "\(.*\)"$/\1/p' "$HERE/.github/workflows/line-limit.yml")"
+check "the caller opens .txt files" "1" "$(printf ' %s ' "$caller_exts" | grep -q ' txt ' && echo 1 || echo 0)"
+
 # --- vendored and minified files are skipped by design -------------------
 
 sandbox "$WORK/d" "vendor/big.sh:600" "app.min.js:600"

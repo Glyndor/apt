@@ -368,3 +368,5 @@ packages-unusable-diff	scripts/quality/scope/ci-job-scope.sh	        raise Value
 packages-invalid-entry	scripts/quality/scope/ci-job-scope.sh	or (deps != ["-"] and any(d not in allowed for d in deps))):	or False):	tests/quality/scope/ci-job-scope-packages.test.sh,tests/ci/reusable/reusable-shell-ci.test.sh
 packages-suite-unknown	scripts/quality/scope/ci-job-scope.sh	    if any(s not in dependencies for s in selected):	    if False:	tests/quality/scope/ci-job-scope-packages.test.sh,tests/ci/reusable/reusable-shell-ci.test.sh
 line-limit-scope-base	.github/workflows/reusable-line-limit.yml	            && git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then	            && cat scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then	tests/ci/suites/lint-job-scope.test.sh
+line-limit-txt-comments	.github/workflows/reusable-line-limit.yml	*.yml|*.yaml|*.toml|*.txt) hash_comment=1	*.yml|*.yaml|*.toml) hash_comment=1	tests/ci/reusable/reusable-line-limit.test.sh
+line-limit-caller-txt	.github/workflows/line-limit.yml	svelte yml yaml txt"	svelte yml yaml"	tests/ci/reusable/reusable-line-limit.test.sh

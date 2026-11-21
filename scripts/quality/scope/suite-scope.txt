@@ -549,6 +549,7 @@ tests/ci/reusable/reusable-empty-diff.test.sh
 
 tests/ci/reusable/reusable-line-limit.test.sh
 	.github/workflows/reusable-line-limit.yml
+	.github/workflows/line-limit.yml
 
 tests/ci/reusable/reusable-shell-ci.test.sh
 	.github/workflows/reusable-shell-ci.yml
