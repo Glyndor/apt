@@ -14,7 +14,8 @@
 #   - the test-command of a job that calls reusable-shell-ci.yml, as one of
 #     its whitespace-separated words;
 #   - a line of a step's `run:` that starts with `./tests/...test.sh` or
-#     `bash ./tests/...test.sh`, in a job and a step that carry no `if:` and
+#     `bash ./tests/...test.sh`, and, when that script is the suite runner, the
+#     suites the line hands it, in a job and a step that carry no `if:` and
 #     no `continue-on-error`. A comment line is prose, not wiring.
 #
 # Anything else is a place a pull request can skip, so a suite named only
@@ -43,6 +44,7 @@ import yaml
 root = sys.argv[1]
 REUSABLE = "reusable-shell-ci.yml"
 WATCHER = "tests/ci/suites/ci-runs-every-test.test.sh"
+RUNNER = "tests/ci/suites/check-suite-completeness.test.sh"
 SUITE = r"tests/[A-Za-z0-9_./-]+\.test\.sh"
 WORD_RE = re.compile(r"^\./(" + SUITE + r")$")
 LINE_RE = re.compile(r"^(?:bash\s+)?\./(" + SUITE + r")(?:\s|$)")
@@ -131,11 +133,21 @@ def wiring(specs):
                     continue
                 step_gate = job_gate or ("the step has an `if:`" if "if" in step else "") \
                     or ("the step may fail" if step.get("continue-on-error") else "")
+                here = step.get("working-directory", defaults)
                 for line in step["run"].splitlines():
                     match = LINE_RE.match(line.strip())
-                    if match:
-                        note(resolve(step.get("working-directory", defaults), match.group(1)),
-                             step_gate, where)
+                    if not match:
+                        continue
+                    note(resolve(here, match.group(1)), step_gate, where)
+                    # The suite runner runs the suites it is handed, as it does in a
+                    # test-command, so a line that calls it wires its arguments too.
+                    # Only the runner: any other script decides for itself what it
+                    # does with an argument, and naming a suite is not running it.
+                    if match.group(1) == RUNNER:
+                        for word in line.split():
+                            more = WORD_RE.match(word)
+                            if more:
+                                note(resolve(here, more.group(1)), step_gate, where)
     return wired, weak
 
 

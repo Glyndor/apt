@@ -72,6 +72,14 @@ step() { printf '  other:\n    runs-on: x\n%s    steps:\n      - run: |\n       
 gate "$(tree step "./tests/a.test.sh ./$WATCHER" "$(step 'bash ./tests/area/b.test.sh --quiet')")"
 check "a suite run from a step's run: counts" "0" "$rc"
 
+RUNNER=tests/ci/suites/check-suite-completeness.test.sh
+gate "$(tree runner-arg "./tests/a.test.sh ./$WATCHER" "$(step "./$RUNNER ./tests/area/b.test.sh")")"
+check "a suite handed to the suite runner in a step counts" "0" "$rc"
+
+gate "$(tree other-arg "./tests/a.test.sh ./$WATCHER" "$(step './tests/a.test.sh ./tests/area/b.test.sh')")"
+check "a suite handed to a script that is not the suite runner does not count" "1" \
+	"$(said 'tests/area/b.test.sh is not run')"
+
 gate "$(tree prose "./tests/a.test.sh ./$WATCHER" "$(step 'echo ./tests/area/b.test.sh')")"
 check "a suite only named in a comment or an echo does not count" "1" "$(said 'tests/area/b.test.sh is not run')"
 
