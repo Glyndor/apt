@@ -124,6 +124,7 @@ check "and says the file does not exist" "1" \
 	"$(said 'the exemption for tests/area/gone.test.sh names a file that does not exist')"
 
 gate "$dir" "tests/area/b.test.sh:"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
 check "an exemption without a reason fails" "1" "$(said 'is not `tests/<path>.test.sh: <reason>`')"
 
 gate "$(tree exempt-wired "$SUITES")" "tests/area/b.test.sh: once needed a device"
