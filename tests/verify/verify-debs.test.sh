@@ -481,6 +481,41 @@ else
 	fail=$((fail + 1))
 fi
 
+# --- Case 23: nothing opens a package before its signature verified. ---------
+#             dpkg-deb parses the archive, and every byte of a downloaded .deb
+# is chosen by whoever can attach a release asset, in a job that later holds the
+# archive signing key. A dpkg-deb on PATH that leaves a mark when it is called
+# shows whether the verifier opened the package: with an invalid signature it
+# must not have, and with a valid one it must have, so the mark is shown to be
+# reachable and its absence to mean something.
+mkdir -p "$WORK/spy"
+cat > "$WORK/spy/dpkg-deb" <<SPY
+#!/bin/sh
+: > "$WORK/spy/opened"
+exec $(command -v dpkg-deb) "\$@"
+SPY
+chmod +x "$WORK/spy/dpkg-deb"
+d="$WORK/case23"; mkdir -p "$d"
+deb="$(make_deb unopened podup 1.0.0)"; cp "$deb" "$d/podup_1.0.0_amd64.deb"
+head -c 64 /dev/zero > "$d/podup_1.0.0_amd64.deb.sig"
+rm -f "$WORK/spy/opened"
+assert_error 1 "invalid signature for" "a package with an invalid signature is refused for its signature" \
+	-- env PATH="$WORK/spy:$PATH" "$VERIFY" "$d" "$WORK/key.b64" podup v1.0.0
+if [ -e "$WORK/spy/opened" ]; then
+	echo "FAIL - and dpkg-deb was never called on it (it was)"; fail=$((fail + 1))
+else
+	echo "ok   - and dpkg-deb was never called on it"; pass=$((pass + 1))
+fi
+sign "$d/podup_1.0.0_amd64.deb"
+rm -f "$WORK/spy/opened"
+assert 0 "the same package with a valid signature is admitted" \
+	-- env PATH="$WORK/spy:$PATH" "$VERIFY" "$d" "$WORK/key.b64" podup v1.0.0
+if [ -e "$WORK/spy/opened" ]; then
+	echo "ok   - and only then is it opened with dpkg-deb"; pass=$((pass + 1))
+else
+	echo "FAIL - and only then is it opened with dpkg-deb (the spy was not reached)"; fail=$((fail + 1))
+fi
+
 echo "passed $pass, failed $fail"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

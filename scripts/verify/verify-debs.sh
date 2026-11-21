@@ -255,6 +255,134 @@ for deb in "${debs[@]}"; do
 		exit 1
 	fi
 
+	sig="$deb.sig"
+	if [ ! -f "$sig" ]; then
+		echo "::error::no signature ($sig) for $(basename "$deb"); refusing to publish an unverified package" >&2
+		exit 1
+	fi
+
+	# Capture the verifier's exit code (rather than just its pass/fail status)
+	# so the message below can tell a malformed local trust anchor apart from
+	# an untrusted signature that plainly fails verification. Conflating the
+	# two previously reported "release may be tampered" even when the real
+	# cause was our own key file, which sent whoever was debugging it looking
+	# for an attack that wasn't there.
+	python_rc=0
+	python3 - "$sig" "$deb" "${KEYS[@]}" <<'PYEOF' || python_rc=$?
+import base64
+import sys
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+sig_path, data_path, keys_b64 = sys.argv[1], sys.argv[2], sys.argv[3:]
+
+
+def load(b64):
+	# Normalise padding to a 4-char boundary and reject any non-base64 input,
+	# rather than blindly appending pad characters.
+	b64 += "=" * (-len(b64) % 4)
+	key_bytes = base64.b64decode(b64, validate=True)
+	if len(key_bytes) != 32:
+		raise ValueError("release public key is not a 32-byte Ed25519 key")
+	return Ed25519PublicKey.from_public_bytes(key_bytes)
+
+
+try:
+	keys = [load(b64) for b64 in keys_b64]
+except (ValueError, base64.binascii.Error) as exc:
+	sys.stderr.write(f"malformed release public key: {exc}\n")
+	sys.exit(2)
+if not keys:
+	sys.stderr.write("no release public keys provided\n")
+	sys.exit(2)
+
+# An Ed25519 detached signature is exactly 64 bytes. Read at most one byte
+# past a generous 4096-byte cap rather than the whole file: a hostile or
+# corrupt .sig asset must not be read into memory wholesale before its length
+# is even checked.
+#
+# Both checks below exit 1, not 2: exit 2 is reserved for a malformed LOCAL
+# trust anchor (the committed key file this script itself was given), so the
+# caller can tell "our config is broken" apart from "the downloaded asset is
+# bad". An oversized or wrong-length .sig is the latter, untrusted data the
+# release supplied rather than our key material, so it belongs in the same bucket
+# as a signature that fails cryptographic verification below.
+MAX_SIG_BYTES = 4096
+with open(sig_path, "rb") as f:
+	sig = f.read(MAX_SIG_BYTES + 1)
+if len(sig) > MAX_SIG_BYTES:
+	sys.stderr.write(f"signature file is over {MAX_SIG_BYTES} bytes\n")
+	sys.exit(1)
+if len(sig) != 64:
+	sys.stderr.write(f"signature is {len(sig)} bytes, expected exactly 64 (Ed25519 detached signature)\n")
+	sys.exit(1)
+# Unbounded read: this loads the whole .deb into memory, so callers must bound
+# the input file's size before invoking this script. publish.yml enforces
+# MAX_DEB_BYTES both pre-download (against the advertised release asset size)
+# and post-download (against the bytes actually written to disk).
+with open(data_path, "rb") as f:
+	data = f.read()
+
+# Admit the package if any trusted key verifies it (rotation overlap).
+for key in keys:
+	try:
+		key.verify(sig, data)
+		sys.exit(0)
+	except InvalidSignature:
+		continue
+sys.exit(1)
+PYEOF
+	if [ "$python_rc" -ne 0 ]; then
+		if [ "$python_rc" -eq 2 ]; then
+			# Our bug: the committed release public key file failed to load, so
+			# no key was even available to check the signature against.
+			echo "::error::local release trust file is malformed; could not load a release public key to verify $(basename "$deb") against" >&2
+		else
+			# Their bug: a key loaded fine, but $(basename "$deb")'s signature did
+			# not verify against any of them.
+			echo "::error::invalid signature for $(basename "$deb"); release may be tampered" >&2
+		fi
+		exit 1
+	fi
+
+	# The second signature, over the same raw bytes and checked only after the
+	# first one passed. A sidecar that is present is checked here, before the
+	# package is opened; whether a missing one is allowed depends on the control
+	# Package field, so that is decided below, once the field has been read.
+	pq_sig="$deb.mldsa65.sig"
+	if [ -e "$pq_sig" ] || [ -L "$pq_sig" ]; then
+		if [ "${#MLDSA_KEYS[@]}" -eq 0 ]; then
+			echo "::error::$(basename "$deb") carries an ML-DSA-65 signature and no ML-DSA-65 release public key is configured in $MLDSA_KEY_FILE; refusing a signature that cannot be checked" >&2
+			exit 1
+		fi
+		pq_rc=0
+		mldsa verify "$pq_sig" "$deb" "${MLDSA_KEYS[@]}" || pq_rc=$?
+		case "$pq_rc" in
+			0) ;;
+			2)
+				echo "::error::local ML-DSA-65 release trust file is malformed; could not load a key to verify $(basename "$deb") against" >&2
+				exit 1
+				;;
+			3)
+				echo "::error::cannot verify the ML-DSA-65 signature of $(basename "$deb"): the installed cryptography has no ML-DSA support; refusing rather than skipping it" >&2
+				exit 1
+				;;
+			*)
+				echo "::error::invalid ML-DSA-65 signature for $(basename "$deb"); release may be tampered" >&2
+				exit 1
+				;;
+		esac
+	fi
+
+	# Only now is the package opened. dpkg-deb parses the archive to read its
+	# control fields, and every byte of it comes from whoever can attach a
+	# release asset: a parser bug reached by those bytes would run in the
+	# publish job, which later holds the archive signing key and the bucket
+	# credentials. So nothing reads inside the package before a release key has
+	# vouched for exactly these bytes, and everything above looks only at the
+	# file names and at the bytes as bytes.
+
 	# Reject the reserved keyring package name on the *control* field, not just
 	# the filename: a product could ship a normally-named, validly-signed .deb
 	# whose internal Package is glyndor-archive-keyring and so shadow the real
@@ -349,132 +477,16 @@ for deb in "${debs[@]}"; do
 		exit 1
 	fi
 
-	sig="$deb.sig"
-	if [ ! -f "$sig" ]; then
-		echo "::error::no signature ($sig) for $(basename "$deb"); refusing to publish an unverified package" >&2
-		exit 1
-	fi
-
-	# Capture the verifier's exit code (rather than just its pass/fail status)
-	# so the message below can tell a malformed local trust anchor apart from
-	# an untrusted signature that plainly fails verification. Conflating the
-	# two previously reported "release may be tampered" even when the real
-	# cause was our own key file, which sent whoever was debugging it looking
-	# for an attack that wasn't there.
-	python_rc=0
-	python3 - "$sig" "$deb" "${KEYS[@]}" <<'PYEOF' || python_rc=$?
-import base64
-import sys
-
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
-sig_path, data_path, keys_b64 = sys.argv[1], sys.argv[2], sys.argv[3:]
-
-
-def load(b64):
-	# Normalise padding to a 4-char boundary and reject any non-base64 input,
-	# rather than blindly appending pad characters.
-	b64 += "=" * (-len(b64) % 4)
-	key_bytes = base64.b64decode(b64, validate=True)
-	if len(key_bytes) != 32:
-		raise ValueError("release public key is not a 32-byte Ed25519 key")
-	return Ed25519PublicKey.from_public_bytes(key_bytes)
-
-
-try:
-	keys = [load(b64) for b64 in keys_b64]
-except (ValueError, base64.binascii.Error) as exc:
-	sys.stderr.write(f"malformed release public key: {exc}\n")
-	sys.exit(2)
-if not keys:
-	sys.stderr.write("no release public keys provided\n")
-	sys.exit(2)
-
-# An Ed25519 detached signature is exactly 64 bytes. Read at most one byte
-# past a generous 4096-byte cap rather than the whole file: a hostile or
-# corrupt .sig asset must not be read into memory wholesale before its length
-# is even checked.
-#
-# Both checks below exit 1, not 2: exit 2 is reserved for a malformed LOCAL
-# trust anchor (the committed key file this script itself was given), so the
-# caller can tell "our config is broken" apart from "the downloaded asset is
-# bad". An oversized or wrong-length .sig is the latter, untrusted data the
-# release supplied rather than our key material, so it belongs in the same bucket
-# as a signature that fails cryptographic verification below.
-MAX_SIG_BYTES = 4096
-with open(sig_path, "rb") as f:
-	sig = f.read(MAX_SIG_BYTES + 1)
-if len(sig) > MAX_SIG_BYTES:
-	sys.stderr.write(f"signature file is over {MAX_SIG_BYTES} bytes\n")
-	sys.exit(1)
-if len(sig) != 64:
-	sys.stderr.write(f"signature is {len(sig)} bytes, expected exactly 64 (Ed25519 detached signature)\n")
-	sys.exit(1)
-# Unbounded read: this loads the whole .deb into memory, so callers must bound
-# the input file's size before invoking this script. publish.yml enforces
-# MAX_DEB_BYTES both pre-download (against the advertised release asset size)
-# and post-download (against the bytes actually written to disk).
-with open(data_path, "rb") as f:
-	data = f.read()
-
-# Admit the package if any trusted key verifies it (rotation overlap).
-for key in keys:
-	try:
-		key.verify(sig, data)
-		sys.exit(0)
-	except InvalidSignature:
-		continue
-sys.exit(1)
-PYEOF
-	if [ "$python_rc" -ne 0 ]; then
-		if [ "$python_rc" -eq 2 ]; then
-			# Our bug: the committed release public key file failed to load, so
-			# no key was even available to check the signature against.
-			echo "::error::local release trust file is malformed; could not load a release public key to verify $(basename "$deb") against" >&2
-		else
-			# Their bug: a key loaded fine, but $(basename "$deb")'s signature did
-			# not verify against any of them.
-			echo "::error::invalid signature for $(basename "$deb"); release may be tampered" >&2
-		fi
-		exit 1
-	fi
-
-	# The second signature, checked only after the first one passed. Keyed on
+	# A product in the required list must carry the second signature. Keyed on
 	# the control Package field, which is inside the signed bytes and already
 	# bound to expected_package above, so a renamed asset cannot leave the list.
 	required=0
 	for name in "${PQ_REQUIRED[@]}"; do
 		[ "$name" = "$pkg" ] && required=1
 	done
-	pq_sig="$deb.mldsa65.sig"
-	if [ ! -e "$pq_sig" ] && [ ! -L "$pq_sig" ]; then
-		if [ "$required" -eq 1 ]; then
-			echo "::error::no ML-DSA-65 signature ($pq_sig) for $(basename "$deb"); $pkg requires the hybrid release signature" >&2
-			exit 1
-		fi
-	else
-		if [ "${#MLDSA_KEYS[@]}" -eq 0 ]; then
-			echo "::error::$(basename "$deb") carries an ML-DSA-65 signature and no ML-DSA-65 release public key is configured in $MLDSA_KEY_FILE; refusing a signature that cannot be checked" >&2
-			exit 1
-		fi
-		pq_rc=0
-		mldsa verify "$pq_sig" "$deb" "${MLDSA_KEYS[@]}" || pq_rc=$?
-		case "$pq_rc" in
-			0) ;;
-			2)
-				echo "::error::local ML-DSA-65 release trust file is malformed; could not load a key to verify $(basename "$deb") against" >&2
-				exit 1
-				;;
-			3)
-				echo "::error::cannot verify the ML-DSA-65 signature of $(basename "$deb"): the installed cryptography has no ML-DSA support; refusing rather than skipping it" >&2
-				exit 1
-				;;
-			*)
-				echo "::error::invalid ML-DSA-65 signature for $(basename "$deb"); release may be tampered" >&2
-				exit 1
-				;;
-		esac
+	if [ "$required" -eq 1 ] && [ ! -e "$pq_sig" ] && [ ! -L "$pq_sig" ]; then
+		echo "::error::no ML-DSA-65 signature ($pq_sig) for $(basename "$deb"); $pkg requires the hybrid release signature" >&2
+		exit 1
 	fi
 
 	echo "verified $(basename "$deb")"

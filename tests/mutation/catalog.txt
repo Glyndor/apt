@@ -84,6 +84,7 @@ verify-debs-require-tag	scripts/verify/verify-debs.sh	if [ "$REQUIRE_TAG" -eq 1 
 publish-verify-debs-require-tag	.github/workflows/publish.yml	./scripts/verify/verify-debs.sh --require-tag "debs/$p"	./scripts/verify/verify-debs.sh "debs/$p"	tests/publication/publish/publish-workflow-verify-debs.test.sh
 verify-debs-revision-strip	scripts/verify/verify-debs.sh	if [ "$revision" != "$upstream" ] && [[ "$revision" =~ ^[0-9][0-9A-Za-z.+~]*$ ]]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-architecture	scripts/verify/verify-debs.sh	if [ -n "$claimed_arch" ] && [ "$claimed_arch" != "$ctrl_arch" ]; then	if false; then	tests/verify/verify-debs.test.sh
+verify-debs-opened-before-signature	scripts/verify/verify-debs.sh	sig="$deb.sig"	dpkg-deb -f "$deb" Package >/dev/null 2>&1 || true; sig="$deb.sig"	tests/verify/verify-debs.test.sh
 verify-debs-missing-signature	scripts/verify/verify-debs.sh	if [ ! -f "$sig" ]; then	if false; then	tests/verify/verify-debs.test.sh
 verify-debs-signature-length	scripts/verify/verify-debs.sh	if len(sig) != 64:	if False:	tests/verify/verify-debs.test.sh
 verify-debs-key-length	scripts/verify/verify-debs.sh	if len(key_bytes) != 32:	if False:	tests/verify/verify-debs.test.sh
@@ -91,9 +92,9 @@ verify-debs-signature-size	scripts/verify/verify-debs.sh	if len(sig) > MAX_SIG_B
 verify-debs-key-file-missing	scripts/verify/verify-debs.sh	[ -f "$KEY_FILE" ] || { echo "::error::release public key $KEY_FILE not found" >&2; exit 1; }	[ -f "$KEY_FILE" ] || true	tests/verify/verify-debs.test.sh
 verify-debs-no-keys	scripts/verify/verify-debs.sh	[ "${#KEYS[@]}" -ge 1 ] || { echo "::error::release public key $KEY_FILE has no keys" >&2; exit 1; }	[ "${#KEYS[@]}" -ge 1 ] || true	tests/verify/verify-debs.test.sh
 verify-debs-no-debs	scripts/verify/verify-debs.sh	[ "${#debs[@]}" -ge 1 ] || { echo "::error::no .deb files to verify in $DEBS_DIR" >&2; exit 1; }	[ "${#debs[@]}" -ge 1 ] || true	tests/verify/verify-debs.test.sh
-verify-debs-pq-required	scripts/verify/verify-debs.sh	if [ "$required" -eq 1 ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-required	scripts/verify/verify-debs.sh	if [ "$required" -eq 1 ] && [ ! -e "$pq_sig" ] && [ ! -L "$pq_sig" ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
 verify-debs-pq-required-match	scripts/verify/verify-debs.sh	[ "$name" = "$pkg" ] && required=1	true	tests/verify/verify-debs-hybrid.test.sh
-verify-debs-pq-sidecar-present	scripts/verify/verify-debs.sh	if [ ! -e "$pq_sig" ] && [ ! -L "$pq_sig" ]; then	if true; then	tests/verify/verify-debs-hybrid.test.sh
+verify-debs-pq-sidecar-present	scripts/verify/verify-debs.sh	if [ -e "$pq_sig" ] || [ -L "$pq_sig" ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
 verify-debs-pq-no-key	scripts/verify/verify-debs.sh	if [ "${#MLDSA_KEYS[@]}" -eq 0 ]; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
 verify-debs-pq-key-file-check	scripts/verify/verify-debs.sh	if [ "${#MLDSA_KEYS[@]}" -ge 1 ] && ! mldsa check-keys "${MLDSA_KEYS[@]}"; then	if false; then	tests/verify/verify-debs-hybrid.test.sh
 verify-debs-pq-key-length	scripts/verify/verify-debs.sh	if len(raw) != PUBLIC_KEY_BYTES:	if False:	tests/verify/verify-debs-hybrid.test.sh
