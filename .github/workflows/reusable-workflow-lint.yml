@@ -30,6 +30,10 @@ on:
         description: Fail when a job that holds a secret also installs third-party tooling
         type: boolean
         default: true
+      suite-exemptions:
+        description: "Suites under tests/ that no workflow runs on a pull request, one per line as `tests/<path>.test.sh: <reason>`; empty means every suite must be run"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -56,6 +60,40 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 2
+
+      # Every suite under tests/ must be run by a workflow on a pull request.
+      #
+      # tests/ci/suites/ci-runs-every-test.test.sh asserts this from inside
+      # the test job, and a pull request that drops it from the test-command
+      # with other suites leaves that job green: the watcher shares the fate
+      # of the list it watches. This is a different job and a different
+      # check, so it sees the list emptied.
+      #
+      # It runs before the scope decision and on every event, because adding
+      # a suite without wiring it touches only tests/, which the scope below
+      # does not count as a workflow-lint input, and it reads two directories
+      # and costs about a second.
+      #
+      # The checker is taken from the base commit on a pull request, as the
+      # scope helper below is, so a pull request cannot weaken the checker
+      # that judges it. A base without it (first adoption) or another event
+      # uses the checkout's copy, and a checkout without it fails.
+      - name: Every suite is run by a workflow
+        env:
+          EVENT: ${{ github.event_name }}
+          SUITE_EXEMPTIONS: ${{ inputs.suite-exemptions }}
+        run: |
+          set -euo pipefail
+          checker=scripts/quality/check-suites-wired.sh
+          script="$(mktemp "$RUNNER_TEMP/suites-wired.XXXXXX")"
+          trap 'rm -f "$script"' EXIT
+          if [ "$EVENT" = pull_request ] \
+            && git show "HEAD^1:$checker" > "$script" 2>/dev/null; then
+            echo "Checker read from the base commit."
+          else
+            cp "$checker" "$script"
+          fi
+          bash "$script" "$PWD"
 
       # Keep the required check present. Read the classifier from the PR base,
       # so a changed helper cannot skip its own validation. First adoption (no

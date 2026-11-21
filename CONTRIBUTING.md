@@ -115,6 +115,9 @@ non-zero assertion is satisfied by the failure you did not mean.
 New test files must be added to `test-command` in `.github/workflows/tests.yml`.
 `tests/ci/suites/ci-runs-every-test.test.sh` fails when one is not. An unregistered test
 sits in `tests/`, passes by hand, and reads as coverage while CI never runs it.
+So does the `workflow-lint` check, which runs `scripts/quality/check-suites-wired.sh`
+outside the test job: a pull request that drops the watcher from the list along
+with other suites leaves the test job green, and turns that check red.
 
 **A new suite needs an entry in `scripts/quality/suite-scope.txt`.**
 On a pull request the runner skips the suites whose paths the change does not touch;

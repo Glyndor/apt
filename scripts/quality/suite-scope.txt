@@ -547,6 +547,13 @@ tests/ci/suites/ci-runs-every-test.test.sh
 	tests/**
 	.github/workflows/**
 
+# check-suites-wired walks tests/ and parses every workflow, as the watcher
+# above does, and runs the checker and the workflow-lint step that calls it.
+tests/quality/check-suites-wired.test.sh
+	scripts/quality/check-suites-wired.sh
+	tests/**
+	.github/workflows/**
+
 # The runner is the suite that runs the others, so its verdict is the verdict
 # of every suite it is given and of the workflow that names them. It never
 # runs itself, but the entry is here so that every suite the workflow names
