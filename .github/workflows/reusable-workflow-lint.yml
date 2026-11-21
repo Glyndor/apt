@@ -172,10 +172,13 @@ jobs:
       #     step. An install step whose own environment carries the secret is
       #     the other exposure -- the maintainer scripts run with the secret
       #     in reach -- and it is not covered.
-      #   - `brew style` and `brew audit` install nothing by themselves; what
-      #     turns them into an install is Homebrew's auto-update, which
-      #     fetches formulae and installs their bottles before the command
-      #     runs. HOMEBREW_NO_AUTO_UPDATE is what stops it.
+      #   - `brew style` and `brew audit` are installs, and get no exemption.
+      #     Before they run, both install the Ruby gems they need from
+      #     RubyGems when those are missing (Homebrew's dev-cmd/style.rb and
+      #     dev-cmd/audit.rb call Utils::GemSetup.install_bundler_gems!
+      #     first), and HOMEBREW_NO_AUTO_UPDATE does not stop that: it only
+      #     stops Homebrew updating itself. A job that runs either command
+      #     holds no secret; run it in a job of its own that has none.
       #
       # There is no hash exception for apt, and that is decided rather than
       # forgotten: apt has no `--require-hashes`, and a version pin fixes the
@@ -555,16 +558,14 @@ jobs:
           # granted to it.
           BREW_INSTALL_RE = re.compile(r"\bbrew\s+(install|upgrade)\b")
 
-          # `brew style` and `brew audit` run the toolchain Homebrew already
-          # carries and install nothing by themselves. What turns them into an
-          # install is Homebrew's auto-update, which fetches formulae and
-          # installs their bottles before the command runs. The variable that
-          # stops it is the one this workflow requires of a job that runs
-          # `brew style` or `brew audit` with a secret in reach, so a job that sets
-          # it for the step that runs the command is exempt. An empty value does
-          # not count: it is read as unset and the exemption is refused.
+          # `brew style` and `brew audit` install Ruby gems from RubyGems when
+          # the ones they need are missing, before they do anything else, and
+          # HOMEBREW_NO_AUTO_UPDATE does not stop that: it only stops Homebrew
+          # updating itself. A gem resolved from a registry that publishes on
+          # demand is the exposure of `gem install`, so no variable exempts
+          # either command in a job that holds a secret. The job that runs them
+          # holds none, and hands its verdict on.
           BREW_TOOL_RE = re.compile(r"\bbrew\s+(style|audit)\b")
-          NO_AUTO_UPDATE = "HOMEBREW_NO_AUTO_UPDATE"
 
 
           # An action runs with the job's secrets in reach, so one from an
@@ -587,18 +588,6 @@ jobs:
               if isinstance(value, str):
                   return value.splitlines()
               return []
-
-
-          def env_value(env, name):
-              # What a step sees of a variable, as a string. Unset, empty and
-              # false all mean the same thing to the tools that read them:
-              # not set.
-              value = env.get(name)
-              if value is None or value is False:
-                  return ""
-              if value is True:
-                  return "1"
-              return str(value).strip()
 
 
           def env_carries_secret(env):
@@ -677,11 +666,12 @@ jobs:
                       "A formula is resolved from a tap, where publication is "
                       "on demand."
                   )
-              if BREW_TOOL_RE.search(line) and not env_value(env, NO_AUTO_UPDATE):
+              if BREW_TOOL_RE.search(line):
                   return (
-                      "Homebrew updates itself before the command runs unless "
-                      "HOMEBREW_NO_AUTO_UPDATE is set, and that update "
-                      "installs formulae; set it for the step."
+                      "The command installs the Ruby gems it needs from "
+                      "RubyGems when they are missing, and "
+                      "HOMEBREW_NO_AUTO_UPDATE does not stop that; run it in "
+                      "a job that holds no secret."
                   )
               return None
 

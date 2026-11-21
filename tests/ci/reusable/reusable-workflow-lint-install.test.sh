@@ -133,13 +133,18 @@ case_ "apt-get install, then a step reading glyndor-apt-key.asc with the secret"
 gpg --show-keys keyring/glyndor-apt-key.asc'
 case_ "brew install in a secret job" flag new job 'brew install someformula'
 case_ "brew upgrade in a secret job" flag new job 'brew upgrade'
-case_ "brew style without HOMEBREW_NO_AUTO_UPDATE" flag new job 'brew style Formula/*.rb'
-case_ "brew audit without HOMEBREW_NO_AUTO_UPDATE" flag new job 'brew audit --strict podup'
-case_ "brew style with it set in the job env" pass new job 'brew style Formula/*.rb' 'HOMEBREW_NO_AUTO_UPDATE: "1"'
-case_ "brew style with it set in the step env" pass new job 'brew style Formula/*.rb' '' 'HOMEBREW_NO_AUTO_UPDATE: "1"'
-case_ "brew style with it set in the workflow env" pass new job 'brew style Formula/*.rb' '' '' 'HOMEBREW_NO_AUTO_UPDATE: "1"'
-case_ "brew style with an empty value" flag new job 'brew style Formula/*.rb' 'HOMEBREW_NO_AUTO_UPDATE: ""'
-case_ "brew style with the job value cleared by the step" flag new job 'brew style Formula/*.rb' 'HOMEBREW_NO_AUTO_UPDATE: "1"' 'HOMEBREW_NO_AUTO_UPDATE: ""'
+# `brew style` and `brew audit` install Ruby gems from RubyGems when the ones
+# they need are missing, and HOMEBREW_NO_AUTO_UPDATE does not stop that, so the
+# variable exempts neither of them wherever it is set. Only a job with no
+# secret may run them.
+case_ "brew style in a secret job" flag new job 'brew style Formula/*.rb'
+case_ "brew audit in a secret job" flag new job 'brew audit --strict podup'
+case_ "brew style with HOMEBREW_NO_AUTO_UPDATE in the job env" flag new job 'brew style Formula/*.rb' 'HOMEBREW_NO_AUTO_UPDATE: "1"'
+case_ "brew style with HOMEBREW_NO_AUTO_UPDATE in the step env" flag new job 'brew style Formula/*.rb' '' 'HOMEBREW_NO_AUTO_UPDATE: "1"'
+case_ "brew style with HOMEBREW_NO_AUTO_UPDATE in the workflow env" flag new job 'brew style Formula/*.rb' '' '' 'HOMEBREW_NO_AUTO_UPDATE: "1"'
+case_ "brew audit, secret only in a later step" flag new later 'brew audit --strict podup' 'HOMEBREW_NO_AUTO_UPDATE: "1"'
+case_ "brew style and brew audit in a job with no secret" pass none none 'brew style Formula/*.rb
+brew audit --strict podup'
 case_ "the same install in a job with no secret" pass old none "$APT"
 case_ "an install that only appears in a comment" pass old job '# sudo apt-get install -y tool'
 
