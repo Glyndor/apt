@@ -409,6 +409,13 @@ tests/publication/publish/publish-workflow-pq-sidecar.test.sh
 	tests/publication/publish/**
 	.github/workflows/publish.yml
 
+# It runs the verifier as shipped and reads the committed ML-DSA-65 key file.
+tests/publication/publish/publish-workflow-mldsa-venv.test.sh
+	scripts/verify/verify-debs.sh
+	keyring/glyndor-release-mldsa65.b64
+	tests/publication/publish/**
+	.github/workflows/publish.yml
+
 tests/publication/publish/publish-workflow-verify-debs.test.sh
 	scripts/verify/verify-debs.sh
 	tests/publication/publish/**

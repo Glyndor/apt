@@ -95,6 +95,19 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq reprepro python3-cryptography
+          # The ML-DSA-65 half of the release signature needs cryptography
+          # 50.0.2, which the distribution does not carry. It is installed only
+          # once keyring/glyndor-release-mldsa65.b64 holds a key, the first
+          # moment a second signature can be checked at all: until then the
+          # verifier refuses any .mldsa65.sig before importing the library, and
+          # this job installs nothing from PyPI. The wheel is pinned by hash and
+          # binary only, so nothing is resolved and no build script runs beside
+          # the signing keys of the later steps; the venv lives outside the
+          # workspace.
+          if grep -qvE '^[[:space:]]*(#|$)' keyring/glyndor-release-mldsa65.b64 2>/dev/null; then
+            python3 -m venv "$RUNNER_TEMP/mldsa-venv"
+            "$RUNNER_TEMP/mldsa-venv/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r scripts/verify/verify-debs-requirements.txt
+          fi
 
       - name: Download the latest .deb of each product
         env:
@@ -364,6 +377,13 @@ jobs:
           # signature alone does not prove a .deb is the product it claims to
           # be, since a compromised release could otherwise ship an asset that
           # impersonates another product.
+          #
+          # The install step creates this venv only when an ML-DSA-65 key is
+          # committed; when it exists, its cryptography verifies both signatures.
+          mldsa_venv="${RUNNER_TEMP:-}/mldsa-venv"
+          if [ -x "$mldsa_venv/bin/python3" ]; then
+            PATH="$mldsa_venv/bin:$PATH"
+          fi
           for spec in $PRODUCTS; do
             p="${spec%%:*}"
             # The tag the download step pinned, read back rather than
@@ -378,10 +398,11 @@ jobs:
               || { echo "::error::no pinned tag was recorded for $p; refusing to admit packages that cannot be bound to a release"; exit 1; }
             # The ML-DSA-65 key and the required products are the verifier's
             # defaults, keyring/glyndor-release-mldsa65.b64 and
-            # keyring/pq-required-products. It runs on the distribution's
-            # python3-cryptography, which has no ML-DSA: while that file holds
-            # no key, a release that attaches a .mldsa65.sig is refused before
-            # the library is needed.
+            # keyring/pq-required-products. With a key committed the install
+            # step built the venv and its python comes first on PATH (above);
+            # without one this runs on the distribution's python3-cryptography,
+            # which has no ML-DSA, and a release that attaches a .mldsa65.sig
+            # is refused before the library is needed.
             ./scripts/verify/verify-debs.sh "debs/$p" keyring/glyndor-release-ed25519.b64 "$p" "$tag"
           done
           # Flatten the per-product, now-verified .deb files into a single

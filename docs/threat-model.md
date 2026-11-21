@@ -85,7 +85,7 @@ Not considered: an adversary holding the archive signing key, an adversary holdi
 
 | Threat | Control | Evidence |
 |---|---|---|
-| A dependency installed by the job alters the workspace the signing step then executes | the job installs only from Debian's archive, which the runner image already trusts; no `pip`, `cargo`, `npm` or `go install` runs beside the signing key, and no action from an owner other than `actions` or `github` is used | gate: `workflow-lint`'s tooling-isolation assertion, on every pull request that changes a workflow and on every push to `main`; a pull request that changes no workflow cannot change its answer | test: `tests/ci/reusable/reusable-workflow-lint.test.sh` |
+| A dependency installed by the job alters the workspace the signing step then executes | the job installs from Debian's archive, which the runner image already trusts; the one exception is the `cryptography` wheel that ML-DSA-65 needs, installed only once an ML-DSA-65 key is committed, pinned by hash, binary only and into a virtual environment outside the workspace; no other `pip`, and no `cargo`, `npm` or `go install`, runs beside the signing key, and no action from an owner other than `actions` or `github` is used | gate: `workflow-lint`'s tooling-isolation assertion, on every pull request that changes a workflow and on every push to `main`; a pull request that changes no workflow cannot change its answer | test: `tests/ci/reusable/reusable-workflow-lint.test.sh` |
 | The job token outlives the checkout beside the signing key | `persist-credentials: false` on every checkout | measurement: read off every checkout in `.github/workflows/` on 2026-09-02; no test holds it |
 | A change to the publish workflow ships untested | the workflow's shell is extracted and linted, and its steps are exercised by the workflow suites, on every pull request that changes the workflow | gate: the checks `shell / test`, `shell / shellcheck` and `workflow-lint / workflow-lint`, which `tests.yml` and `workflow-lint.yml` report on every pull request and on every push to `main` |
 | A test exists and no workflow runs it | a watcher fails when a suite under `tests/` is not invoked by any workflow, and another fails when a script has no suite | test: `tests/ci/suites/ci-runs-every-test.test.sh`, `tests/quality/check-test-coverage.test.sh`, each including itself |
@@ -152,7 +152,8 @@ bytes, and that is the case `tests/build/keyring/build-keyring-generator.test.sh
 - **The post-quantum signature is in the verifier, not yet in any release.** No
   ML-DSA-65 key is configured and no product is required, so every package is
   admitted on Ed25519 alone, and a release that attaches the second signature
-  is refused until the key is committed. A second signature that is optional
+  is refused until the key is committed. Committing the key is also what makes
+  the publish install the library that checks it. A second signature that is optional
   protects nothing, because whoever forges the first one leaves it out; the
   protection for a product starts the day it enters
   `keyring/pq-required-products`. It covers admission only: apt clients check
