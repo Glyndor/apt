@@ -10,7 +10,9 @@
 # empty or malformed test-command, a literal block scalar, the suppression
 # forms (`|| true`, `true ||`, `exit 0`) and the absence of any caller. The few
 # callers that carry a condition on purpose are accepted by their exact form
-# only.
+# only. The same switches on the jobs inside the reusables, on the jobs a
+# workflow defines itself and on their steps are held by
+# check-test-job-not-switchable-jobs.test.sh.
 #
 # Each case plants a workflow in a temporary tree shaped like a repository and
 # runs the script as it ships. Every refusal asserts which refusal, and every

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Fail when a caller of a local reusable workflow can switch the check it
-# defines off without failing it. The required checks are all of that shape:
-# `shell / test` (reusable-shell-ci.yml), `dco` (reusable-dco.yml),
-# `line limit` (reusable-line-limit.yml), `workflow-lint`
-# (reusable-workflow-lint.yml) and `empty diff` (reusable-empty-diff.yml).
+# Fail when a job of any workflow can be switched off without failing the check
+# it defines. GitHub reports a skipped required check as Success and does not
+# block a merge, so every way to skip a job, or to let it fail without failing
+# the run, is a way to turn a required check off. The required checks are of
+# three shapes: the jobs inside the local reusables (`shell / test`,
+# `shell / shellcheck`, `dco`, `line limit`, `workflow-lint`, `empty diff`),
+# the jobs a workflow defines itself, and the callers that name them.
 #
 # The first form of this check was a text match over the test-command block.
 # Two edits walked straight past it. Job-level `if: false` on the caller leaves
@@ -12,22 +14,31 @@
 # the suite went dark while CI stayed green. And
 # `true || ./tests/first.test.sh && ./tests/second.test.sh` still contains the
 # pattern the grep looked for; bash short-circuits the prefix, so the suite
-# never runs.
+# never runs. The second form read only the callers of the reusables, and the
+# same `if: false` on the job inside a reusable, on a job a workflow defines
+# itself, or on the job that raises the alarm of the health check still left
+# every suite green.
 #
-# This parses the workflows instead. It refuses, each with its own message
-# naming the file, the job and the reason:
+# This parses the workflows instead. It reads every job of every workflow file,
+# the reusables and the jobs that call nothing among them, and refuses, each
+# with its own message naming the file, the job and the reason:
 #
-#   - a caller of any local reusable (`uses: ./.github/workflows/reusable-*`)
-#     that carries a job-level `if:` of any value, `needs:` or
-#     `continue-on-error:`. Any conditional on a caller of a required job is a
-#     switch: a skipped required check reports Success, and a job allowed to
-#     fail lets a red suite through. The one way out is a condition that is in
-#     CONDITIONAL_CALLERS below, by workflow file, job, reusable and exact
-#     value, and the comment above each says why that condition is not a
-#     switch.
+#   - a job-level `if:` of any value, `needs:` or `continue-on-error:`. A
+#     skipped required check reports Success, a job whose dependency is skipped
+#     is skipped too, and a job allowed to fail lets a red suite through. The
+#     one way out is a condition that is in CONDITIONAL_JOBS below, by workflow
+#     file, job, reusable the job calls (none for a job that runs steps) and
+#     exact value, and the comment above each says why that condition is not a
+#     switch. `continue-on-error:` has no entry, so it is never accepted.
 #     The condition is compared by presence and by value: an `if:` with no
 #     value, which YAML reads as null, is still an `if:`.
-#   - a caller of a local reusable that passes an input the reusable's entry in
+#   - a step-level `if:` that STEP_CONDITIONS below does not list for its job,
+#     and a step-level `continue-on-error:`. The step is the one that runs the
+#     suite, the comparison or the script of the check, so a condition on it
+#     skips the check as surely as one on the job does while the job and its
+#     name still report Success.
+#   - a caller of a local reusable (`uses: ./.github/workflows/reusable-*`)
+#     that passes an input the reusable's entry in
 #     ALLOWED_INPUTS below does not list. The inputs that weaken a check
 #     (`tooling-isolation`, `severity`, `check-exec-bit`, `hard-limit`,
 #     `soft-limit`, `exclude-pattern`) switch it off as surely as an `if:` does,
@@ -59,7 +70,11 @@
 #
 # The test-command rules and the no-caller rule below are about the one
 # reusable that carries a command, reusable-shell-ci.yml. The refusals of the
-# switches are about every local reusable.
+# inputs are about every caller of a local reusable, and the refusals of the
+# switches are about every job and every step of every workflow. Both closed
+# lists live in this file and not in a file of the checkout, because the copy
+# of the script that judges a pull request is the base commit's: a list the
+# pull request could edit would be one it could add its own switch to.
 #
 # The grammar is repeated in every refusal except the no-caller one, so an
 # author who trips the check learns the shape rather than guessing from "your
@@ -104,39 +119,46 @@ LOCAL_REUSABLE_RE = re.compile(
     r"^\./\.github/workflows/(reusable-[A-Za-z0-9_.-]+\.ya?ml)$"
 )
 
-# The callers that carry a condition on purpose, as
-# (workflow file, job, reusable) -> {key: exact value}. A caller is accepted
+# The jobs that carry a condition on purpose, as
+# (workflow file, job, reusable the job calls or None) -> the forms it may
+# carry, each {key: exact value}, one dict or a list of them. A job is accepted
 # with a switch key only when the key and its whole value are the ones listed
-# here; `continue-on-error:` has no entry, so it is never accepted. None of the
-# callers below is a required check: freshness.yml says its jobs may not become
-# one, so a skipped one reports on nothing a merge depends on. Each condition
-# only makes the watcher wait for the job that decides whether it applies.
+# here; `continue-on-error:` has no entry, so it is never accepted. The
+# comment above each says why the condition does not turn a check off: it
+# either follows the event the check exists for, or it belongs to a job no merge
+# waits for, or it makes a watcher wait for the job that decides whether it
+# applies.
+_W = ".github/workflows/"
 _SCOPE_IF = "${{ !cancelled() && needs.scope.outputs.%s != 'false' }}"
 _SCOPED = lambda key: {"if": _SCOPE_IF % key, "needs": "scope"}  # noqa: E731
-CONDITIONAL_CALLERS = {
+_ON_PULL_REQUEST = {"if": "github.event_name == 'pull_request'"}
+CONDITIONAL_JOBS = {
+    # The two jobs of the reusables that a required check names and that carry
+    # a condition. `empty diff` exists for a pull request, which is the only
+    # event its caller runs on; `shell / test` has nothing to run without a
+    # test-command, and the rule below refuses a caller of the reusable that
+    # passes none.
+    (_W + "reusable-empty-diff.yml", "empty-diff", None): _ON_PULL_REQUEST,
+    (_W + "reusable-shell-ci.yml", "test", None): {"if": "inputs.test-command != ''"},
     # scoop-bucket: the published-bytes watcher waits for the job that says
     # whether the manifests are published yet.
-    (
-        ".github/workflows/freshness.yml",
-        "freshness-published-bytes",
-        "reusable-schedule-freshness.yml",
-    ): {
+    (_W + "freshness.yml", "freshness-published-bytes",
+     "reusable-schedule-freshness.yml"): {
         "if": "needs.published-bytes-ready.outputs.ready == 'true'",
         "needs": "published-bytes-ready",
     },
     # apt: each watcher waits for the `scope` job, which decides from the
-    # changed paths whether the watcher applies to this run.
-    (
-        ".github/workflows/freshness.yml",
-        "dependabot-freshness",
-        "reusable-dependabot-freshness.yml",
-    ): _SCOPED("dependabot"),
+    # changed paths whether the watcher applies to this run, and `scope` itself
+    # has nothing to decide outside a pull request. None of them is a required
+    # check: freshness.yml says its jobs may not become one.
+    (_W + "freshness.yml", "scope", None): _ON_PULL_REQUEST,
+    (_W + "freshness.yml", "suite-on-main", None): _SCOPED("suite"),
+    (_W + "freshness.yml", "tool-versions", None): _SCOPED("tools"),
+    (_W + "freshness.yml", "dependabot-freshness",
+     "reusable-dependabot-freshness.yml"): _SCOPED("dependabot"),
     **{
-        (
-            ".github/workflows/freshness.yml",
-            job,
-            "reusable-schedule-freshness.yml",
-        ): _SCOPED("schedule")
+        (_W + "freshness.yml", job, "reusable-schedule-freshness.yml"):
+            _SCOPED("schedule")
         for job in (
             "freshness-publish",
             "freshness-distro-floor",
@@ -146,6 +168,57 @@ CONDITIONAL_CALLERS = {
             "freshness-mutation",
         )
     },
+    # apt: the sweep runs for the entries the change can affect, and the gate
+    # tells a sweep skipped by that decision from one that did not run. The
+    # gate carries `always()` so that a skipped sweep does not skip it.
+    (_W + "mutation.yml", "mutations", None): {
+        "if": "needs.decide.outputs.run == 'true'", "needs": "decide",
+    },
+    (_W + "mutation.yml", "gate", None): {
+        "if": "always()", "needs": ["decide", "mutations"],
+    },
+    # homebrew-tap: `brew audit` waits for the job that says whether the change
+    # can affect it, and runs when that job could not say.
+    (_W + "audit.yml", "audit", None): {
+        "if": "${{ !cancelled() && (needs.scope.result != 'success' || "
+              "needs.scope.outputs.run_audit == 'true') }}",
+        "needs": "scope",
+    },
+    # The scheduled update: what is rendered is validated, and then committed.
+    # These jobs run on a schedule and are no check a merge waits for.
+    (_W + "update.yml", "validate", None): {"needs": "render"},
+    (_W + "update.yml", "commit", None): [
+        {"needs": "render"}, {"needs": ["render", "validate"]},
+    ],
+}
+
+# The step-level conditions a job may carry, as (workflow file, job) -> the
+# exact values of `if:` a step of that job may have. A step that is not listed
+# for its job, or whose value is not one of these, is refused: the step is the
+# one that runs the suite, the comparison or the script of the check. Each
+# value either reads a decision taken by a scope step from the base commit, or
+# follows the event the step exists for, or keeps a report running after an
+# earlier step failed. `continue-on-error:` on a step is never accepted.
+_NEEDED = "steps.scope.outputs.needed != 'false'"
+_CHANGED = "needs.render.outputs.changed == '1'"
+STEP_CONDITIONS = {
+    (_W + "reusable-line-limit.yml", "line-limit"): (_NEEDED,),
+    (_W + "reusable-shell-ci.yml", "shellcheck"): (
+        _NEEDED, "${{ inputs.check-exec-bit && " + _NEEDED + " }}",
+    ),
+    (_W + "reusable-shell-ci.yml", "test"): ("steps.scope.outputs.docs_only != 'true'",),
+    (_W + "reusable-workflow-lint.yml", "workflow-lint"): (
+        _NEEDED, "${{ inputs.tooling-isolation && " + _NEEDED + " }}",
+    ),
+    (_W + "tests.yml", "mldsa"): (_NEEDED,),
+    (_W + "tests.yml", "formulae"): ("steps.scope.outputs.run_style == 'true'",),
+    (_W + "tests.yml", "products"): ("github.event_name == 'pull_request'",),
+    (_W + "tests.yml", "manifests"): ("github.event_name == 'pull_request'",),
+    (_W + "freshness.yml", "suite-on-main"): ("${{ !cancelled() }}",),
+    (_W + "drift.yml", "drift"): ("${{ !cancelled() }}",),
+    (_W + "update.yml", "render"): ("steps.render.outputs.changed == '1'",),
+    (_W + "update.yml", "validate"): (_CHANGED,),
+    (_W + "update.yml", "commit"): (_CHANGED, "needs.render.outputs.partial == '1'"),
 }
 
 # The inputs a caller may pass to each local reusable, by reusable. The list is
@@ -390,6 +463,82 @@ def refused_inputs(job, reusable, path, job_id):
     return found
 
 
+def job_switch(path, job_id, job, reusable):
+    """The refusal of the first switch the job carries, or None. `reusable` is
+    the local reusable the job calls, None for a job that runs steps."""
+    forms = CONDITIONAL_JOBS.get((path, job_id, reusable), [])
+    if isinstance(forms, dict):
+        forms = [forms]
+
+    def listed(key):
+        return any(key in form and form[key] == job[key] for form in forms)
+
+    who = f"job `{job_id}` in {path}" + (f" calls `{reusable}` and" if reusable else "")
+    declare = (
+        " To keep one on purpose, list its exact form in CONDITIONAL_JOBS of "
+        "this script, with the reason it is not a switch."
+    )
+    # Rule: a job-level `if:` is a switch. Any value: `false`, `inputs.foo`,
+    # even `true` would skip the job when the expression is false, and a
+    # skipped required check reports Success.
+    if "if" in job and not listed("if"):
+        return (
+            f"{who} carries a job-level `if:` of any value. Any conditional on "
+            "a job that defines a check is a switch: a skipped required check "
+            "reports Success and does not block a merge. Delete it, or move "
+            "the condition into the steps." + declare
+        )
+    # Rule: `needs:` is the same switch one job away. A job that needs a
+    # skipped job is skipped too.
+    if "needs" in job and not listed("needs"):
+        return (
+            f"{who} carries `needs:`. A job whose dependency is skipped is "
+            "skipped too, and a skipped required check reports Success. "
+            "Delete it." + declare
+        )
+    # Rule: `continue-on-error:` is a switch of another kind: the job may fail
+    # and the run still succeed, so a red suite does not hold the merge back.
+    # GitHub does not accept the key on a job that calls a reusable, and the
+    # rule refuses it there anyway, because the day it does, nothing else here
+    # would.
+    if "continue-on-error" in job:
+        return (
+            f"{who} carries `continue-on-error:`. A job that may fail without "
+            "failing the run lets a red suite through. Delete it."
+        )
+    return None
+
+
+def step_switches(path, job_id, job):
+    """The refusals of the steps of a job: a condition its entry of
+    STEP_CONDITIONS does not list, and any `continue-on-error:`."""
+    forms = STEP_CONDITIONS.get((path, job_id), ())
+    steps = job.get("steps")
+    found = []
+    for number, step in enumerate(steps if isinstance(steps, list) else [], 1):
+        if not isinstance(step, dict):
+            continue
+        label = (
+            step.get("name") or step.get("id")
+            or str(step.get("uses") or "").split("@")[0] or f"number {number}"
+        )
+        where = f"step `{label}` of job `{job_id}` in {path}"
+        if "if" in step and step["if"] not in forms:
+            found.append(
+                f"{where} carries an `if:` that STEP_CONDITIONS of this "
+                "script does not list for the job. A step that runs the "
+                "suite, the comparison or the script of a check, skipped, "
+                "leaves the job reporting Success. Delete it, or list the "
+                "exact form there with the reason it is not a switch."
+            )
+        if "continue-on-error" in step:
+            found.append(
+                f"{where} carries `continue-on-error:`. A step that may fail "
+                "without failing the job lets a red check through. Delete it."
+            )
+    return found
+
+
 def main():
     files = workflow_files()
 
@@ -397,9 +546,6 @@ def main():
     violations = []
 
     for path in files:
-        name = os.path.basename(path)
-        if name.startswith("reusable-"):
-            continue
         try:
             with open(path) as fh:
                 spec = yaml.safe_load(fh)
@@ -418,55 +564,18 @@ def main():
             if not isinstance(job, dict):
                 continue
             uses = job.get("uses")
-            if not isinstance(uses, str):
-                continue
-            local = LOCAL_REUSABLE_RE.match(uses)
-            if local is None:
-                continue
-            reusable = local.group(1)
+            local = LOCAL_REUSABLE_RE.match(uses) if isinstance(uses, str) else None
+            reusable = local.group(1) if local else None
             if reusable == REUSABLE:
                 callers += 1
-            allowed = CONDITIONAL_CALLERS.get((path, job_id, reusable), {})
-            # Rule: a job-level `if:` on a caller of a required job
-            # is a switch. Any value: `false`, `inputs.foo`, even
-            # `true` would skip the call when the expression is
-            # false, and a skipped required check reports Success.
-            if "if" in job and ("if" not in allowed or job["if"] != allowed["if"]):
-                violations.append((
-                    path, job_id,
-                    f"job `{job_id}` in {path} calls `{reusable}` "
-                    "and carries a job-level `if:` of any value. "
-                    "Any conditional on a caller of a required job "
-                    "is a switch: a skipped required check reports "
-                    "Success and does not block a merge. Move the "
-                    "condition into the called workflow's steps, or "
-                    "delete it."
-                ))
+            violations.extend(
+                (path, job_id, msg) for msg in step_switches(path, job_id, job)
+            )
+            switch = job_switch(path, job_id, job, reusable)
+            if switch is not None:
+                violations.append((path, job_id, switch))
                 continue
-            # Rule: `needs:` is the same switch one job away. A
-            # caller that needs a skipped job is skipped too.
-            if "needs" in job and ("needs" not in allowed or job["needs"] != allowed["needs"]):
-                violations.append((
-                    path, job_id,
-                    f"job `{job_id}` in {path} calls `{reusable}` "
-                    "and carries `needs:`. A job whose dependency is "
-                    "skipped is skipped too, and a skipped required "
-                    "check reports Success. Delete it."
-                ))
-                continue
-            # Rule: `continue-on-error:` is a switch of another kind: the
-            # job may fail and the run still succeeds, so a red suite does
-            # not hold the merge back. GitHub does not accept the key on a
-            # job that calls a reusable today; the rule refuses it anyway,
-            # because the day it does, nothing else here would.
-            if "continue-on-error" in job:
-                violations.append((
-                    path, job_id,
-                    f"job `{job_id}` in {path} calls `{reusable}` "
-                    "and carries `continue-on-error:`. A job that may fail "
-                    "without failing the run lets a red suite through. "
-                    "Delete it."
-                ))
+            if reusable is None:
                 continue
             # Rule: a caller passes only the inputs the reusable's entry of
             # ALLOWED_INPUTS lists. A reusable with no entry is refused, so a
@@ -538,7 +647,7 @@ def main():
         sys.exit(1)
     print(
         "every reusable-shell-ci caller passes a test-command that "
-        "runs a suite, and no caller of a local reusable carries a switch"
+        "runs a suite, and no job or step of any workflow carries a switch"
     )
 
 

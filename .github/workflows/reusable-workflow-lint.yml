@@ -264,9 +264,11 @@ jobs:
           SHELLCHECK_BIN: ${{ env.SHELLCHECK_BIN }}
         run: actionlint -color "-shellcheck=${SHELLCHECK_BIN}"
 
-      # A required job must not be switchable off: no caller of a local
-      # reusable carries a job-level `if:`, `needs:` or `continue-on-error:`
-      # (bar the few watchers the script lists by their exact form), every
+      # A required job must not be switchable off: no job of any workflow, the
+      # reusables and the jobs that call nothing among them, carries a
+      # job-level `if:`, `needs:` or `continue-on-error:`, and no step a
+      # step-level `if:` or `continue-on-error:` (bar the few conditions the
+      # script lists by their exact form), every
       # caller passes only the inputs the script lists for that reusable, every
       # caller of reusable-shell-ci.yml passes a test-command that runs a
       # suite, and at least one such caller exists. The rule and its reasons

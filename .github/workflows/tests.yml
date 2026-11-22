@@ -170,6 +170,7 @@ jobs:
         ./tests/monitoring/check-tool-versions.test.sh
         ./tests/quality/lint/check-test-job-not-switchable.test.sh
         ./tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
+        ./tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
         ./tests/quality/lint/check-tooling-isolation.test.sh
       # shellcheck: tests/quality/lint/lint-workflow-shell.test.sh plants a violation and
       # requires the linter to report it, so it needs the linter. The reusable
