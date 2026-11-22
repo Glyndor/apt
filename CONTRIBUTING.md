@@ -115,7 +115,7 @@ as its script, which the coverage check above enforces:
 | `hygiene/` | that the tree and its commits agree with the rules the repository states: `.editorconfig`, commit identities, secrets |
 | `lint/` | static rules over workflows and shell: action pins, the shell inside `run:` blocks, a test job that cannot be switched off, tooling next to a secret |
 | `scope/` | which jobs, suites and mutation entries a change can affect, with the maps they read |
-| `coverage/` | that every script has a test, every suite is run by a workflow and every refusal has a mutation entry or an exemption, with the list of suites that cannot be |
+| `coverage/` | that every script has a test, every suite is run by a workflow and every refusal has a mutation entry or an exemption, with the list of suites no workflow can run |
 
 **A test you have not watched fail is not a test.** Before claiming a check
 works, delete or invert the control it covers, run it, and confirm it goes red

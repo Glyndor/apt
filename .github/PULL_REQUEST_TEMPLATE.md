@@ -10,8 +10,8 @@
 
 <!-- How was this tested? Check all that apply. -->
 
-- [ ] `./tests/*.test.sh` pass locally
-- [ ] `shellcheck scripts/*.sh tests/*.sh` is clean
+- [ ] every `*.test.sh` under `tests/` passes locally (the command in CONTRIBUTING.md)
+- [ ] `shellcheck` is clean over every shell script (the command in CONTRIBUTING.md)
 - [ ] Ran against a real archive or a container, for changes to publishing, signing or the installer
 
 <!--
