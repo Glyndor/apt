@@ -25,10 +25,15 @@ set -euo pipefail
 
 base="${1:?base}"; head="${2:?head}"
 
+# The diff first, on its own: inside a pipeline its failure would be hidden by the
+# `|| true` below, and a range that cannot be read would pass as an empty one.
+diff="$(git diff --no-color -U0 --no-renames "$base...$head")" \
+	|| { echo "::error::could not diff $base...$head" >&2; exit 1; }
+
 # One "file:line:text" per added line. awk only parses the diff; the matching is
 # grep, whose interval expressions behave the same on every runner (mawk, which
 # some images ship as awk, does not always honour them).
-added="$(git diff --no-color -U0 --no-renames "$base...$head" | awk '
+added="$(printf '%s\n' "$diff" | awk '
 	/^\+\+\+ / { file = substr($0, 7); sub(/^b\//, "", file); next }
 	/^@@/        { split($3, a, ","); line = substr(a[1], 2) + 0; next }
 	/^\+/        { print file ":" line ":" substr($0, 2); line++ }

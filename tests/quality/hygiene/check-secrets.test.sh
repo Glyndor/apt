@@ -95,6 +95,17 @@ gitc add -A; gitc commit -q -m "fixture"
 printf -- '-----BEGIN %s-----\n' 'PRIVATE KEY' > "$repo/elsewhere.pem"; gitc add -A; gitc commit -q -m "elsewhere"
 (cd "$repo" && "$SCRIPT" "$base" HEAD >/dev/null 2>&1); check "a key outside the listed paths still fails" 1 "$?"
 
+# A range git cannot read is a failure, not an empty change. The same call on a range
+# that can be read, and has nothing added, is accepted.
+out="$(cd "$repo" && "$SCRIPT" 0000000000000000000000000000000000000000 HEAD 2>&1)"; rc=$?
+check "a base that does not exist fails" 1 "$rc"
+check "and says the diff could not be read" 1 "$(printf '%s' "$out" | grep -c 'could not diff')"
+check "and does not report a clean scan" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+head_now="$(git -C "$repo" rev-parse HEAD)"
+out="$(cd "$repo" && "$SCRIPT" "$head_now" HEAD 2>&1)"; rc=$?
+check "an empty range is accepted" 0 "$rc"
+check "and reports a clean scan" 1 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+
 "$SCRIPT" >/dev/null 2>&1; check "no arguments fails" 1 "$?"
 
 echo "$pass passed, $fail failed"
