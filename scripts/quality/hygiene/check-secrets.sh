@@ -29,6 +29,8 @@
 # about how to show a file (`.gitattributes`, a textconv or an external diff), and a
 # changed file that git shows as binary, or shows no change for although its
 # content changed, fails the scan: a file nobody can read is not a clean one.
+# A file whose content the base already holds, as a move or a copy leaves it, adds
+# nothing to the history and is not read again.
 #
 # This is a filter for the mistake, not a vault: GitHub's push protection and
 # secret scanning remain the other half.
@@ -80,6 +82,13 @@ path_allowed() { # <path>
 git_diff --raw -z --no-abbrev --diff-filter=ACMRT "$base...$head" > "$work/raw" \
 	|| { echo "::error::could not diff $base...$head" >&2; exit 1; }
 
+# The contents the base already holds. A file whose content is among them adds nothing
+# to the history: a move or a copy shows up as an added file, and its every line would
+# be read as new.
+git ls-tree -r "$base" > "$work/tree" \
+	|| { echo "::error::could not list the files of $base" >&2; exit 1; }
+cut -f1 "$work/tree" | awk '{ print $3 }' | sort -u > "$work/base-blobs"
+
 # One "path TAB line TAB text" per added line. awk only parses the diff of one file;
 # the path reaches it from the environment, and a line counts only inside a hunk.
 : > "$work/added"
@@ -92,6 +101,7 @@ while IFS= read -r -d '' meta && IFS= read -r -d '' path; do
 			;;
 	esac
 	if path_allowed "$path"; then continue; fi
+	if grep -qxF -- "$new_blob" "$work/base-blobs"; then continue; fi
 	git_diff -U0 "$base...$head" -- "$path" > "$work/file.diff" \
 		|| { echo "::error::could not diff $path" >&2; exit 1; }
 	if grep -aqE '^(Binary files .* differ|GIT binary patch)$' "$work/file.diff"; then

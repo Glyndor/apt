@@ -196,6 +196,31 @@ check "the same file without the credential is accepted" 0 "$rc"
 plant fixtures/ok.txt "$aws"
 check "a credential in a listed path is still skipped" 0 "$rc"
 
+# A file the base already holds under another name adds nothing: a move out of a listed
+# path is not a new credential, and a move that adds one is.
+git -C "$repo" reset -q --hard "$base"
+mkdir -p "$repo/fixtures"
+printf '^fixtures/\n' > "$repo/.secret-scan-allow"
+printf '%s\n' "$aws" > "$repo/fixtures/k.pem"
+gitc add -A; gitc commit -q -m "a listed fixture"
+moved_base="$(git -C "$repo" rev-parse HEAD)"
+moved() { # <what to do in the tree>: scan the change it makes
+	git -C "$repo" reset -q --hard "$moved_base"
+	(cd "$repo" && eval "$1"); gitc add -A; gitc commit -q -m "moved"
+	out="$(cd "$repo" && "$SCRIPT" "$moved_base" HEAD 2>&1)"; rc=$?
+}
+moved 'mkdir moved && git mv fixtures/k.pem moved/k.pem'
+check "a listed file moved as it is is accepted" 0 "$rc"
+moved 'mkdir copied && cp fixtures/k.pem copied/k.pem'
+check "a copy of a listed file is accepted" 0 "$rc"
+# shellcheck disable=SC2016 # the commands are run by eval in the repository, where $aws is set
+moved 'mkdir moved && git mv fixtures/k.pem moved/k.pem && printf "%s\n" "$aws" >> moved/k.pem'
+check "the same move with a credential added is refused" 1 "$rc"
+check "and the added line is named" 1 "$(named 'moved/k.pem:2 AWS access key')"
+# shellcheck disable=SC2016 # as above
+moved 'mkdir moved && printf "%s\n" "$aws" > moved/k.pem && printf "%s\n" more >> moved/k.pem'
+check "a file with other content under a new name is read" 1 "$rc"
+
 # A name made of pathspec characters names that file alone, not the files it would match.
 plant xzy.txt "$aws"
 mkdir -p "$repo"; printf '%s\n' 'just a line' > "$repo/x*y.txt"; gitc add -A; gitc commit -q -m "a name with a star"
@@ -264,6 +289,9 @@ case "\$*" in
 			fail) echo "fatal: stub" >&2; exit 128 ;;
 		esac
 		;;
+	*"ls-tree"*)
+		[ "\${GIT_SHIM:-}" != lstree ] || { echo "fatal: stub" >&2; exit 128; }
+		;;
 	*"cat-file -s"*)
 		[ "\${GIT_SHIM:-}" != emptynosize ] || { echo "fatal: stub" >&2; exit 128; }
 		;;
@@ -287,6 +315,9 @@ check "and the refusal is for the size" 1 "$(named 'could not read the size of l
 shimmed fail
 check "a file whose diff cannot be read fails the scan" 1 "$rc"
 check "and the refusal names the file" 1 "$(named 'could not diff leak.txt')"
+shimmed lstree
+check "a base whose files cannot be listed fails the scan" 1 "$rc"
+check "and the refusal names the base" 1 "$(named 'could not list the files of')"
 shimmed none
 check "the same change is accepted when git shows it" 0 "$rc"
 # A change with no hunks that is not a change of content is not refused.

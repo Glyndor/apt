@@ -308,6 +308,8 @@ check-secrets-a-sample-word-is-read-from-the-value-alone	scripts/quality/hygiene
 check-secrets-a-sample-word-starts-at-a-boundary	scripts/quality/hygiene/check-secrets.sh	(^|[^a-z0-9])(example	(example	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-a-sample-word-ends-at-a-boundary	scripts/quality/hygiene/check-secrets.sh	|your)([^a-z0-9]|$)	|your)	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-a-name-that-points-elsewhere-is-excused	scripts/quality/hygiene/check-secrets.sh	if (name ~ /_(file|path|dir|url|name|env|var)[a-z0-9_]*[^a-z0-9_]*$/) next	if (0) next	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-file-the-base-holds-adds-nothing	scripts/quality/hygiene/check-secrets.sh	if grep -qxF -- "$new_blob" "$work/base-blobs"; then continue; fi	if false; then continue; fi	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-base-that-cannot-be-listed-fails	scripts/quality/hygiene/check-secrets.sh	|| { echo "::error::could not list the files of $base" >&2; exit 1; }	|| true	tests/quality/hygiene/check-secrets.test.sh
 check-suites-wired-if-errors-sys-exit-1	scripts/quality/coverage/check-suites-wired.sh	if errors:	if False:	tests/quality/coverage/check-suites-wired.test.sh
 check-test-coverage-missing-script-have-no-test	scripts/quality/coverage/check-test-coverage.sh	if [ ${#missing[@]} -gt 0 ]; then	if false; then	tests/quality/coverage/check-test-coverage.test.sh
 check-test-coverage-no-scripts-directory-under-root	scripts/quality/coverage/check-test-coverage.sh	[ -d "$root/scripts" ] || { echo "no scripts/ directory under $root" >&2; exit 1; }	[ -d "$root/scripts" ] || true || { echo "no scripts/ directory under $root" >&2; exit 1; }	tests/quality/coverage/check-test-coverage.test.sh
