@@ -14,12 +14,16 @@
 # text carries the word secret-scan:allow is skipped, for a value that is public on
 # purpose; say why next to it. A file cannot carry a comment, so a repository that
 # keeps throwaway test keys lists the paths in .secret-scan-allow at its root, one
-# regular expression per line, each with a comment saying why. An expression is
-# compared with the path of a changed file alone, never with a line of it. The list is read
+# literal path per line, each with a comment saying why. A line names one file, or a
+# directory when it ends in `/`, and then every file under it; it is compared with the
+# path of a changed file alone, never with a line of it, and by string equality or
+# prefix, not by pattern. There are no wildcards and no expressions, because whether
+# an expression matches every path but one cannot be decided by reading it. A line
+# with a wildcard or an expression character (`* ? [ ^ $ | ( \`), one that starts with
+# `/` or `./`, and one that holds `..` fail the scan, naming the line. The list is read
 # from <base>, the commit the change merges into, never from <head>: a change
 # that listed its own paths would switch the scan off for them, so an entry takes
-# effect from the pull request after the one that adds it. An expression that does
-# not compile, or that matches every path, fails the scan instead of weakening it.
+# effect from the pull request after the one that adds it.
 #
 # Where the lines come from. The paths are the ones git lists for the range, and the
 # lines of each are read from a diff of that one path, so what a file contains can
@@ -55,30 +59,47 @@ git_diff() { # <git diff arguments>
 }
 
 # Paths the repository declares as holding throwaway keys on purpose, read from
-# the base commit. A missing file is an empty list; a file that cannot be read, an
-# expression that does not compile, or one that matches every path is a failure.
-allow_args=()
+# the base commit, one literal path per line. A missing file is an empty list; a file
+# that cannot be read, or a line that is not a literal path, is a failure: a pattern
+# cannot be judged by reading it (`^[^z]` and `.*[^a]$` match everything but one
+# name), so none is accepted. A line is a path relative to the root of the repository
+# and holds no wildcard and no expression character, does not start with `/` or `./`
+# and has no `..` in it.
+allow_paths=()
 if git cat-file -e "$base:.secret-scan-allow" 2>/dev/null; then
 	allow="$(git show "$base:.secret-scan-allow")" \
 		|| { echo "::error::could not read .secret-scan-allow at $base" >&2; exit 1; }
 	while IFS= read -r numbered; do
-		n="${numbered%%:*}"; expr="${numbered#*:}"
-		rc=0; printf '' | grep -qE -- "$expr" || rc=$?
-		[ "$rc" -le 1 ] \
-			|| { echo "::error::.secret-scan-allow line $n: not a regular expression: $expr" >&2; exit 1; }
-		# One that matches a path no repository holds would excuse every file.
-		! printf '%s\n' 'zz-canary-9f3a/zz-canary-9f3a' | grep -qE -- "^($expr)" \
-			|| { echo "::error::.secret-scan-allow line $n: matches every path, which would switch the scan off: $expr" >&2; exit 1; }
-		allow_args+=(-e "^($expr)")
+		n="${numbered%%:*}"; entry="${numbered#*:}"
+		case "$entry" in
+			*'*'* | *'?'* | *'['* | *'^'* | *'$'* | *'|'* | *'('* | *\\*)
+				echo "::error::.secret-scan-allow line $n: holds a wildcard or an expression character; a line is a literal path: $entry" >&2
+				exit 1
+				;;
+			/* | ./*)
+				echo "::error::.secret-scan-allow line $n: starts with / or ./; a path is relative to the root of the repository: $entry" >&2
+				exit 1
+				;;
+			*..*)
+				echo "::error::.secret-scan-allow line $n: holds ..; a path stays under the root of the repository: $entry" >&2
+				exit 1
+				;;
+		esac
+		allow_paths+=("$entry")
 	done < <(printf '%s\n' "$allow" | grep -nvE '^[[:space:]]*(#|$)' || true)
 fi
 
+# An entry excuses the file it names, or, when it ends in `/`, every file under that
+# directory. The comparison is of strings: equality or a prefix, never a pattern.
 path_allowed() { # <path>
-	[ "${#allow_args[@]}" -gt 0 ] || return 1
-	local rc=0
-	printf '%s\n' "$1" | grep -qE "${allow_args[@]}" || rc=$?
-	[ "$rc" -le 1 ] || { echo "::error::could not apply .secret-scan-allow" >&2; exit 1; }
-	[ "$rc" -eq 0 ]
+	local entry
+	for entry in ${allow_paths[@]+"${allow_paths[@]}"}; do
+		if [ "$1" = "$entry" ]; then return 0; fi
+		case "$entry" in
+			*/) if [ "${1#"$entry"}" != "$1" ]; then return 0; fi ;;
+		esac
+	done
+	return 1
 }
 
 # The changed files, on their own: inside a pipeline the failure of this call would

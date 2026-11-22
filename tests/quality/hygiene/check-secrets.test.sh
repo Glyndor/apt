@@ -105,7 +105,7 @@ echo more >> "$repo/README"; gitc add -A; gitc commit -q -m "touch"
 # A repository lists the paths that hold throwaway keys on purpose. The list is read
 # from the base commit, so the change that adds an entry does not use it.
 git -C "$repo" reset -q --hard "$base"
-printf '# test keys\n^fixtures/\n' > "$repo/.secret-scan-allow"
+printf '# test keys\nfixtures/\n' > "$repo/.secret-scan-allow"
 gitc add -A; gitc commit -q -m "list the fixtures"
 allow_base="$(git -C "$repo" rev-parse HEAD)"
 mkdir -p "$repo/fixtures"
@@ -119,7 +119,7 @@ printf -- '-----BEGIN %s-----\n' 'PRIVATE KEY' > "$repo/elsewhere.pem"; gitc add
 git -C "$repo" reset -q --hard "$base"
 mkdir -p "$repo/fixtures"
 printf -- '-----BEGIN %s-----\n%s\n' 'PRIVATE KEY' "$(rep M 40)" > "$repo/fixtures/test.pem"
-printf '^fixtures/\n' > "$repo/.secret-scan-allow"
+printf 'fixtures/\n' > "$repo/.secret-scan-allow"
 gitc add -A; gitc commit -q -m "fixture and its own list"
 out="$(cd "$repo" && "$SCRIPT" "$base" HEAD 2>&1)"; rc=$?
 check "a list added by the change itself is not used" 1 "$rc"
@@ -128,66 +128,98 @@ check "and the key it listed is named" 1 "$(printf '%s' "$out" | grep -c 'privat
 # A change that widens the list of the base is judged by the list of the base too.
 git -C "$repo" reset -q --hard "$allow_base"
 printf -- '-----BEGIN %s-----\n' 'PRIVATE KEY' > "$repo/elsewhere.pem"
-printf '# test keys\n^fixtures/\n^elsewhere\\.pem\n' > "$repo/.secret-scan-allow"
+printf '# test keys\nfixtures/\nelsewhere.pem\n' > "$repo/.secret-scan-allow"
 gitc add -A; gitc commit -q -m "widen the list and use it"
 out="$(cd "$repo" && "$SCRIPT" "$allow_base" HEAD 2>&1)"; rc=$?
 check "a path the change adds to the list of the base is not skipped" 1 "$rc"
 check "and the key it listed is named" 1 "$(printf '%s' "$out" | grep -c 'private key block')"
 
-# An expression that does not compile fails the scan with its own message, whether
-# the change adds a credential or not, instead of emptying the set it filters. The
-# credential is one the scan reports when no list exists.
-bad_list() { # <expression> <added line>: a base holding the list, and a change adding the line
+# The list is literal paths. A line that is not one fails the scan with a message of its
+# own that names the line, whether or not the change adds a credential, instead of
+# emptying the set it filters. The credential is one the scan reports when no list exists.
+bad_list() { # <list lines> <added line>: a base holding the list, and a change adding the line
 	git -C "$repo" reset -q --hard "$base"
-	printf '# test keys\n%s\n' "$1" > "$repo/.secret-scan-allow"; gitc add -A; gitc commit -q -m "list"
+	printf '# test keys: a comment may hold *, (a|b) and [x] without being a path\n%s\n' "$1" > "$repo/.secret-scan-allow"; gitc add -A; gitc commit -q -m "list"
 	bad_base="$(git -C "$repo" rev-parse HEAD)"
 	printf '%s\n' "$2" > "$repo/c.txt"; gitc add -A; gitc commit -q -m "change"
 	out="$(cd "$repo" && "$SCRIPT" "$bad_base" HEAD 2>&1)"; rc=$?
 }
+said() { printf '%s' "$out" | grep -c -- "$1" || true; }
 aws="id AKI""A$(rep Q 16)"
-bad_list '[unclosed' "$aws"
-check "an expression that does not compile fails" 1 "$rc"
-check "and says it is not a regular expression" 1 "$(printf '%s' "$out" | grep -c 'not a regular expression')"
-check "and does not report a clean scan" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
-bad_list '[unclosed' 'just an ordinary line'
-check "an expression that does not compile fails a change that adds nothing" 1 "$rc"
-check "and says so for that change too" 1 "$(printf '%s' "$out" | grep -c 'not a regular expression')"
-bad_list '^.*$' "$aws"
-check "an expression that matches every path fails" 1 "$rc"
-check "and says it would switch the scan off" 1 "$(printf '%s' "$out" | grep -c 'matches every path')"
-# An expression that matches a path no repository has excuses every file, however it is
-# written, and the refusal names the line of the list it is on.
-for every in '.*' 'a|' '()' 'x*'; do
-	bad_list "$every" 'just an ordinary line'
-	check "the expression '$every' fails the scan" 1 "$rc"
-	check "and the refusal names its line, the second of the list" 1 "$(printf '%s' "$out" | grep -c 'line 2: matches every path')"
+
+# One character at a time: each of these is a wildcard or an expression character, and a
+# line holding it is refused whatever else it holds. The last two are the expressions a
+# canary cannot catch, since each matches every path but one name.
+for expr in '*' 'fixtures/*' 'a?' '[a]' '^fixtures/' 'fixtures$' 'a|b' '(a)' 'a\b' '^[^z]' '.*[^a]$'; do
+	bad_list "$expr" 'just an ordinary line'
+	check "the line '$expr' fails the scan" 1 "$rc"
+	check "and the refusal names its line, the second of the list, and its reason" 1 \
+		"$(said 'line 2: holds a wildcard or an expression character')"
+	check "and does not report a clean scan" 0 "$(said 'no credential-shaped lines added')"
+	bad_list "$expr" "$aws"
+	check "the line '$expr' fails a change that adds a credential as well" 1 "$rc"
+	check "and the credential is not reported as if the list had been read" 0 "$(said 'AWS access key')"
 done
-bad_list $'^fixtures/\n.*' 'just an ordinary line'
-check "an expression after a good one is found on its own line" 1 "$(printf '%s' "$out" | grep -c 'line 3: matches every path')"
-bad_list '[unclosed' 'just an ordinary line'
-check "an expression that does not compile is named by its line" 1 "$(printf '%s' "$out" | grep -c 'line 2: not a regular expression')"
-bad_list $'^fixtures/\n^other/' 'just an ordinary line'
-check "two expressions that match some paths are accepted" 0 "$rc"
-bad_list '^fixtures/' "$aws"
-check "a list of paths that compile still reports a key outside them" 1 "$rc"
-check "and names the key, not the list" 1 "$(printf '%s' "$out" | grep -c 'AWS access key')"
+for expr in '/' '/fixtures/' './fixtures/' './k.pem'; do
+	bad_list "$expr" 'just an ordinary line'
+	check "the line '$expr' fails the scan" 1 "$rc"
+	check "and the refusal says it starts with / or ./, on line 2" 1 "$(said 'line 2: starts with / or ./')"
+done
+for expr in '../k.pem' 'a/../k.pem' 'fixtures/..' 'a..b'; do
+	bad_list "$expr" 'just an ordinary line'
+	check "the line '$expr' fails the scan" 1 "$rc"
+	check "and the refusal says it holds .., on line 2" 1 "$(said 'line 2: holds \.\.;')"
+done
+bad_list $'fixtures/\n*' 'just an ordinary line'
+check "a line after a good one is found on its own line" 1 "$(said 'line 3: holds a wildcard')"
+bad_list $'# a comment\n\n   # an indented one\nfixtures/\n/x' 'just an ordinary line'
+check "a refusal names the line of the file, comments and blank lines counted" 1 "$(said 'line 6: starts with / or ./')"
 
-# A grep that fails while the list is applied must not empty the set. The stub fails
-# only for that call, so the credential below can only be seen if the failure is not
-# read as "nothing left".
-mkdir -p "$WORK/stub"
-real_grep="$(command -v grep)"
-printf '#!/bin/sh\ncase "$*" in *"^(^fixtures/)"*) exit 2 ;; esac\nexec %s "$@"\n' "$real_grep" > "$WORK/stub/grep"
-chmod +x "$WORK/stub/grep"
-bad_list '^fixtures/' "$aws"
-out="$(cd "$repo" && PATH="$WORK/stub:$PATH" "$SCRIPT" "$bad_base" HEAD 2>&1)"; rc=$?
-check "a grep that fails while the list is applied fails the scan" 1 "$rc"
-check "and says the list could not be applied" 1 "$(printf '%s' "$out" | grep -c 'could not apply')"
-check "and does not report a clean scan" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
-out="$(cd "$repo" && PATH="$WORK/stub:$PATH" "$SCRIPT" "$bad_base" "$bad_base" 2>&1)"; rc=$?
-check "the same stub on a change with nothing to filter is accepted" 0 "$rc"
+# The same shapes just inside the line are accepted: a dot, a dash, an underscore, a colon
+# and a leading dot in a name are text, and so is a directory.
+for expr in 'fixtures/' 'fixtures/k.pem' 'a.b/c-d_e.txt' '.github/' 'dir.with.dots/' 'a:1:x' 'x/y/'; do
+	bad_list "$expr" 'just an ordinary line'
+	check "the line '$expr' is accepted" 0 "$rc"
+done
+bad_list 'fixtures/' "$aws"
+check "a list of paths still reports a key outside them" 1 "$rc"
+check "and names the key, not the list" 1 "$(said 'AWS access key')"
 
-# What names a file, and what the scan reads. The base lists ^fixtures/, so a line the scan
+# What an entry excuses: the file it names, or everything under a directory it ends in `/`,
+# compared as text. listed <list> <file> says whether a change adding a credential under
+# that path is scanned (1) or skipped (0).
+listed() { # <list lines> <path>
+	git -C "$repo" reset -q --hard "$base"
+	printf '# why: a comment may hold *, (a|b) and [x] without being a path\n%s\n' "$1" > "$repo/.secret-scan-allow"; gitc add -A; gitc commit -q -m "list"
+	bad_base="$(git -C "$repo" rev-parse HEAD)"
+	mkdir -p "$repo/$(dirname -- "$2")"
+	printf '%s\n' "$aws" > "$repo/$2"; gitc add -A; gitc commit -q -m "change"
+	(cd "$repo" && "$SCRIPT" "$bad_base" HEAD >/dev/null 2>&1); rc=$?
+}
+listed 'fixtures/k.pem' fixtures/k.pem
+check "a file named by an entry is skipped" 0 "$rc"
+listed 'fixtures/k.pem' fixtures/other.pem
+check "another file of the same directory is not" 1 "$rc"
+listed 'fixtures/k.pem' fixtures/k.pem.bak
+check "a file whose name only starts with the entry is not" 1 "$rc"
+listed 'fixtures/' fixtures/deep/er/k.pem
+check "a file anywhere under a directory entry is skipped" 0 "$rc"
+listed 'fixtures/' fixtures2/k.pem
+check "a directory that only starts with the name of the entry is not" 1 "$rc"
+listed 'fixtures/' xfixtures/k.pem
+check "a path that only holds the entry after its start is not" 1 "$rc"
+listed 'fixtures' fixtures/k.pem
+check "an entry without a slash does not name a directory" 1 "$rc"
+listed 'a.b/' aXb/k.pem
+check "a dot in an entry is a dot, not any character" 1 "$rc"
+listed 'a.b/' a.b/k.pem
+check "and the entry itself is skipped" 0 "$rc"
+listed $'fixtures/\nother/' other/k.pem
+check "a second entry is read as well as the first" 0 "$rc"
+listed 'Fixtures/' fixtures/k.pem
+check "the comparison is of exact text, case included" 1 "$rc"
+
+# What names a file, and what the scan reads. The base lists fixtures/, so a line the scan
 # attributes to a path under fixtures/ is excused and a line it attributes to another is not.
 plant() { # <path> <line>...: a change adding one file (and the attributes in $ATTR, if set)
 	local file="$1"; shift
@@ -213,7 +245,7 @@ check "a credential in a listed path is still skipped" 0 "$rc"
 # path is not a new credential, and a move that adds one is.
 git -C "$repo" reset -q --hard "$base"
 mkdir -p "$repo/fixtures"
-printf '^fixtures/\n' > "$repo/.secret-scan-allow"
+printf 'fixtures/\n' > "$repo/.secret-scan-allow"
 printf '%s\n' "$aws" > "$repo/fixtures/k.pem"
 gitc add -A; gitc commit -q -m "a listed fixture"
 moved_base="$(git -C "$repo" rev-parse HEAD)"
@@ -260,7 +292,7 @@ check "a file whose name carries the marker is not skipped" 1 "$rc"
 
 # The list is compared with the path alone: an entry cannot reach a line number.
 git -C "$repo" reset -q --hard "$base"
-printf '^.*:1:\n' > "$repo/.secret-scan-allow"; gitc add -A; gitc commit -q -m "a list of line numbers"
+printf 'c.txt:1:x\n' > "$repo/.secret-scan-allow"; gitc add -A; gitc commit -q -m "a list of line numbers"
 numbers_base="$(git -C "$repo" rev-parse HEAD)"
 printf '%s\n' "$aws" > "$repo/c.txt"; gitc add -A; gitc commit -q -m "line one"
 out="$(cd "$repo" && "$SCRIPT" "$numbers_base" HEAD 2>&1)"; rc=$?
