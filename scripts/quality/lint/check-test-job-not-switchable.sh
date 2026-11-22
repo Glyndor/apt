@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Fail when a caller of reusable-shell-ci.yml can switch the required
-# `shell / test` check off without failing it.
+# Fail when a caller of a local reusable workflow can switch the check it
+# defines off without failing it. The required checks are all of that shape:
+# `shell / test` (reusable-shell-ci.yml), `dco` (reusable-dco.yml),
+# `line limit` (reusable-line-limit.yml), `workflow-lint`
+# (reusable-workflow-lint.yml) and `empty diff` (reusable-empty-diff.yml).
 #
 # The first form of this check was a text match over the test-command block.
 # Two edits walked straight past it. Job-level `if: false` on the caller leaves
@@ -14,11 +17,16 @@
 # This parses the workflows instead. It refuses, each with its own message
 # naming the file, the job and the reason:
 #
-#   - a caller of reusable-shell-ci.yml that carries a job-level `if:` of any
-#     value, `needs:` or `continue-on-error:`. Any conditional on a caller of a
-#     required job is a switch: a skipped required check reports Success, and
-#     a job allowed to fail lets a red suite through.
-#   - a test-command whose first non-blank token is not a suite invocation.
+#   - a caller of any local reusable (`uses: ./.github/workflows/reusable-*`)
+#     that carries a job-level `if:` of any value, `needs:` or
+#     `continue-on-error:`. Any conditional on a caller of a required job is a
+#     switch: a skipped required check reports Success, and a job allowed to
+#     fail lets a red suite through. The one way out is a condition that is in
+#     CONDITIONAL_CALLERS below, by workflow file, job, reusable and exact
+#     value, and the comment above each says why that condition is not a
+#     switch.
+#   - for a caller of reusable-shell-ci.yml, a test-command whose first
+#     non-blank token is not a suite invocation.
 #     The accepted grammar is a list of `./tests/<name>.test.sh` or
 #     `bash ./tests/<name>.test.sh` invocations joined by `&&`, or the suite
 #     runner followed by such invocations, optionally spread over lines with a
@@ -32,6 +40,10 @@
 #     violations found" and "nothing to look at" produce the same green, which
 #     is the exact failure this check was written against. Deleting tests.yml
 #     outright would have walked straight past it.
+#
+# The test-command rules and the no-caller rule below are about the one
+# reusable that carries a command, reusable-shell-ci.yml. The refusals of the
+# switches are about every local reusable.
 #
 # The grammar is repeated in every refusal except the no-caller one, so an
 # author who trips the check learns the shape rather than guessing from "your
@@ -63,8 +75,60 @@ import sys
 
 import yaml
 
-# The reusable that defines the required `shell / test` check.
+# The reusable that defines the required `shell / test` check, and carries the
+# test-command the grammar below judges.
 REUSABLE = "reusable-shell-ci.yml"
+
+# A caller of a local reusable is a call of a file under this directory whose
+# name starts with `reusable-`. A call of a workflow in another repository is
+# not one: it names a revision, and the copy it runs is not this tree's.
+LOCAL_REUSABLE_RE = re.compile(
+    r"^\./\.github/workflows/(reusable-[A-Za-z0-9_.-]+\.ya?ml)$"
+)
+
+# The callers that carry a condition on purpose, as
+# (workflow file, job, reusable) -> {key: exact value}. A caller is accepted
+# with a switch key only when the key and its whole value are the ones listed
+# here; `continue-on-error:` has no entry, so it is never accepted. None of the
+# callers below is a required check: freshness.yml says its jobs may not become
+# one, so a skipped one reports on nothing a merge depends on. Each condition
+# only makes the watcher wait for the job that decides whether it applies.
+_SCOPE_IF = "${{ !cancelled() && needs.scope.outputs.%s != 'false' }}"
+_SCOPED = lambda key: {"if": _SCOPE_IF % key, "needs": "scope"}  # noqa: E731
+CONDITIONAL_CALLERS = {
+    # scoop-bucket: the published-bytes watcher waits for the job that says
+    # whether the manifests are published yet.
+    (
+        ".github/workflows/freshness.yml",
+        "freshness-published-bytes",
+        "reusable-schedule-freshness.yml",
+    ): {
+        "if": "needs.published-bytes-ready.outputs.ready == 'true'",
+        "needs": "published-bytes-ready",
+    },
+    # apt: each watcher waits for the `scope` job, which decides from the
+    # changed paths whether the watcher applies to this run.
+    (
+        ".github/workflows/freshness.yml",
+        "dependabot-freshness",
+        "reusable-dependabot-freshness.yml",
+    ): _SCOPED("dependabot"),
+    **{
+        (
+            ".github/workflows/freshness.yml",
+            job,
+            "reusable-schedule-freshness.yml",
+        ): _SCOPED("schedule")
+        for job in (
+            "freshness-publish",
+            "freshness-distro-floor",
+            "freshness-health-check",
+            "freshness-itself",
+            "freshness-drift",
+            "freshness-mutation",
+        )
+    },
+}
 
 # A single suite invocation, as the grammar accepts it: the path
 # alone, or `bash` in front of it. Names are constrained to what
@@ -205,17 +269,23 @@ def main():
             if not isinstance(job, dict):
                 continue
             uses = job.get("uses")
-            if not isinstance(uses, str) or REUSABLE not in uses:
+            if not isinstance(uses, str):
                 continue
-            callers += 1
+            local = LOCAL_REUSABLE_RE.match(uses)
+            if local is None:
+                continue
+            reusable = local.group(1)
+            if reusable == REUSABLE:
+                callers += 1
+            allowed = CONDITIONAL_CALLERS.get((path, job_id, reusable), {})
             # Rule: a job-level `if:` on a caller of a required job
             # is a switch. Any value: `false`, `inputs.foo`, even
             # `true` would skip the call when the expression is
             # false, and a skipped required check reports Success.
-            if "if" in job:
+            if "if" in job and job["if"] != allowed.get("if"):
                 violations.append((
                     path, job_id,
-                    f"job `{job_id}` in {path} calls `{REUSABLE}` "
+                    f"job `{job_id}` in {path} calls `{reusable}` "
                     "and carries a job-level `if:` of any value. "
                     "Any conditional on a caller of a required job "
                     "is a switch: a skipped required check reports "
@@ -226,10 +296,10 @@ def main():
                 continue
             # Rule: `needs:` is the same switch one job away. A
             # caller that needs a skipped job is skipped too.
-            if "needs" in job:
+            if "needs" in job and job["needs"] != allowed.get("needs"):
                 violations.append((
                     path, job_id,
-                    f"job `{job_id}` in {path} calls `{REUSABLE}` "
+                    f"job `{job_id}` in {path} calls `{reusable}` "
                     "and carries `needs:`. A job whose dependency is "
                     "skipped is skipped too, and a skipped required "
                     "check reports Success. Delete it."
@@ -243,11 +313,13 @@ def main():
             if "continue-on-error" in job:
                 violations.append((
                     path, job_id,
-                    f"job `{job_id}` in {path} calls `{REUSABLE}` "
+                    f"job `{job_id}` in {path} calls `{reusable}` "
                     "and carries `continue-on-error:`. A job that may fail "
                     "without failing the run lets a red suite through. "
                     "Delete it."
                 ))
+                continue
+            if reusable != REUSABLE:
                 continue
             # Rule: the test-command must invoke at least one suite.
             with_block = job.get("with")
@@ -301,7 +373,7 @@ def main():
         sys.exit(1)
     print(
         "every reusable-shell-ci caller passes a test-command that "
-        "runs a suite"
+        "runs a suite, and no caller of a local reusable carries a switch"
     )
 
 
