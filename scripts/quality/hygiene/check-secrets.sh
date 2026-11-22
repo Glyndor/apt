@@ -68,7 +68,7 @@ for entry in "${patterns[@]}"; do
 done
 
 # A credential with a format of its own is caught by the name it is assigned to.
-generic='(token|secret|passw(or)?d|api[_-]?key|private[_-]?key|signing[_-]?key|access[_-]?key|ed25519[_-]?key|credential)[a-z0-9_]*["'"'"']?[ \t]*[:=][ \t]*["'"'"']?[a-z0-9+/_=-]{32,}'
+generic='(token|secret|passw(or)?d|api[_-]?key|private[_-]?key|signing[_-]?key|access[_-]?key|ed25519[_-]?key|ml[_-]?dsa[_-]?(44|65|87)?[_-]?key|credential)[a-z0-9_]*["'"'"']?[ \t]*[:=][ \t]*["'"'"']?[a-z0-9+/_=-]{32,}'
 skip='_(file|path|dir|url|name|env|var)[a-z0-9_]*["'"'"']?[ \t]*[:=]|secrets\.|\$\{|\$\(|example|placeholder|dummy|fake|fixture|changeme|redacted|your|<[a-z_-]+>'
 hits="$(printf '%s\n' "$added" | grep -iE -- "$generic" | grep -viE -- "$skip" || true)"
 [ -z "$hits" ] || report "long value assigned to a secret-like name" "$hits"
