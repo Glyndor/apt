@@ -547,3 +547,6 @@ coverage-an-exit-in-shell-is-a-refusal	scripts/quality/coverage/check-mutation-c
 coverage-an-exit-that-hands-on-a-status-is-a-refusal	scripts/quality/coverage/check-mutation-coverage.sh	hit = EXIT.search(code) or (n not in python and EXIT_HANDED.search(code_of(line, STRING))) \	hit = EXIT.search(code) \	tests/quality/coverage/check-mutation-coverage.test.sh
 upgrade-hands-on-the-status-of-the-upgrade	keyring/upgrade/glyndor-upgrade	exit "$rc"	exit 0	tests/keyring/glyndor-upgrade-errors.test.sh
 shell-ci-a-script-that-is-not-executable-fails-the-job	.github/workflows/reusable-shell-ci.yml	exit "$rc"	exit 0	tests/ci/reusable/reusable-shell-ci.test.sh
+reusable-drift-the-download-has-no-size-cap	scripts/monitoring/check-reusable-drift.sh	--max-time 60 --max-filesize 1048576 "$url"	--max-time 60 "$url"	tests/monitoring/check-reusable-drift.test.sh
+reusable-drift-a-redirect-may-leave-https	scripts/monitoring/check-reusable-drift.sh	--proto =https --proto-redir =https --connect-timeout 10	--proto =https --connect-timeout 10	tests/monitoring/check-reusable-drift.test.sh
+reusable-drift-any-protocol-is-fetched	scripts/monitoring/check-reusable-drift.sh	curl -fsSL --proto =https --proto-redir =https	curl -fsSL --proto-redir =https	tests/monitoring/check-reusable-drift.test.sh

@@ -83,6 +83,7 @@ for arg in "$@"; do
 	case "$arg" in https://*) url="$arg" ;; esac
 done
 printf '%s\n' "$url" >> "${STUB_LOG:-/dev/null}"
+printf '%s\n' "$*" >> "${STUB_ARGS:-/dev/null}"
 code="${STUB_EXIT_CODE:-0}"
 if [ "$code" -ne 0 ]; then
 	echo "stub curl: forced failure" >&2
@@ -92,6 +93,16 @@ sibling="$(printf '%s' "$url" | awk -F/ '{print $5}')"
 file="$(printf '%s' "$url" | awk -F/ '{print $NF}')"
 path="$DIR/$sibling/$file"
 [ -f "$path" ] || exit 22
+# What curl does with --max-filesize: a body over the limit is refused with 63.
+limit=""
+while [ "$#" -gt 0 ]; do
+	[ "$1" != --max-filesize ] || limit="$2"
+	shift
+done
+if [ -n "$limit" ] && [ "$(wc -c < "$path")" -gt "$limit" ]; then
+	echo "curl: (63) Maximum file size exceeded" >&2
+	exit 63
+fi
 cat "$path"
 STUB
 	chmod +x "$WORK/bin/curl"
@@ -142,7 +153,8 @@ seed() {
 # stdout+stderr in `out`, exit code in `rc`.
 run_check() {
 	: > "$WORK/curl.log"
-	STUB_DIR="$WORK/remote" STUB_LOG="$WORK/curl.log" \
+	: > "$WORK/curl.args"
+	STUB_DIR="$WORK/remote" STUB_LOG="$WORK/curl.log" STUB_ARGS="$WORK/curl.args" \
 		PATH="$WORK/bin:$PATH" \
 		bash "$SCRIPT" "$WORK/repo" 2>&1
 }
@@ -170,6 +182,52 @@ check "and it made one request per file per sibling" "14" \
 	"$(wc -l < "$WORK/curl.log" | tr -d ' ')"
 check "and asked raw.githubusercontent.com for main" "14" \
 	"$(grep -c 'raw.githubusercontent.com/Glyndor/.*/main/.github/workflows/' "$WORK/curl.log")"
+
+# Every request is bounded, in the three ways the other downloads of this
+# repository are: https only (also across a redirect), a deadline, and a size cap.
+for flag in '--proto =https' '--proto-redir =https' '--connect-timeout 10' '--max-time 60' '--max-filesize 1048576'; do
+	check "every request carries $flag" "14" "$(grep -cF -- "$flag" "$WORK/curl.args")"
+done
+
+# --- PLANTED: a sibling file over the size cap is a fetch failure ----------
+#
+# A reusable is a few KiB; a sibling that answers with more than the cap is not
+# compared, and the failure is not reported as drift. The file one byte inside
+# the cap is read and compared as any other, so the refusal is the size.
+pad_to() { # <file> <bytes>: grow the file to that many bytes with one comment line
+	local have fill
+	have="$(wc -c < "$1")"
+	fill=$(($2 - have - 2))
+	# A count that is not positive would read without end: with a minus sign,
+	# head -c takes all but that many bytes of a file that has none.
+	[ "$fill" -ge 0 ] || { echo "pad_to: $1 already holds $have bytes, more than $2 allows" >&2; exit 1; }
+	{
+		printf '#'
+		head -c "$fill" /dev/zero | tr '\0' x
+		printf '\n'
+	} >> "$1"
+}
+seed
+for target in "$WORK/repo/.github/workflows/reusable-shell-ci.yml" "$WORK/remote/${SIBLINGS[0]}/reusable-shell-ci.yml" "$WORK/remote/${SIBLINGS[1]}/reusable-shell-ci.yml"; do
+	pad_to "$target" 1048576
+done
+out="$(run_check)"
+rc=$?
+check "a sibling file exactly at the size cap is compared and passes" "0" "$rc"
+check "and every file of both siblings was compared" "1" \
+	"$(says "$out" 'compared 14 reusable workflow')"
+# One more byte on the copy that is already at the cap.
+printf 'x' >> "$WORK/remote/${SIBLINGS[1]}/reusable-shell-ci.yml"
+out="$(run_check)"
+rc=$?
+check "a sibling file one byte over the size cap fails the check" "1" "$rc"
+check "and the refusal says the request failed" "1" \
+	"$(says "$out" 'could not fetch reusable-shell-ci.yml from')"
+check "and quotes curl's own reason, the size" "1" \
+	"$(says "$out" 'Maximum file size exceeded')"
+check "and says explicitly that this is not drift" "1" \
+	"$(says "$out" 'not drift')"
+check "and never uses the drift wording" "0" "$(counts "$out" 'has drifted')"
 
 # --- PLANTED: a changed `run:` block must fail, and be named --------------
 
