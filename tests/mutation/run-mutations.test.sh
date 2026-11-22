@@ -120,11 +120,32 @@ bash "$HERE/scripts/guard.sh" bad >/dev/null 2>&1 || rc=$?
 [ "$rc" -eq 1 ] || { echo "died with $rc" >&2; exit 3; }
 exit 0
 SH
+cat > "$TOY/tests/assert.test.sh" <<'SH'
+#!/usr/bin/env bash
+# A suite written in Python: a failed assertion leaves a traceback, not a FAIL line.
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+python3 - "$HERE" <<'PY'
+import subprocess, sys
+rc = subprocess.run(["bash", sys.argv[1] + "/scripts/guard.sh", "bad"], capture_output=True).returncode
+assert rc == 1, "the guard did not refuse"
+PY
+SH
+cat > "$TOY/tests/pycrash.test.sh" <<'SH'
+#!/usr/bin/env bash
+# A Python suite that dies when the guard stops refusing: no assertion failed.
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+python3 - "$HERE" <<'PY'
+import subprocess, sys
+rc = subprocess.run(["bash", sys.argv[1] + "/scripts/guard.sh", "bad"], capture_output=True).returncode
+if rc != 1:
+    raise RuntimeError("could not start")
+PY
+SH
 printf 'hello\n' > "$TOY/scripts/notes.txt"
 # A workflow and a suite that reads it, for the mutations that target YAML.
 mkdir -p "$TOY/.github/workflows"
 printf 'suites: [a, b]\n' > "$TOY/.github/workflows/w.yml"
-printf '#!/usr/bin/env bash\ngrep -qF "[a, b]" "$(dirname "$0")/../.github/workflows/w.yml"\n' > "$TOY/tests/w.test.sh"
+printf '#!/usr/bin/env bash\ngrep -qF "[a, b]" "$(dirname "$0")/../.github/workflows/w.yml" || { echo "FAIL  the workflow names its suites"; exit 1; }\n' > "$TOY/tests/w.test.sh"
 git -C "$TOY" init -q .
 git -C "$TOY" add -A
 git -C "$TOY" -c user.name=t -c user.email=t@example.invalid commit -q -m base
@@ -145,14 +166,28 @@ check "a mutation the suite notices passes the runner" "0" "$(run)"
 check "and the message names the test that noticed it" "1" "$(has 'killed by tests/guard.test.sh' "$WORK/out")"
 check "and the reason the suite went red, not only the colour" "1" "$(has 'the guard did not refuse' "$WORK/out")"
 
-check "and a kill that shows its FAIL line raises no warning" "0" "$(has 'without a FAIL line' "$WORK/out")"
+check "and a kill that shows its FAIL line is not called a death" "0" "$(has 'which is not a kill' "$WORK/out")"
 
-# A suite that dies instead of failing: it is still a kill, and the runner says it
-# showed no reason, at the entry and again at the end of the sweep.
+# A suite that dies instead of failing an assertion did not look at the guard: the
+# entry could not be run, and the sweep fails on it.
 entry crashes 'if [ "${1:-}" = "bad" ]; then' 'if false; then' tests/crash.test.sh
-check "a suite that dies counts as a kill" "0" "$(run)"
-check "and the entry is flagged as one with no FAIL line" "1" "$(has 'went red without a FAIL line' "$WORK/out")"
-check "and the sweep counts it at the end" "1" "$(has '1 kill(s) with no FAIL line' "$WORK/out")"
+check "a suite that dies is not a kill: the runner fails" "1" "$(run)"
+check "and says the suite died" "1" "$(has 'tests/crash.test.sh went red without a failed assertion' "$WORK/out")"
+check "and that nothing says the guard is watched" "1" "$(has 'no test it names failed an assertion and 1 died' "$WORK/out")"
+check "and counts the entry as one that could not be run, not as a survivor" "1" "$(has '1 entries, 0 survived, 1 could not be run' "$WORK/out")"
+check "and shows what the suite last said" "1" "$(has 'died with 0' "$WORK/out")"
+# One suite that fails an assertion is enough, whatever another one does.
+entry both 'if [ "${1:-}" = "bad" ]; then' 'if false; then' tests/crash.test.sh,tests/guard.test.sh
+check "an entry one suite kills passes though another suite dies" "0" "$(run)"
+check "and the death is still said" "1" "$(has 'tests/crash.test.sh went red without a failed assertion' "$WORK/out")"
+# A failed Python assertion is a failed assertion; a Python suite that raises anything
+# else died.
+entry asserts 'if [ "${1:-}" = "bad" ]; then' 'if false; then' tests/assert.test.sh
+check "a failed Python assertion is a kill" "0" "$(run)"
+check "and its reason is shown" "1" "$(hasone 'AssertionError: the guard did not refuse' "$WORK/out")"
+entry pycrashes 'if [ "${1:-}" = "bad" ]; then' 'if false; then' tests/pycrash.test.sh
+check "a Python suite that raises anything else died: the runner fails" "1" "$(run)"
+check "and says it is not a kill" "1" "$(has 'tests/pycrash.test.sh went red without a failed assertion' "$WORK/out")"
 entry dies 'if [ "${1:-}" = "bad" ]; then' 'if false; then'
 
 # A mutation no test notices: the runner has to fail and name it.
