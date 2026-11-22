@@ -116,6 +116,7 @@ tests/verify/verify-debs-control-fields.test.sh python3-cryptography
 tests/verify/verify-debs-same-bytes.test.sh python3-cryptography
 
 # python3-yaml
+tests/quality/lint/check-test-job-not-switchable-inputs.test.sh python3-yaml
 tests/ci/policy/freshness-job-scope.test.sh python3-yaml
 tests/ci/policy/freshness-pr-scope.test.sh python3-yaml
 tests/ci/policy/scheduled-workflows-are-watched.test.sh python3-yaml

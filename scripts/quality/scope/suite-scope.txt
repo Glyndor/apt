@@ -627,6 +627,9 @@ tests/quality/lint/check-test-job-not-switchable.test.sh
 	.github/workflows/reusable-shell-ci.yml
 	.github/workflows/tests.yml
 
+tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
+	scripts/quality/lint/check-test-job-not-switchable.sh
+
 tests/quality/lint/check-tooling-isolation.test.sh
 	scripts/quality/lint/check-tooling-isolation.sh
 

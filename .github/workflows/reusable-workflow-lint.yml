@@ -267,13 +267,18 @@ jobs:
       # A required job must not be switchable off: no caller of a local
       # reusable carries a job-level `if:`, `needs:` or `continue-on-error:`
       # (bar the few watchers the script lists by their exact form), every
+      # caller passes only the inputs the script lists for that reusable, every
       # caller of reusable-shell-ci.yml passes a test-command that runs a
       # suite, and at least one such caller exists. The rule and its reasons
       # are in the script, taken from the base commit above. It runs here
       # rather than in the shell job because that is the job an `if:` would
       # skip, and a check inside it would share the fate of what it checks.
+      # BASE_SHA is the commit the event names: the extensions a caller of the
+      # line limit passes are held to the ones that commit's callers pass.
       - name: A required test job must not be switchable off
         if: steps.scope.outputs.needed != 'false'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }} # the floor of the extensions
         run: bash "$RUNNER_TEMP/lint-rules/check-test-job-not-switchable.sh"
 
       # A job that holds a secret must not install third-party tooling, since
