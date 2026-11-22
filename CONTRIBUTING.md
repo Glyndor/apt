@@ -171,7 +171,7 @@ CI is split by responsibility rather than gathered in one file:
 | `pr-hygiene.yml` | the pull request itself is malformed |
 | `freshness.yml` | something scheduled stopped happening elsewhere, or a tool pinned in a reusable fell behind its upstream release |
 | `dco.yml`, `line-limit.yml`, `workflow-lint.yml` | one rule each |
-| `commit-hygiene.yml` | a commit carries a personal email address, or the change adds a line shaped like a credential |
+| `commit-hygiene.yml` | a commit carries a personal email address, or the change adds a line shaped like a credential; both scripts are read from the base commit, so a change to either takes effect once it is merged |
 | `publish.yml` | the daily build and upload of the archive |
 | `health-check.yml` | the published archive is stale, unreachable or unsigned |
 | `distro-floor.yml` | a release the README lists as supported stops installing, or the unsupported one stops being refused |
