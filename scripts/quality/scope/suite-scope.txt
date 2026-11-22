@@ -634,6 +634,27 @@ tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
 tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
 	scripts/quality/lint/check-test-job-not-switchable.sh
 	.github/workflows/**
+	tests/fixtures/ci/switchable-rule.sh
+
+tests/quality/lint/check-test-job-not-switchable-steps.test.sh
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	.github/workflows/**
+	tests/fixtures/ci/switchable-rule.sh
+
+tests/quality/lint/check-test-job-not-switchable-pins.test.sh
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	.github/workflows/**
+	tests/fixtures/ci/switchable-rule.sh
+
+tests/quality/lint/check-test-job-not-switchable-context.test.sh
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	.github/workflows/**
+	tests/fixtures/ci/switchable-rule.sh
+
+tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	.github/workflows/**
+	tests/fixtures/ci/switchable-rule.sh
 
 tests/quality/lint/check-tooling-isolation.test.sh
 	scripts/quality/lint/check-tooling-isolation.sh

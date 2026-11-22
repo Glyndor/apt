@@ -134,6 +134,10 @@ import sys
 
 import yaml
 
+# The parser written in C when this PyYAML has it: the rule reads every workflow of the
+# repository on every pull request, and the pure Python one takes fifteen times longer.
+LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 # The reusable that defines the required `shell / test` check, and carries the
 # test-command the grammar below judges.
 REUSABLE = "reusable-shell-ci.yml"
@@ -437,7 +441,7 @@ def base_words(reusable, name):
         if not path.endswith((".yml", ".yaml")) or os.path.basename(path).startswith("reusable-"):
             continue
         try:
-            spec = yaml.safe_load(base_git(base, "show", f"{base}:{path}"))
+            spec = yaml.load(base_git(base, "show", f"{base}:{path}"), Loader=LOADER)
         except yaml.YAMLError:
             continue
         for job in ((spec or {}).get("jobs") or {}).values() if isinstance(spec, dict) else ():
@@ -474,9 +478,9 @@ def norm_spec(spec):
 def spec_at(base, path, current):
     try:
         if current:
-            spec = yaml.safe_load(open(path))
+            spec = yaml.load(open(path), Loader=LOADER)
         elif base_git(base, "ls-tree", "--name-only", base, "--", path).strip():
-            spec = yaml.safe_load(base_git(base, "show", f"{base}:{path}"))
+            spec = yaml.load(base_git(base, "show", f"{base}:{path}"), Loader=LOADER)
         else:
             spec = None
     except (OSError, yaml.YAMLError):
@@ -702,7 +706,7 @@ def main():
     for path in files:
         try:
             with open(path) as fh:
-                spec = yaml.safe_load(fh)
+                spec = yaml.load(fh, Loader=LOADER)
         except yaml.YAMLError as e:
             # Silent skip would hide a misconfigured workflow that
             # the caller is going to learn about elsewhere in CI
