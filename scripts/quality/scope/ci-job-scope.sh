@@ -239,9 +239,11 @@ def suite_needed(candidate):
 
 
 # What the workflow-lint job reads besides the workflows: the actionlint
-# configuration, and the two scripts that hold the rules its steps run. Those
-# rules used to be written inside reusable-workflow-lint.yml, where a change to
-# them was a change to a workflow; moved to scripts, they have to be named.
+# configuration, and the two scripts that hold the rules its scoped steps run.
+# Those rules used to be written inside reusable-workflow-lint.yml, where a
+# change to them was a change to a workflow; moved to scripts, they have to be
+# named. The third script the job runs, the checker of the suites, is not here
+# because its step runs on every event, before this decision is taken.
 WORKFLOW_LINT_INPUTS = {
     ".github/actionlint.yml",
     ".github/actionlint.yaml",

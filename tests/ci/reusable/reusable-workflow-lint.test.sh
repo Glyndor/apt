@@ -395,6 +395,76 @@ check "and nothing was extracted from it" "0" \
 	"$([ -e "$WORK/rt/actionlint-bin/actionlint" ] && echo 1 || echo 0)"
 check "and nothing was put on PATH" "" "$(cat "$WORK/path")"
 
+# ===========================================================================
+# The scope map names every rule script this workflow runs
+# ===========================================================================
+#
+# The cases above plant the real scripts the workflow runs, so a change to one
+# of them can turn this suite red. Whether a pull request that touches only that
+# script runs this suite at all is decided by scripts/quality/scope/suite-scope.txt,
+# and a path missing from the entry lets the change merge without the suite that
+# should have judged it. So the scripts the workflow runs are read out of it, and
+# each has to be a path of this suite's entry.
+
+# One line per rule script the workflow runs from $RUNNER_TEMP/lint-rules, as its
+# path in the repository, followed by "unmapped" when the entry of this suite in
+# the map does not list that path. $1=workflow, $2=map.
+unmapped_rules() {
+	python3 -I - "$1" "$2" <<'PY'
+import re
+import sys
+import yaml
+
+SUITE = "tests/ci/reusable/reusable-workflow-lint.test.sh"
+spec = yaml.safe_load(open(sys.argv[1]))
+steps = spec["jobs"]["workflow-lint"]["steps"]
+runs = "\n".join(str(step.get("run", "")) for step in steps)
+
+# Where each script lives: the step that takes them from the base commit lists
+# them as `folder/name.sh`.
+taken = {}
+for hit in re.finditer(r"for file in ([^;]+); do", runs):
+    for token in hit.group(1).split():
+        taken[token.rsplit("/", 1)[-1]] = "scripts/quality/" + token
+
+executed = sorted(set(re.findall(r"lint-rules/(check-[A-Za-z0-9_-]+\.sh)", runs)))
+print("executed %d" % len(executed))
+for name in executed:
+    print(taken.get(name, "scripts/quality/?/" + name))
+
+entry, inside = set(), False
+for line in open(sys.argv[2]):
+    if not line.strip():
+        inside = False
+    elif not line[0].isspace() and line[0] != "#":
+        inside = line.strip() == SUITE
+    elif inside and line.strip():
+        entry.add(line.strip())
+for name in executed:
+    path = taken.get(name)
+    if path is None or path not in entry:
+        print("unmapped " + (path or name))
+PY
+}
+
+MAP_REAL="$HERE/scripts/quality/scope/suite-scope.txt"
+real="$(unmapped_rules "$WORKFLOW" "$MAP_REAL")"
+check "the workflow runs at least three rule scripts of its own" "1" \
+	"$(printf '%s\n' "$real" | grep -c '^executed [3-9]')"
+check "and each of them is a path of this suite's entry in the scope map" "" \
+	"$(printf '%s\n' "$real" | grep '^unmapped ')"
+check "and the suites-wired checker is one of the scripts it runs" "1" \
+	"$(printf '%s\n' "$real" | grep -c '^scripts/quality/coverage/check-suites-wired.sh$')"
+
+# The same reading over a map that lacks one path names that path, and only it.
+for rule in coverage/check-suites-wired.sh lint/check-test-job-not-switchable.sh lint/check-tooling-isolation.sh; do
+	grep -v -x -F -- "	scripts/quality/$rule" "$MAP_REAL" > "$WORK/map-without"
+	# A path of the entry is removed from every entry that lists it, so the
+	# suite's own entry loses it and the other entries are not what is read.
+	check "a map without $rule in the entry names it as unmapped" "unmapped scripts/quality/$rule" \
+		"$(unmapped_rules "$WORKFLOW" "$WORK/map-without" | grep '^unmapped ')"
+done
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

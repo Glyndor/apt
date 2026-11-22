@@ -612,7 +612,7 @@ tests/ci/reusable/reusable-schedule-freshness.test.sh
 tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
 	.github/workflows/reusable-schedule-freshness.yml
 
-# The workflow-lint reusable runs two scripts of its own, and its suite runs
+# The workflow-lint reusable runs three scripts of its own, and its suite runs
 # each step over a tree that carries them. The test-job check also reads the
 # real caller and the reusable it calls.
 
@@ -620,6 +620,7 @@ tests/ci/reusable/reusable-workflow-lint.test.sh
 	.github/workflows/reusable-workflow-lint.yml
 	scripts/quality/lint/check-test-job-not-switchable.sh
 	scripts/quality/lint/check-tooling-isolation.sh
+	scripts/quality/coverage/check-suites-wired.sh
 
 tests/quality/lint/check-test-job-not-switchable.test.sh
 	scripts/quality/lint/check-test-job-not-switchable.sh
