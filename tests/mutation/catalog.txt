@@ -153,13 +153,13 @@ suites-wired-watcher-dropped	.github/workflows/tests.yml	./tests/ci/suites/ci-ru
 suites-wired-unwired	scripts/quality/coverage/check-suites-wired.sh	for path in sorted(suites - wired - set(exempt)):	for path in []:	tests/quality/coverage/check-suites-wired.test.sh
 suites-wired-needs	scripts/quality/coverage/check-suites-wired.sh	                    if "needs" in job else "") \	                    if False else "") \	tests/quality/coverage/check-suites-wired.test.sh
 lint-caller-continue	scripts/quality/lint/check-test-job-not-switchable.sh	            if "continue-on-error" in job:	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-caller-if	scripts/quality/lint/check-test-job-not-switchable.sh	            if "if" in job and job["if"] != allowed.get("if"):	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-caller-needs	scripts/quality/lint/check-test-job-not-switchable.sh	            if "needs" in job and job["needs"] != allowed.get("needs"):	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-caller-if	scripts/quality/lint/check-test-job-not-switchable.sh	            if "if" in job and ("if" not in allowed or job["if"] != allowed["if"]):	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-caller-needs	scripts/quality/lint/check-test-job-not-switchable.sh	            if "needs" in job and ("needs" not in allowed or job["needs"] != allowed["needs"]):	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-caller-all-reusables	scripts/quality/lint/check-test-job-not-switchable.sh	            if local is None:	            if local is None or local.group(1) != REUSABLE:	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-caller-grammar-only-shell	scripts/quality/lint/check-test-job-not-switchable.sh	            if reusable != REUSABLE:	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-caller-count-shell	scripts/quality/lint/check-test-job-not-switchable.sh	                callers += 1	                callers += 0	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-if-exact	scripts/quality/lint/check-test-job-not-switchable.sh	job["if"] != allowed.get("if")	not allowed	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-needs-exact	scripts/quality/lint/check-test-job-not-switchable.sh	job["needs"] != allowed.get("needs")	not allowed	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-if-exact	scripts/quality/lint/check-test-job-not-switchable.sh	job["if"] != allowed["if"]	False	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-needs-exact	scripts/quality/lint/check-test-job-not-switchable.sh	job["needs"] != allowed["needs"]	False	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-exempt-by-file	scripts/quality/lint/check-test-job-not-switchable.sh	CONDITIONAL_CALLERS.get((path, job_id, reusable), {})	CONDITIONAL_CALLERS.get((".github/workflows/freshness.yml", job_id, reusable), {})	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-exempt-by-job	scripts/quality/lint/check-test-job-not-switchable.sh	CONDITIONAL_CALLERS.get((path, job_id, reusable), {})	CONDITIONAL_CALLERS.get((path, "freshness-itself", reusable), {})	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-exempt-by-reusable	scripts/quality/lint/check-test-job-not-switchable.sh	(path, job_id, reusable), {})	(path, job_id, "reusable-schedule-freshness.yml"), {})	tests/quality/lint/check-test-job-not-switchable.test.sh
@@ -174,6 +174,8 @@ lint-exempt-freshness-drift	scripts/quality/lint/check-test-job-not-switchable.s
 lint-exempt-freshness-mutation	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-mutation",	            "freshness-mutationx",	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-callers-none	scripts/quality/lint/check-test-job-not-switchable.sh	    if callers == 0:	    if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-callers-verdict	scripts/quality/lint/check-test-job-not-switchable.sh	    if violations:	    if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-caller-if-presence	scripts/quality/lint/check-test-job-not-switchable.sh	("if" not in allowed or job["if"] != allowed["if"])	(job["if"] != allowed.get("if"))	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-caller-needs-presence	scripts/quality/lint/check-test-job-not-switchable.sh	("needs" not in allowed or job["needs"] != allowed["needs"])	(job["needs"] != allowed.get("needs"))	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-tooling-verdict	scripts/quality/lint/check-tooling-isolation.sh	    if violations:	    if False:	tests/quality/lint/check-tooling-isolation.test.sh
 tooling-token-write	scripts/quality/lint/check-tooling-isolation.sh	        if not (holds_secret or writes):	        if not holds_secret:	tests/quality/lint/check-tooling-isolation.test.sh
 tooling-token-default	scripts/quality/lint/check-tooling-isolation.sh	        return "no `permissions` at the job or the workflow, so the repository default applies"	        return None	tests/quality/lint/check-tooling-isolation.test.sh

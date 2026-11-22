@@ -25,6 +25,8 @@
 #     CONDITIONAL_CALLERS below, by workflow file, job, reusable and exact
 #     value, and the comment above each says why that condition is not a
 #     switch.
+#     The condition is compared by presence and by value: an `if:` with no
+#     value, which YAML reads as null, is still an `if:`.
 #   - for a caller of reusable-shell-ci.yml, a test-command whose first
 #     non-blank token is not a suite invocation.
 #     The accepted grammar is a list of `./tests/<name>.test.sh` or
@@ -282,7 +284,7 @@ def main():
             # is a switch. Any value: `false`, `inputs.foo`, even
             # `true` would skip the call when the expression is
             # false, and a skipped required check reports Success.
-            if "if" in job and job["if"] != allowed.get("if"):
+            if "if" in job and ("if" not in allowed or job["if"] != allowed["if"]):
                 violations.append((
                     path, job_id,
                     f"job `{job_id}` in {path} calls `{reusable}` "
@@ -296,7 +298,7 @@ def main():
                 continue
             # Rule: `needs:` is the same switch one job away. A
             # caller that needs a skipped job is skipped too.
-            if "needs" in job and job["needs"] != allowed.get("needs"):
+            if "needs" in job and ("needs" not in allowed or job["needs"] != allowed["needs"]):
                 violations.append((
                     path, job_id,
                     f"job `{job_id}` in {path} calls `{reusable}` "
