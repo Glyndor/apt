@@ -340,6 +340,16 @@ mode_base="$(git -C "$repo" rev-parse HEAD)"
 git -C "$repo" update-index --chmod=+x script.sh; gitc commit -q -m "mode only"
 out="$(cd "$repo" && "$SCRIPT" "$mode_base" HEAD 2>&1)"; rc=$?
 check "a change of mode alone is accepted" 0 "$rc"
+# The same when the base has moved on and no longer holds the file: the content is still
+# the one the change started from, and the base's tree cannot say so.
+git -C "$repo" reset -q --hard
+git -C "$repo" checkout -q -b side "$mode_base"
+git -C "$repo" update-index --chmod=+x script.sh; gitc commit -q -m "mode only again"; git -C "$repo" reset -q --hard
+git -C "$repo" checkout -q -b moved-on "$mode_base"
+git -C "$repo" rm -q script.sh; gitc commit -q -m "the base drops the file"
+out="$(cd "$repo" && "$SCRIPT" moved-on side 2>&1)"; rc=$?
+check "a change of mode alone is accepted when the base no longer holds the file" 0 "$rc"
+git -C "$repo" checkout -q "$mode_base"; git -C "$repo" branch -q -D side moved-on
 : > "$repo/empty.txt"; gitc add -A; gitc commit -q -m "an empty file"
 out="$(cd "$repo" && "$SCRIPT" "$mode_base" HEAD 2>&1)"; rc=$?
 check "an empty file is accepted" 0 "$rc"
