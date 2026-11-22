@@ -263,6 +263,53 @@ mkdir -p "$F/docs"; printf '%s\n' 'anything' > "$F/docs/absent.md"
 rc=0; run || rc=$?
 check "and the same entry passes once its text is there once" "0" "$rc"
 
+# --- the catalogue in parts -------------------------------------------------------
+# tests/mutation/catalog.txt and every tests/mutation/catalog.d/*.txt are one catalogue.
+move() { # <id> <part>: take an entry out of catalog.txt into catalog.d/<part>
+	mkdir -p "$F/tests/mutation/catalog.d"
+	grep "^$1	" "$F/tests/mutation/catalog.txt" >> "$F/tests/mutation/catalog.d/$2"
+	drop "$1"
+}
+drop_part() { # <id> <part>: remove one entry from a part
+	grep -v "^$1	" "$F/tests/mutation/catalog.d/$2" > "$WORK/cat" || true
+	mv "$WORK/cat" "$F/tests/mutation/catalog.d/$2"
+}
+COVERED='13 refusal(s) in 5 script(s): 12 catalogued, 1 exempt.'
+reset; move guard-bad a.txt; move guard-dots b.txt
+rc=0; run || rc=$?
+check "entries moved into two parts of catalog.d still cover their refusals" "0" "$rc"
+check "and are counted as catalogued, one from each part" "1" "$(said "$COVERED")"
+reset; move guard-bad a.txt; move guard-dots b.txt; drop_part guard-dots b.txt
+rc=0; run || rc=$?
+check "without the entry of the second part the check fails" "1" "$rc"
+check "and names the refusal it covered" "1" "$(said 'scripts/area/guard.sh')"
+reset; move guard-bad a.txt
+rc=0; run || rc=$?
+check "an entry of one part and the rest in catalog.txt pass" "0" "$rc"
+reset; mkdir -p "$F/tests/mutation/catalog.d"
+rc=0; run || rc=$?
+check "an empty catalog.d is accepted" "0" "$rc"
+printf 'not a catalogue line\n' > "$F/tests/mutation/catalog.d/notes.md"
+rc=0; run || rc=$?
+check "a file of catalog.d that is not a .txt is not read" "0" "$rc"
+reset; move guard-bad a.txt; entry guard-bad scripts/area/guard.sh 'if [ "$1" = bad ]; then' 'if false; then' tests/a.test.sh >> "$F/tests/mutation/catalog.d/b.txt"
+rc=0; run || rc=$?
+check "an id in two parts is refused" "1" "$rc"
+check "naming the part that repeats it and the part that had it" "1" \
+	"$(said 'catalog.d/b.txt: guard-bad: the id is already an entry of tests/mutation/catalog.d/a.txt')"
+reset; entry guard-bad scripts/area/guard.sh 'if [ "$1" = bad ]; then' 'if false; then' tests/a.test.sh > "$WORK/dup"; mkdir -p "$F/tests/mutation/catalog.d"; cp "$WORK/dup" "$F/tests/mutation/catalog.d/a.txt"
+rc=0; run || rc=$?
+check "an id of a part that is also in catalog.txt is refused" "1" "$rc"
+check "naming catalog.txt as the one that had it" "1" "$(said 'is already an entry of tests/mutation/catalog.txt')"
+reset; mkdir -p "$F/tests/mutation/catalog.d"; entry part-gone scripts/area/guard.sh 'a text the script no longer holds' 'true' tests/a.test.sh > "$F/tests/mutation/catalog.d/a.txt"
+rc=0; run || rc=$?
+check "an entry of a part whose text is not in its file is refused" "1" "$rc"
+check "naming the part, not catalog.txt" "1" "$(said 'tests/mutation/catalog.d/a.txt: part-gone: its text is in')"
+reset; mkdir -p "$F/tests/mutation/catalog.d"; printf 'broken line without tabs\n' > "$F/tests/mutation/catalog.d/a.txt"
+rc=0; run || rc=$?
+check "a line of a part that does not hold five fields is refused" "1" "$rc"
+check "naming the part" "1" "$(said 'tests/mutation/catalog.d/a.txt: a line does not hold five fields')"
+
 # --- this repository --------------------------------------------------------------
 rc=0; bash "$CHECK" "$HERE" > "$WORK/out" 2>&1 || rc=$?
 check "every refusal in this repository has an entry or an exemption" "0" "$rc"
@@ -273,7 +320,12 @@ mkdir -p "$R/tests/mutation" "$R/.github/workflows"
 cp -r "$HERE/scripts" "$R/"; mkdir -p "$R/keyring"; cp -r "$HERE/keyring/upgrade" "$R/keyring/"
 cp "$HERE"/.github/workflows/*.yml "$R/.github/workflows/"
 cp "$HERE/tests/mutation/exemptions.txt" "$R/tests/mutation/" 2>/dev/null || true
-grep -v '^verify-debs-missing-signature	' "$HERE/tests/mutation/catalog.txt" > "$R/tests/mutation/catalog.txt"
+cp -r "$HERE/tests/mutation/catalog.d" "$R/tests/mutation/" 2>/dev/null || true
+for part in "$HERE/tests/mutation/catalog.txt" "$HERE"/tests/mutation/catalog.d/*.txt; do
+	[ -f "$part" ] || continue
+	dest="$R/${part#"$HERE"/}"
+	grep -v '^verify-debs-missing-signature	' "$part" > "$dest"
+done
 rc=0; bash "$CHECK" "$R" > "$WORK/out" 2>&1 || rc=$?
 check "and the same tree without the missing-signature entry fails" "1" "$rc"
 check "naming the refusal of verify-debs.sh it covered" "1" \

@@ -10,7 +10,11 @@
 #
 # Options:
 #   --repo <path>      the repository to copy and mutate (default: this repository)
-#   --catalog <path>   the catalogue to read (default: <repo>/tests/mutation/catalog.txt)
+#   --catalog <path>   the one catalogue file to read. Without it the catalogue is
+#                      <repo>/tests/mutation/catalog.txt and every file of
+#                      <repo>/tests/mutation/catalog.d/*.txt after it, in the order
+#                      LC_ALL=C sorts their names. The files share one set of ids: an
+#                      id in two of them is refused, as one repeated inside a file is.
 #
 # THE COPY CARRIES NO GIT METADATA
 #
@@ -90,11 +94,23 @@ REPO="$(cd "$REPO" 2>/dev/null && pwd)" || {
 	echo "run-mutations.sh: no repository at $REPO" >&2
 	exit 2
 }
-[ -n "$CATALOG" ] || CATALOG="$REPO/tests/mutation/catalog.txt"
-[ -f "$CATALOG" ] || {
-	echo "run-mutations.sh: no catalogue at $CATALOG" >&2
-	exit 2
-}
+CATALOGS=()
+if [ -n "$CATALOG" ]; then
+	CATALOGS=("$CATALOG")
+else
+	CATALOGS=("$REPO/tests/mutation/catalog.txt")
+	if [ -d "$REPO/tests/mutation/catalog.d" ]; then
+		while IFS= read -r part; do
+			CATALOGS+=("$part")
+		done < <(LC_ALL=C find "$REPO/tests/mutation/catalog.d" -maxdepth 1 -type f -name '*.txt' | LC_ALL=C sort)
+	fi
+fi
+for part in "${CATALOGS[@]}"; do
+	[ -f "$part" ] || {
+		echo "run-mutations.sh: no catalogue at $part" >&2
+		exit 2
+	}
+done
 
 # --- the catalogue ---------------------------------------------------------------
 # One entry per line, five fields separated by tabs: the id, the file to mutate,
@@ -134,7 +150,7 @@ while IFS= read -r line || [ -n "$line" ]; do
 	OLDS+=("$f3")
 	NEWS+=("$f4")
 	TESTS+=("$f5")
-done < "$CATALOG"
+done < <(awk 1 "${CATALOGS[@]}")
 
 # The catalogue has to hold something, and every id has to be its own: an empty one reads
 # as a green run of nothing, and a repeated id lets a selection skip the second entry.
@@ -231,19 +247,20 @@ syntax_ok() { # <file> -> 0 when it parses, 1 when it does not, 2 when no check 
 			# Every heredoc this file hands to python3, and its body. Only
 			# those: a heredoc that carries shell or text is not python and
 			# compiling it would fail a file that is perfectly correct.
-			pattern = re.compile(r"python3[^\n]*<<-?'([A-Za-z_][A-Za-z0-9_]*)'")
+			pattern = re.compile(r"python3[^\n]*<<(-?)'([A-Za-z_][A-Za-z0-9_]*)'")
 			lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
 			bodies = []
 			for index, line in enumerate(lines):
 			    match = pattern.search(line)
 			    if not match:
 			        continue
-			    tag = match.group(1)
+			    dash, tag = match.group(1), match.group(2)
 			    body = []
 			    for following in lines[index + 1:]:
 			        if following.strip() == tag:
 			            break
-			        body.append(following)
+			        # `<<-` strips the leading tabs before python reads the body.
+			        body.append(following.lstrip("\t") if dash else following)
 			    else:
 			        # An unterminated heredoc: the shell parser is the
 			        # authority on that, not this.

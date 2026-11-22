@@ -146,6 +146,10 @@ printf 'hello\n' > "$TOY/scripts/notes.txt"
 mkdir -p "$TOY/.github/workflows"
 printf 'suites: [a, b]\n' > "$TOY/.github/workflows/w.yml"
 printf '#!/usr/bin/env bash\ngrep -qF "[a, b]" "$(dirname "$0")/../.github/workflows/w.yml" || { echo "FAIL  the workflow names its suites"; exit 1; }\n' > "$TOY/tests/w.test.sh"
+# The same guard in a `<<-` heredoc, whose body the shell hands to python without its
+# leading tabs: the runner has to read it the way python will.
+printf '#!/usr/bin/env bash\npython3 - "$@" <<-'"'"'PY'"'"'\n\timport sys\n\tif len(sys.argv) > 1 and sys.argv[1] == "bad":\n\t    sys.exit(1)\n\tprint("ok")\n\tPY\n' > "$TOY/scripts/hdd.sh"
+printf '#!/usr/bin/env bash\nHERE="$(cd "$(dirname "$0")/.." && pwd)"\nrc=0\nbash "$HERE/scripts/hdd.sh" bad >/dev/null 2>&1 || rc=$?\n[ "$rc" -eq 1 ] || { echo "FAIL  the dashed python guard did not refuse"; exit 1; }\n' > "$TOY/tests/hdd.test.sh"
 git -C "$TOY" init -q .
 git -C "$TOY" add -A
 git -C "$TOY" -c user.name=t -c user.email=t@example.invalid commit -q -m base
@@ -290,6 +294,82 @@ check "a mutation that breaks the python of a heredoc fails the runner" "1" "$(r
 check "and says the file has a syntax error" "1" "$(has 'syntax error' "$WORK/out")"
 entryf pyok scripts/hd.sh 'sys.exit(1)' 'sys.exit(0)' tests/hd.test.sh
 check "a python guard that is really removed is killed" "0" "$(run)"
+
+# --- the catalogue in parts ----------------------------------------------------------
+#
+# tests/mutation/catalog.txt and every tests/mutation/catalog.d/*.txt after it, in the
+# order LC_ALL=C sorts the names, make one catalogue with one set of ids. Each entry
+# below is killed by its own suite, so a part the runner skipped would show as an entry
+# fewer in the count.
+PARTS="$TOY/tests/mutation/catalog.d"
+part() { # <file> <id> <path> <old> <new> <test>
+	printf '%s\t%s\t%s\t%s\t%s\n' "$2" "$3" "$4" "$5" "$6" >>"$1"
+}
+GUARD_IF='if [ "${1:-}" = "bad" ]; then'
+reset_parts() {
+	rm -rf "$PARTS"
+	: >"$CATALOG"
+	part "$CATALOG" part-one scripts/guard.sh "$GUARD_IF" 'if false; then' tests/guard.test.sh
+}
+two_parts() { # an entry in catalog.txt, one in B.txt and one in a.txt
+	reset_parts
+	mkdir -p "$PARTS"
+	part "$PARTS/B.txt" part-two scripts/hd.sh 'sys.exit(1)' 'sys.exit(0)' tests/hd.test.sh
+	part "$PARTS/a.txt" part-three scripts/guard.sh "$GUARD_IF" 'if [ "${1:-}" = "never" ]; then' tests/guard.test.sh
+}
+two_parts
+check "an entry of each of three files is run" "0" "$(run)"
+check "and the three are counted" "1" "$(has '3 entries, 0 survived, 0 could not be run' "$WORK/out")"
+check "and the one of the second file is named" "1" "$(has 'mutation part-two: killed' "$WORK/out")"
+check "and the one of the third file is named" "1" "$(has 'mutation part-three: killed' "$WORK/out")"
+check "the ids come catalog.txt first, then the parts in LC_ALL=C order" "part-one part-two part-three" \
+	"$(LC_ALL=en_US.utf8 bash "$HERE/run-mutations.sh" --repo "$TOY" --list | tr '\n' ' ' | sed 's/ $//')"
+check "and it is the same whatever locale the runner is started in" \
+	"$(LC_ALL=C bash "$HERE/run-mutations.sh" --repo "$TOY" --list)" \
+	"$(LC_ALL=en_US.utf8 bash "$HERE/run-mutations.sh" --repo "$TOY" --list)"
+check "--catalog reads the one file it is given and none of the parts" "part-one" \
+	"$(bash "$HERE/run-mutations.sh" --repo "$TOY" --catalog "$CATALOG" --list)"
+check "and a part named by --catalog is read alone" "part-three" \
+	"$(bash "$HERE/run-mutations.sh" --repo "$TOY" --catalog "$PARTS/a.txt" --list)"
+
+check "a catalogue file that is not there fails the runner" "2" "$(run --catalog "$TOY/tests/mutation/none.txt")"
+check "and says which one" "1" "$(has 'no catalogue at '"$TOY"'/tests/mutation/none.txt' "$WORK/out")"
+
+# An id belongs to one entry in the whole catalogue.
+two_parts
+part "$PARTS/a.txt" part-two scripts/guard.sh "$GUARD_IF" 'if false; then' tests/guard.test.sh
+check "an id in two parts is refused" "2" "$(run)"
+check "and the runner says the id is repeated" "1" "$(has 'holds an id more than once: part-two' "$WORK/out")"
+two_parts
+part "$PARTS/a.txt" part-one scripts/guard.sh "$GUARD_IF" 'if false; then' tests/guard.test.sh
+check "an id of a part that is also in catalog.txt is refused" "2" "$(run)"
+check "and the runner says which id" "1" "$(has 'holds an id more than once: part-one' "$WORK/out")"
+
+# No part, an empty directory, and a file that is not a catalogue are all the catalogue it was.
+reset_parts
+check "a catalogue with no catalog.d is run as it was" "0" "$(run)"
+check "and it holds its one entry" "1" "$(has '1 entries, 0 survived, 0 could not be run' "$WORK/out")"
+mkdir -p "$PARTS"
+check "an empty catalog.d is accepted" "0" "$(run)"
+printf 'this is not a catalogue line\n' >"$PARTS/notes.md"
+check "a file of catalog.d that is not a .txt is not read" "0" "$(run)"
+check "and its text is not counted as an entry" "1" "$(has '1 entries, 0 survived, 0 could not be run' "$WORK/out")"
+
+# A part that does not end in a new line does not swallow the first entry of the next.
+reset_parts
+mkdir -p "$PARTS"
+printf '%s\t%s\t%s\t%s\t%s' part-two scripts/hd.sh 'sys.exit(1)' 'sys.exit(0)' tests/hd.test.sh >"$PARTS/a.txt"
+part "$PARTS/b.txt" part-three scripts/guard.sh "$GUARD_IF" 'if [ "${1:-}" = "never" ]; then' tests/guard.test.sh
+check "a part with no final new line is still followed by the next part" "0" "$(run)"
+check "and the three entries are counted" "1" "$(has '3 entries, 0 survived, 0 could not be run' "$WORK/out")"
+rm -rf "$PARTS"
+
+entryf dashed scripts/hdd.sh 'sys.exit(1)' 'sys.exit(0)' tests/hdd.test.sh
+check "a python guard in a <<- heredoc that is really removed is killed" "0" "$(run)"
+check "and its body is not called a syntax error for the tabs the shell strips" "0" "$(has 'syntax error' "$WORK/out")"
+entryf dashed-broken scripts/hdd.sh 'if len(sys.argv) > 1 and sys.argv[1] == "bad":' 'if len(sys.argv) > 1 and sys.argv[1] == "bad"' tests/hdd.test.sh
+check "a mutation that breaks the python of a <<- heredoc fails the runner" "1" "$(run)"
+check "and says the file has a syntax error" "1" "$(has 'syntax error' "$WORK/out")"
 
 echo
 echo "$pass passed, $fail failed"

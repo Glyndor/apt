@@ -177,7 +177,7 @@ CI is split by responsibility rather than gathered in one file:
 | `distro-floor.yml` | a release the README lists as supported stops installing, or the unsupported one stops being refused |
 | `drift.yml` | this repository's reusables or shared files differ from the sibling channels |
 | `roster-releases.yml` | a product of the publish roster has no usable release (advisory, only on pull requests that change the roster) |
-| `mutation.yml` | a guard the suite would no longer notice, broken on purpose: every catalogued guard once a week, and on a pull request the ones it can affect (its `gate` job tells a sweep that was not needed from one that did not run) |
+| `mutation.yml` | a guard the suite would no longer notice, broken on purpose (the catalogue is `tests/mutation/catalog.txt` and the files of `tests/mutation/catalog.d/`): every catalogued guard once a week, and on a pull request the ones it can affect (its `gate` job tells a sweep that was not needed from one that did not run) |
 
 Every reusable this repository calls lives in `.github/workflows/reusable-*.yml`
 as a copy kept identical in logic to the

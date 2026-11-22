@@ -1,0 +1,20 @@
+# The guards of the sweep's own readers: the runner, the coverage check and the
+# decision of which entries a pull request runs each read the catalogue as
+# tests/mutation/catalog.txt plus every file of this directory. Same format as
+# tests/mutation/catalog.txt, which says what every field means.
+catalog-runner-option	tests/mutation/run-mutations.sh	if [ -n "$CATALOG" ]; then	if false; then	tests/mutation/run-mutations.test.sh
+catalog-runner-parts-are-txt	tests/mutation/run-mutations.sh	-name '*.txt'	-name '*'	tests/mutation/run-mutations.test.sh
+catalog-runner-parts-order	tests/mutation/run-mutations.sh	| LC_ALL=C sort)	| LC_ALL=C sort -r)	tests/mutation/run-mutations.test.sh
+catalog-runner-parts-read	tests/mutation/run-mutations.sh	CATALOGS+=("$part")	:	tests/mutation/run-mutations.test.sh
+catalog-runner-parts-final-newline	tests/mutation/run-mutations.sh	done < <(awk 1 "${CATALOGS[@]}")	done < <(cat "${CATALOGS[@]}")	tests/mutation/run-mutations.test.sh
+catalog-runner-file-missing	tests/mutation/run-mutations.sh	[ -f "$part" ] || {	true || {	tests/mutation/run-mutations.test.sh
+catalog-coverage-parts-listed	scripts/quality/coverage/check-mutation-coverage.sh	sorted(os.listdir(directory))	[]	tests/quality/coverage/check-mutation-coverage.test.sh
+catalog-coverage-parts-are-txt	scripts/quality/coverage/check-mutation-coverage.sh	if name.endswith(".txt") and os.path.isfile	if os.path.isfile	tests/quality/coverage/check-mutation-coverage.test.sh
+catalog-coverage-id-once	scripts/quality/coverage/check-mutation-coverage.sh	if fields[0] in ids:	if False:	tests/quality/coverage/check-mutation-coverage.test.sh
+catalog-coverage-names-the-part	scripts/quality/coverage/check-mutation-coverage.sh	errors.append(f"{catalogue}: a line does not hold five fields: {raw}")	errors.append(f"{CATALOG}: a line does not hold five fields: {raw}")	tests/quality/coverage/check-mutation-coverage.test.sh
+catalog-scope-parts-read	scripts/quality/scope/mutation-scope.sh	parts.append(path)	pass	tests/quality/scope/mutation-scope.test.sh
+catalog-scope-parts-are-txt	scripts/quality/scope/mutation-scope.sh	path.endswith(b".txt")	True	tests/quality/scope/mutation-scope.test.sh
+catalog-scope-parts-are-files	scripts/quality/scope/mutation-scope.sh	meta.split()[1:2] == [b"blob"]	True	tests/quality/scope/mutation-scope.test.sh
+catalog-scope-catalog-first	scripts/quality/scope/mutation-scope.sh	return [CATALOG] + [os.fsdecode(path) for path in sorted(parts)]	return [os.fsdecode(path) for path in sorted(parts)]	tests/quality/scope/mutation-scope.test.sh
+catalog-scope-id-once	scripts/quality/scope/mutation-scope.sh	or not ID.match(fields[0]) or fields[0] in entries:	or not ID.match(fields[0]):	tests/quality/scope/mutation-scope.test.sh
+catalog-runner-heredoc-dash	tests/mutation/run-mutations.sh	body.append(following.lstrip("\t") if dash else following)	body.append(following)	tests/mutation/run-mutations.test.sh

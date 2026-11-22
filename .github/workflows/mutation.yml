@@ -19,7 +19,8 @@ name: Mutation
 # that copy, so it judges the repository as it is committed and not as it is in
 # the working directory of whoever ran it. The copy carries no git metadata, so
 # the suites that need it are excluded by the runner; which ones those are, and
-# why, is written down in tests/mutation/catalog.txt.
+# why, is written down in tests/mutation/catalog.txt, which holds the catalogue with
+# the files of tests/mutation/catalog.d/.
 #
 # The `gate` job is the one to read, and the one to require once it has failed
 # for its reason on a real pull request: the sweep job is skipped when nothing
