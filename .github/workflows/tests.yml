@@ -73,6 +73,7 @@ jobs:
         ./tests/ci/policy/roster-releases-workflow.test.sh
         ./tests/ci/policy/workflows-run-their-scripts.test.sh
         ./tests/ci/policy/workflow-calls-are-exact.test.sh
+        ./tests/ci/policy/commit-hygiene-base-rule.test.sh
         ./tests/build/build-keyring.test.sh
         ./tests/build/keyring/build-keyring-generator.test.sh
         ./tests/build/keyring/build-keyring-contents.test.sh

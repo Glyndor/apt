@@ -30,9 +30,14 @@ PINNED = {
         f'{SUITE_ON_MAIN} "$REPO" line-limit.yml main',
         f'{SUITE_ON_MAIN} "$REPO" workflow-lint.yml main',
     ],
+    # Each step reads its script from the base commit into a file of its own and runs that,
+    # so the pull request's copy of the script is never the one that judges it. The file is
+    # run with `bash`, which does not depend on its mode.
     "commit-hygiene.yml": [
-        'scripts/quality/hygiene/check-commit-identity.sh "$BASE" "$HEAD"',
-        'scripts/quality/hygiene/check-secrets.sh "$BASE" "$HEAD"',
+        'git show "$BASE:scripts/quality/hygiene/check-commit-identity.sh" > "$identity"',
+        'bash "$identity" "$BASE" "$HEAD"',
+        'git show "$BASE:scripts/quality/hygiene/check-secrets.sh" > "$scan"',
+        'bash "$scan" "$BASE" "$HEAD"',
     ],
 }
 passed = failed = 0
