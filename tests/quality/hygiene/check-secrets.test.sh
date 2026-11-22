@@ -136,8 +136,8 @@ bad_list '[unclosed' 'just an ordinary line'
 check "an expression that does not compile fails a change that adds nothing" 1 "$rc"
 check "and says so for that change too" 1 "$(printf '%s' "$out" | grep -c 'not a regular expression')"
 bad_list '^.*$' "$aws"
-check "an expression that matches every line fails" 1 "$rc"
-check "and says it would switch the scan off" 1 "$(printf '%s' "$out" | grep -c 'matches every line')"
+check "an expression that matches every path fails" 1 "$rc"
+check "and says it would switch the scan off" 1 "$(printf '%s' "$out" | grep -c 'matches every path')"
 bad_list '^fixtures/' "$aws"
 check "a list of paths that compile still reports a key outside them" 1 "$rc"
 check "and names the key, not the list" 1 "$(printf '%s' "$out" | grep -c 'AWS access key')"
@@ -156,6 +156,132 @@ check "and says the list could not be applied" 1 "$(printf '%s' "$out" | grep -c
 check "and does not report a clean scan" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
 out="$(cd "$repo" && PATH="$WORK/stub:$PATH" "$SCRIPT" "$bad_base" "$bad_base" 2>&1)"; rc=$?
 check "the same stub on a change with nothing to filter is accepted" 0 "$rc"
+
+# What names a file, and what the scan reads. The base lists ^fixtures/, so a line the scan
+# attributes to a path under fixtures/ is excused and a line it attributes to another is not.
+plant() { # <path> <line>...: a change adding one file (and the attributes in $ATTR, if set)
+	local file="$1"; shift
+	git -C "$repo" reset -q --hard "$allow_base"
+	mkdir -p "$repo/$(dirname -- "$file")"
+	printf '%s\n' "$@" > "$repo/$file"
+	[ -z "${ATTR:-}" ] || printf '%s\n' "$ATTR" > "$repo/.gitattributes"
+	gitc add -A; gitc commit -q -m "plant"
+	out="$(cd "$repo" && "$SCRIPT" "$allow_base" HEAD 2>&1)"; rc=$?
+}
+named() { printf '%s' "$out" | grep -cF -- "$1" || true; }
+
+# A line of added text that looks like a diff header does not name the file that follows.
+plant evil.txt '++ b/fixtures/ok.txt' "$aws"
+check "a credential after an added line shaped like a diff header is refused" 1 "$rc"
+check "and it is attributed to the file that holds it, at its own line" 1 "$(named 'evil.txt:2 AWS access key')"
+plant evil.txt '++ b/fixtures/ok.txt' 'just a line'
+check "the same file without the credential is accepted" 0 "$rc"
+plant fixtures/ok.txt "$aws"
+check "a credential in a listed path is still skipped" 0 "$rc"
+
+# A name made of pathspec characters names that file alone, not the files it would match.
+plant xzy.txt "$aws"
+mkdir -p "$repo"; printf '%s\n' 'just a line' > "$repo/x*y.txt"; gitc add -A; gitc commit -q -m "a name with a star"
+out="$(cd "$repo" && "$SCRIPT" "$allow_base" HEAD 2>&1)"; rc=$?
+check "a credential in one file is refused" 1 "$rc"
+check "and a file named with a star is not given the lines of the file it would match" 0 "$(named 'x*y.txt:1')"
+check "and the credential is attributed to the file that holds it" 1 "$(named 'xzy.txt:1 AWS access key')"
+
+# A name with a control character cannot be told from two records.
+plant $'evil\nfixtures/z.txt' "$aws"
+check "a file name with a newline is refused" 1 "$rc"
+check "and the refusal is for the name" 1 "$(named 'has a control character in its name')"
+plant $'evil\tz.txt' 'just a line'
+check "a file name with a tab is refused" 1 "$rc"
+plant 'a b/c d.txt' 'just a line'
+check "a file name with spaces is accepted" 0 "$rc"
+plant 'a b/c d.txt' "$aws"
+check "and a credential in it is still refused, by its own name" 1 "$rc"
+check "and attributed to that path" 1 "$(named 'a b/c d.txt:1 AWS access key')"
+
+# The marker is read from the text of a line, never from the name of the file.
+plant 'secret-scan:allow.txt' "$aws"
+check "a file whose name carries the marker is not skipped" 1 "$rc"
+
+# The list is compared with the path alone: an entry cannot reach a line number.
+git -C "$repo" reset -q --hard "$base"
+printf '^.*:1:\n' > "$repo/.secret-scan-allow"; gitc add -A; gitc commit -q -m "a list of line numbers"
+numbers_base="$(git -C "$repo" rev-parse HEAD)"
+printf '%s\n' "$aws" > "$repo/c.txt"; gitc add -A; gitc commit -q -m "line one"
+out="$(cd "$repo" && "$SCRIPT" "$numbers_base" HEAD 2>&1)"; rc=$?
+check "an entry that matches a line number does not excuse the line" 1 "$rc"
+check "and the credential is named" 1 "$(named 'c.txt:1 AWS access key')"
+
+# What a line is judged by is its text: a directory called example is not a placeholder.
+plant example/config.txt "release_secret = \"$(rep c 40)\""
+check "a long secret under a directory called example is refused" 1 "$rc"
+check "and named" 1 "$(named 'example/config.txt:1 long value assigned to a secret-like name')"
+plant example/config.txt "release_secret = \"your-$(rep c 40)\""
+check "the same assignment of a placeholder is accepted" 0 "$rc"
+
+# What the tree under review says about how to show a file does not change what is read.
+git -C "$repo" config diff.hide.textconv true
+git -C "$repo" config diff.ext.command true
+for attr in '* -diff' '* binary' '* diff=hide' '* diff=ext'; do
+	ATTR="$attr" plant leak.txt "$aws"
+	check "a credential is refused under the attribute '$attr'" 1 "$rc"
+	check "and named under '$attr'" 1 "$(named 'leak.txt:1 AWS access key')"
+	ATTR="$attr" plant leak.txt 'just a line'
+	check "a clean line is accepted under '$attr'" 0 "$rc"
+done
+git -C "$repo" config --unset diff.hide.textconv
+git -C "$repo" config --unset diff.ext.command
+
+# A changed file that git shows as binary, or shows no change for although its content
+# changed, fails the scan. The stub stands for a git that does so, which the flags above
+# keep real git from doing.
+mkdir -p "$WORK/gitshim"
+real_git="$(command -v git)"
+cat > "$WORK/gitshim/git" <<EOF
+#!/bin/sh
+case "\$*" in
+	*" -U0 "*)
+		case "\${GIT_SHIM:-}" in
+			binary) echo "Binary files a/x and b/x differ"; exit 0 ;;
+			empty | emptynosize) exit 0 ;;
+			fail) echo "fatal: stub" >&2; exit 128 ;;
+		esac
+		;;
+	*"cat-file -s"*)
+		[ "\${GIT_SHIM:-}" != emptynosize ] || { echo "fatal: stub" >&2; exit 128; }
+		;;
+esac
+exec $real_git "\$@"
+EOF
+chmod +x "$WORK/gitshim/git"
+shimmed() { # <mode>: scan the change of the last plant with the stub git
+	out="$(cd "$repo" && GIT_SHIM="$1" PATH="$WORK/gitshim:$PATH" "$SCRIPT" "$allow_base" HEAD 2>&1)"; rc=$?
+}
+plant leak.txt 'just a line'
+shimmed binary
+check "a file git shows as binary fails the scan" 1 "$rc"
+check "and the refusal is for the file being unread" 1 "$(named 'leak.txt as binary')"
+shimmed empty
+check "a file git shows no change for fails the scan" 1 "$rc"
+check "and the refusal says its content changed" 1 "$(named 'shows no change for leak.txt although its content changed')"
+shimmed emptynosize
+check "a file git shows no change for, whose size cannot be read, fails the scan" 1 "$rc"
+check "and the refusal is for the size" 1 "$(named 'could not read the size of leak.txt')"
+shimmed fail
+check "a file whose diff cannot be read fails the scan" 1 "$rc"
+check "and the refusal names the file" 1 "$(named 'could not diff leak.txt')"
+shimmed none
+check "the same change is accepted when git shows it" 0 "$rc"
+# A change with no hunks that is not a change of content is not refused.
+git -C "$repo" reset -q --hard "$allow_base"
+printf 'content\n' > "$repo/script.sh"; gitc add -A; gitc commit -q -m "script"
+mode_base="$(git -C "$repo" rev-parse HEAD)"
+git -C "$repo" update-index --chmod=+x script.sh; gitc commit -q -m "mode only"
+out="$(cd "$repo" && "$SCRIPT" "$mode_base" HEAD 2>&1)"; rc=$?
+check "a change of mode alone is accepted" 0 "$rc"
+: > "$repo/empty.txt"; gitc add -A; gitc commit -q -m "an empty file"
+out="$(cd "$repo" && "$SCRIPT" "$mode_base" HEAD 2>&1)"; rc=$?
+check "an empty file is accepted" 0 "$rc"
 
 # A range git cannot read is a failure, not an empty change. The same call on a range
 # that can be read, and has nothing added, is accepted.
