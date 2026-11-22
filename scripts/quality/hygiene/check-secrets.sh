@@ -14,7 +14,11 @@
 # carries the word secret-scan:allow is skipped, for a value that is public on
 # purpose; say why next to it. A file cannot carry a comment, so a repository that
 # keeps throwaway test keys lists the paths in .secret-scan-allow at its root, one
-# regular expression per line, each with a comment saying why.
+# regular expression per line, each with a comment saying why. The list is read
+# from <base>, the commit the change merges into, never from <head>: a change
+# that listed its own paths would switch the scan off for them, so an entry takes
+# effect from the pull request after the one that adds it. An expression that does
+# not compile, or that matches every line, fails the scan instead of weakening it.
 #
 # This is a filter for the mistake, not a vault: GitHub's push protection and
 # secret scanning remain the other half.
@@ -39,10 +43,29 @@ added="$(printf '%s\n' "$diff" | awk '
 	/^\+/        { print file ":" line ":" substr($0, 2); line++ }
 ' | grep -v 'secret-scan:allow' || true)"
 
-# Paths the repository declares as holding throwaway keys on purpose.
-allow="$(git show "$head:.secret-scan-allow" 2>/dev/null | grep -vE '^[[:space:]]*(#|$)' || true)"
-if [ -n "$allow" ] && [ -n "$added" ]; then
-	added="$(printf '%s\n' "$added" | grep -vE -f <(printf '%s\n' "$allow" | sed 's/^/^(/; s/$/)/') || true)"
+# Paths the repository declares as holding throwaway keys on purpose, read from
+# the base commit. A missing file is an empty list; a file that cannot be read, an
+# expression that does not compile, or one that matches every line is a failure.
+allow_args=()
+if git cat-file -e "$base:.secret-scan-allow" 2>/dev/null; then
+	allow="$(git show "$base:.secret-scan-allow")" \
+		|| { echo "::error::could not read .secret-scan-allow at $base" >&2; exit 1; }
+	while IFS= read -r expr; do
+		[ -n "$expr" ] || continue
+		rc=0; printf '' | grep -qE -- "$expr" || rc=$?
+		[ "$rc" -le 1 ] \
+			|| { echo "::error::.secret-scan-allow: not a regular expression: $expr" >&2; exit 1; }
+		# A line of the diff is "file:line:text". One that matches a path no
+		# repository holds would excuse every line.
+		! printf '%s\n' '.secret-scan-allow-probe:1:x' | grep -qE -- "^($expr)" \
+			|| { echo "::error::.secret-scan-allow: matches every line, which would switch the scan off: $expr" >&2; exit 1; }
+		allow_args+=(-e "^($expr)")
+	done < <(printf '%s\n' "$allow" | grep -vE '^[[:space:]]*(#|$)' || true)
+fi
+if [ "${#allow_args[@]}" -gt 0 ] && [ -n "$added" ]; then
+	rc=0; kept="$(printf '%s\n' "$added" | grep -vE "${allow_args[@]}")" || rc=$?
+	[ "$rc" -le 1 ] || { echo "::error::could not apply .secret-scan-allow" >&2; exit 1; }
+	added="$kept"
 fi
 
 [ -n "$added" ] || { echo "no credential-shaped lines added"; exit 0; }

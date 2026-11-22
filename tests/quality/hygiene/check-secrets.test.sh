@@ -85,15 +85,77 @@ base2="$(git -C "$repo" rev-parse HEAD)"
 echo more >> "$repo/README"; gitc add -A; gitc commit -q -m "touch"
 (cd "$repo" && "$SCRIPT" "$base2" HEAD >/dev/null 2>&1); check "an old line in the base is not rescanned" 0 "$?"
 
-# A repository lists the paths that hold throwaway keys on purpose.
+# A repository lists the paths that hold throwaway keys on purpose. The list is read
+# from the base commit, so the change that adds an entry does not use it.
+git -C "$repo" reset -q --hard "$base"
+printf '# test keys\n^fixtures/\n' > "$repo/.secret-scan-allow"
+gitc add -A; gitc commit -q -m "list the fixtures"
+allow_base="$(git -C "$repo" rev-parse HEAD)"
+mkdir -p "$repo/fixtures"
+printf -- '-----BEGIN %s-----\n%s\n' 'PRIVATE KEY' "$(rep M 40)" > "$repo/fixtures/test.pem"
+gitc add -A; gitc commit -q -m "fixture"
+(cd "$repo" && "$SCRIPT" "$allow_base" HEAD >/dev/null 2>&1); check "a path listed in .secret-scan-allow of the base is skipped" 0 "$?"
+printf -- '-----BEGIN %s-----\n' 'PRIVATE KEY' > "$repo/elsewhere.pem"; gitc add -A; gitc commit -q -m "elsewhere"
+(cd "$repo" && "$SCRIPT" "$allow_base" HEAD >/dev/null 2>&1); check "a key outside the listed paths still fails" 1 "$?"
+
+# The list the change itself carries excuses nothing: it is the change under review.
 git -C "$repo" reset -q --hard "$base"
 mkdir -p "$repo/fixtures"
 printf -- '-----BEGIN %s-----\n%s\n' 'PRIVATE KEY' "$(rep M 40)" > "$repo/fixtures/test.pem"
-printf '# test keys\n^fixtures/\n' > "$repo/.secret-scan-allow"
-gitc add -A; gitc commit -q -m "fixture"
-(cd "$repo" && "$SCRIPT" "$base" HEAD >/dev/null 2>&1); check "a path listed in .secret-scan-allow is skipped" 0 "$?"
-printf -- '-----BEGIN %s-----\n' 'PRIVATE KEY' > "$repo/elsewhere.pem"; gitc add -A; gitc commit -q -m "elsewhere"
-(cd "$repo" && "$SCRIPT" "$base" HEAD >/dev/null 2>&1); check "a key outside the listed paths still fails" 1 "$?"
+printf '^fixtures/\n' > "$repo/.secret-scan-allow"
+gitc add -A; gitc commit -q -m "fixture and its own list"
+out="$(cd "$repo" && "$SCRIPT" "$base" HEAD 2>&1)"; rc=$?
+check "a list added by the change itself is not used" 1 "$rc"
+check "and the key it listed is named" 1 "$(printf '%s' "$out" | grep -c 'private key block')"
+
+# A change that widens the list of the base is judged by the list of the base too.
+git -C "$repo" reset -q --hard "$allow_base"
+printf -- '-----BEGIN %s-----\n' 'PRIVATE KEY' > "$repo/elsewhere.pem"
+printf '# test keys\n^fixtures/\n^elsewhere\\.pem\n' > "$repo/.secret-scan-allow"
+gitc add -A; gitc commit -q -m "widen the list and use it"
+out="$(cd "$repo" && "$SCRIPT" "$allow_base" HEAD 2>&1)"; rc=$?
+check "a path the change adds to the list of the base is not skipped" 1 "$rc"
+check "and the key it listed is named" 1 "$(printf '%s' "$out" | grep -c 'private key block')"
+
+# An expression that does not compile fails the scan with its own message, whether
+# the change adds a credential or not, instead of emptying the set it filters. The
+# credential is one the scan reports when no list exists.
+bad_list() { # <expression> <added line>: a base holding the list, and a change adding the line
+	git -C "$repo" reset -q --hard "$base"
+	printf '# test keys\n%s\n' "$1" > "$repo/.secret-scan-allow"; gitc add -A; gitc commit -q -m "list"
+	bad_base="$(git -C "$repo" rev-parse HEAD)"
+	printf '%s\n' "$2" > "$repo/c.txt"; gitc add -A; gitc commit -q -m "change"
+	out="$(cd "$repo" && "$SCRIPT" "$bad_base" HEAD 2>&1)"; rc=$?
+}
+aws="id AKI""A$(rep Q 16)"
+bad_list '[unclosed' "$aws"
+check "an expression that does not compile fails" 1 "$rc"
+check "and says it is not a regular expression" 1 "$(printf '%s' "$out" | grep -c 'not a regular expression')"
+check "and does not report a clean scan" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+bad_list '[unclosed' 'just an ordinary line'
+check "an expression that does not compile fails a change that adds nothing" 1 "$rc"
+check "and says so for that change too" 1 "$(printf '%s' "$out" | grep -c 'not a regular expression')"
+bad_list '^.*$' "$aws"
+check "an expression that matches every line fails" 1 "$rc"
+check "and says it would switch the scan off" 1 "$(printf '%s' "$out" | grep -c 'matches every line')"
+bad_list '^fixtures/' "$aws"
+check "a list of paths that compile still reports a key outside them" 1 "$rc"
+check "and names the key, not the list" 1 "$(printf '%s' "$out" | grep -c 'AWS access key')"
+
+# A grep that fails while the list is applied must not empty the set. The stub fails
+# only for that call, so the credential below can only be seen if the failure is not
+# read as "nothing left".
+mkdir -p "$WORK/stub"
+real_grep="$(command -v grep)"
+printf '#!/bin/sh\ncase "$*" in *"^(^fixtures/)"*) exit 2 ;; esac\nexec %s "$@"\n' "$real_grep" > "$WORK/stub/grep"
+chmod +x "$WORK/stub/grep"
+bad_list '^fixtures/' "$aws"
+out="$(cd "$repo" && PATH="$WORK/stub:$PATH" "$SCRIPT" "$bad_base" HEAD 2>&1)"; rc=$?
+check "a grep that fails while the list is applied fails the scan" 1 "$rc"
+check "and says the list could not be applied" 1 "$(printf '%s' "$out" | grep -c 'could not apply')"
+check "and does not report a clean scan" 0 "$(printf '%s' "$out" | grep -c 'no credential-shaped lines added')"
+out="$(cd "$repo" && PATH="$WORK/stub:$PATH" "$SCRIPT" "$bad_base" "$bad_base" 2>&1)"; rc=$?
+check "the same stub on a change with nothing to filter is accepted" 0 "$rc"
 
 # A range git cannot read is a failure, not an empty change. The same call on a range
 # that can be read, and has nothing added, is accepted.
