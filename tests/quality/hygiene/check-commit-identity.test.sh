@@ -77,6 +77,28 @@ commit "$noreply" "$(printf 'x\n\nSigned-off-by: t <%s>' "$noreply")"
 commit "$personal" "second, personal"
 run >/dev/null; check "one bad commit among good ones fails" 1 "$?"
 
+# git reads the last paragraph of a message as its trailers. A line of either kind in
+# another paragraph is in the history all the same.
+git -C "$repo" reset -q --hard "$base"
+commit "$noreply" "$(printf 'x\n\nSigned-off-by: t <%s>\n\nthe body goes on\n\nfixes it' "$personal")"
+out="$(run)"; rc=$?
+check "a personal Signed-off-by outside the last paragraph fails" 1 "$rc"
+check "and the message names the trailer" 1 "$(printf '%s' "$out" | grep -c 'a Signed-off-by address')"
+check "and the address is not printed" 0 "$(printf '%s' "$out" | grep -c "$personal")"
+git -C "$repo" reset -q --hard "$base"
+commit "$noreply" "$(printf 'x\n\nCo-authored-by: t <%s>\n\nthe body goes on\n\nfixes it' "$personal")"
+run >/dev/null; check "a personal Co-authored-by outside the last paragraph fails" 1 "$?"
+git -C "$repo" reset -q --hard "$base"
+commit "$noreply" "$(printf 'x\n\nsigned-off-by: t <%s>\n\nfixes it' "$personal")"
+run >/dev/null; check "a trailer written in lower case fails" 1 "$?"
+git -C "$repo" reset -q --hard "$base"
+commit "$noreply" "$(printf 'x\n\nSigned-off-by: t <%s>\n\nthe body goes on\n\nfixes it' "$noreply")"
+out="$(run)"; rc=$?
+check "the same message with noreply addresses is accepted" 0 "$rc"
+git -C "$repo" reset -q --hard "$base"
+commit "$noreply" "$(printf 'x\n\nthe address someone@mail.example is in the text, not in a trailer\n\nfixes it')"
+run >/dev/null; check "an address in the text of the message is not a trailer" 0 "$?"
+
 # A range git cannot list is a failure, not a range with no commits to refuse. An
 # empty range, which git can list, is accepted.
 git -C "$repo" reset -q --hard "$base"

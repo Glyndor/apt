@@ -3,7 +3,7 @@
 # Refuse a pull request whose commits carry a personal email address.
 #
 # Every commit in <base>..<head> is checked for three things: the author address,
-# every Signed-off-by, and every Co-authored-by. Each has to be a GitHub noreply
+# every Signed-off-by, and every Co-authored-by, on any line of the message. Each has to be a GitHub noreply
 # address (or GitHub's own noreply@github.com and support@github.com, the latter
 # used by older Dependabot commits). A trailer is checked for every address it
 # carries, and one with none is refused. Addresses are never printed: they
@@ -40,6 +40,9 @@ while IFS= read -r sha; do
 	author="$(git show -s --format='%ae' "$sha")"
 	printf '%s\n' "$author" | grep -qE "$allowed" || flag "$sha" "the author address"
 
+	# The whole message, not git's trailer block: that reads the last paragraph only, and a
+	# line of either kind anywhere else in the message is as much in the history.
+	message="$(git show -s --format=%B "$sha")"
 	for key in Signed-off-by Co-authored-by; do
 		while IFS= read -r value; do
 			[ -n "$value" ] || continue
@@ -51,7 +54,7 @@ while IFS= read -r sha; do
 			while IFS= read -r addr; do
 				printf '%s\n' "$addr" | grep -qE "$allowed" || flag "$sha" "a $key address"
 			done <<< "$addrs"
-		done < <(git show -s --format="%(trailers:key=$key,valueonly)" "$sha")
+		done < <(printf '%s\n' "$message" | grep -iE "^[[:space:]]*$key:" | sed -E 's/^[^:]*:[[:space:]]*//' || true)
 	done
 done <<< "$commits"
 
