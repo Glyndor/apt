@@ -317,7 +317,6 @@ check-secrets-a-refused-expression-is-named-by-its-line	scripts/quality/hygiene/
 check-secrets-a-failed-grep-does-not-empty-the-set	scripts/quality/hygiene/check-secrets.sh	[ "$rc" -le 1 ] || { echo "::error::could not apply .secret-scan-allow" >&2; exit 1; }	true	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-a-file-name-with-a-control-character-is-refused	scripts/quality/hygiene/check-secrets.sh	*[[:cntrl:]]*)	NOSUCHNAME)	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-the-list-is-compared-with-the-path-alone	scripts/quality/hygiene/check-secrets.sh	printf '%s\n' "$1" | grep -qE "${allow_args[@]}" || rc=$?	printf '%s:1:x\n' "$1" | grep -qE "${allow_args[@]}" || rc=$?	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-binary-file-fails-the-scan	scripts/quality/hygiene/check-secrets.sh	if grep -aqE '^(Binary files .* differ|GIT binary patch)$' "$work/file.diff"; then	if false; then	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-a-file-with-no-change-shown-fails-the-scan	scripts/quality/hygiene/check-secrets.sh	if [ "$hunks" -eq 0 ] && [ "$old_blob" != "$new_blob" ]; then	if false; then	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-a-change-of-mode-alone-is-not-refused	scripts/quality/hygiene/check-secrets.sh	[ "$hunks" -eq 0 ] && [ "$old_blob" != "$new_blob" ]	[ "$hunks" -eq 0 ] && true	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-an-empty-file-is-not-refused	scripts/quality/hygiene/check-secrets.sh	[ "$size" -eq 0 ] \	false \	tests/quality/hygiene/check-secrets.test.sh

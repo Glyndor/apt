@@ -287,9 +287,40 @@ done
 git -C "$repo" config --unset diff.hide.textconv
 git -C "$repo" config --unset diff.ext.command
 
-# A changed file that git shows as binary, or shows no change for although its content
-# changed, fails the scan. The stub stands for a git that does so, which the flags above
-# keep real git from doing.
+# A binary file is read as text, by real git and with no stub. The two files below hold the
+# same bytes (an image header, every byte value, NUL among them); one carries a credential
+# between two NULs and the other does not. The first is refused and named, the second is
+# accepted, so a refusal cannot come from the file being binary.
+binary_bytes() { # [aws]: the bytes of the planted file, on stdout
+	local i
+	printf '\211PNG\r\n\032\n\0\0\0\rIHDR'
+	for i in $(seq 0 255); do printf '%b' "\\0$(printf '%o' "$i")"; done
+	[ "${1:-}" != aws ] || printf '\0%s\0' "$aws"
+	printf '\0\377'
+}
+plant_binary() { # <path> [aws]: a change adding one binary file
+	git -C "$repo" reset -q --hard "$allow_base"
+	binary_bytes "${2:-}" > "$repo/$1"
+	gitc add -A; gitc commit -q -m "plant a binary file"
+	out="$(cd "$repo" && "$SCRIPT" "$allow_base" HEAD 2>&1)"; rc=$?
+}
+numstat() { git -C "$repo" diff --numstat "$allow_base" HEAD -- "$1" | cut -f1,2; }
+plant_binary logo.png
+check "the planted image is a binary file to git" "-	-" "$(numstat logo.png)"
+check "an image that holds no credential is accepted" 0 "$rc"
+check "and the scan says it found nothing" 1 "$(named 'no credential-shaped lines added')"
+plant_binary blob.bin aws
+check "the planted blob is a binary file to git" "-	-" "$(numstat blob.bin)"
+check "a binary file with a credential inside is refused" 1 "$rc"
+check "and the credential is named at the file" 1 "$(printf '%s' "$out" | grep -cE '::error::blob.bin:[0-9]+ AWS access key')"
+check "and the value is not printed" 0 "$(named "$aws")"
+check "and it is not refused for being binary" 0 "$(named 'binary')"
+
+# A changed file that git shows no change for although its content changed fails the
+# scan. Real git does that for no file once --text is passed (an empty file is the one
+# file it shows without a hunk, and it has nothing to read), so the stub stands for a git
+# that does. "Binary files differ" is such an answer too: it has no hunk, so it is
+# refused here as a file git showed no change for.
 mkdir -p "$WORK/gitshim"
 real_git="$(command -v git)"
 cat > "$WORK/gitshim/git" <<EOF
@@ -317,8 +348,9 @@ shimmed() { # <mode>: scan the change of the last plant with the stub git
 }
 plant leak.txt 'just a line'
 shimmed binary
-check "a file git shows as binary fails the scan" 1 "$rc"
-check "and the refusal is for the file being unread" 1 "$(named 'leak.txt as binary')"
+check "a file git answers with Binary files differ fails the scan" 1 "$rc"
+check "and the refusal says git showed no change for it" 1 "$(named 'shows no change for leak.txt although its content changed')"
+check "and it is not refused for anything else" 0 "$(named 'could not')"
 shimmed empty
 check "a file git shows no change for fails the scan" 1 "$rc"
 check "and the refusal says its content changed" 1 "$(named 'shows no change for leak.txt although its content changed')"
