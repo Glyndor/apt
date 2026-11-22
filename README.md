@@ -1,14 +1,9 @@
-<div align="center">
-
 # Glyndor apt repository
 
-**Signed `.deb` packages for every Glyndor product.**
-`amd64` and `arm64`, rebuilt daily, nothing unverified ever served
+Signed `.deb` packages for Glyndor software on Debian and Ubuntu, for `amd64` and `arm64`.
 
 [![Health check](https://github.com/Glyndor/apt/actions/workflows/health-check.yml/badge.svg)](https://github.com/Glyndor/apt/actions/workflows/health-check.yml)
 [![Publish](https://github.com/Glyndor/apt/actions/workflows/publish.yml/badge.svg)](https://github.com/Glyndor/apt/actions/workflows/publish.yml)
-
-</div>
 
 ## Install
 
@@ -16,37 +11,63 @@
 curl -fsSL https://apt.glyndor.net/install/podup | sudo sh
 ```
 
-It adds the archive, installs the signing key after checking its fingerprint,
-installs the package, and reports whether automatic security upgrades are on.
-It does not change that setting itself; if the `unattended-upgrades` package is
-missing it installs it. If it stops before the `installing the keyring` step, it refused:
-it exits before `dpkg -i`, so no script from the downloaded package ran. An error
-reported after that step comes from `dpkg` itself, which may already have run the
-package's maintainer scripts, or from the steps that follow it: `apt-get update`, installing the
-product and running it with `--version`.
+The script needs `curl` and `ca-certificates`. A minimal image, a container for
+example, has neither and has no `sudo` either. There you are already root, so
+install the two and run the command above without `sudo`:
 
-Swap `podup` for any package marked `served` below.
+```bash
+apt-get update && apt-get install -y ca-certificates curl
+```
 
-| Package | What it is | In the archive |
-| --- | --- | --- |
-| [`podup`](https://github.com/Glyndor/podup) | Docker-compose translator and runner for rootless Podman | served |
-| [`epistle`](https://github.com/Glyndor/epistle) | Self-hosted headless mail server: SMTP, IMAP | served |
-| [`podman`](https://github.com/Glyndor/podman) | The newest stable Podman with its network stack, for Debian 13 and Ubuntu 24.04 and 26.04 | served |
-| [`epistle-panel`](https://github.com/Glyndor/epistle-panel) | Web panel for the epistle mail server | not packaged |
-| [`helmly-agent`](https://github.com/Glyndor/helmly-agent) | Hardened server agent for the Glyndor panel: signed commands over WireGuard and mTLS | not packaged |
+The script:
+
+- adds the Glyndor archive and installs its signing key after checking the
+  fingerprint against the one published [below](#verify-the-signing-key);
+- installs the package and what it depends on, including a current Podman;
+- reports whether automatic security upgrades are on, without changing that
+  setting (it installs the `unattended-upgrades` package if it is missing).
+
+If one of its checks fails before the keyring is installed, it exits without
+running anything from the download. An error after that point comes from `dpkg`
+or `apt-get`.
+
+To install another package, replace `podup` with a name from the next table.
+After installing podup, go on with its
+[quick start](https://github.com/Glyndor/podup#quick-start).
+
+## What is served
+
+| Package | What it is |
+| --- | --- |
+| [`podup`](https://github.com/Glyndor/podup) | Run Compose projects on rootless Podman. |
+| [`podman`](https://github.com/Glyndor/podman) | Signed Podman packages for Debian 13 and Ubuntu 24.04 and 26.04, built from the latest stable upstream releases. |
+| [`epistle`](https://github.com/Glyndor/epistle) | A self-hosted mail server for your own domains. |
+| `glyndor-archive-keyring` | The archive signing key and apt source, installed by the script. |
+
+podup needs Podman 6.2.0 or newer and does not support Podman 5. The `podman`
+package here is that Podman, so on the releases listed under Supported releases
+installing podup pulls it in, whatever Podman the distribution ships. epistle runs its mail
+stack through podup.
 
 ```bash
 apt list '?origin(Glyndor)'   # everything currently served
 ```
 
-## Which releases
+The same software is also available through a
+[Homebrew tap](https://github.com/Glyndor/homebrew-tap) for macOS and Linux and a
+[Scoop bucket](https://github.com/Glyndor/scoop-bucket) for Windows, which carry
+podup only. Packages for Fedora and its relatives
+([`Glyndor/rpm`](https://github.com/Glyndor/rpm)) and for Arch Linux
+([`Glyndor/pacman`](https://github.com/Glyndor/pacman)) are in preparation and
+publish nothing yet.
 
-The floor is glibc 2.39. `podup` depends on podman 5, and `epistle` needs `podup`
-to run the mail stack, and this archive serves its own podman, built to run on
-glibc 2.39 or newer. So it installs on the Debian and Ubuntu releases that have
-it, whatever podman they ship, and refuses on the older ones rather than
-installing a podman that does not start. The refusal names it:
-`libc6 (>= 2.39) but 2.35 is to be installed`.
+## Supported releases
+
+The floor is glibc 2.39. This archive serves its own Podman, built to run on
+glibc 2.39 or newer, so it installs on the Debian and Ubuntu releases that have
+it and refuses on the older ones rather than installing a Podman that does not
+start. The refusal names the library:
+`libc6 (>= 2.39) but 2.35-0ubuntu3.15 is to be installed`.
 
 The [distribution floor workflow](.github/workflows/distro-floor.yml) runs the
 install line above in fresh containers every week and asserts exactly this:
@@ -61,69 +82,15 @@ install line above in fresh containers every week and asserts exactly this:
 
 A release missing from that table has not been measured.
 
-## Updates take care of themselves
+## Automatic upgrades
 
-The signing key ships **as a package**, so apt owns it. The same package installs
-`glyndor-upgrade.timer`, which runs daily and upgrades the packages from this archive
-(plus any dependency a new release needs), including products published later,
-and leaves every other package alone. Nothing to re-run, no expiry
-to diarise.
+The signing key ships as a package, so apt keeps it current. The same package
+installs `glyndor-upgrade.timer`, which runs daily and upgrades the packages from
+this archive, and leaves every other package alone. It does not change the
+machine's own `unattended-upgrades` schedule, and it needs systemd.
 
-The timer does not depend on the machine's own `unattended-upgrades` schedule and
-does not change it. To opt out, run `sudo systemctl disable --now glyndor-upgrade.timer`;
-that choice survives upgrades of the package. It needs systemd and the
-`unattended-upgrades` engine, which the install command above puts on the machine
-if it is missing.
-
-## How it works
-
-```mermaid
-flowchart LR
-  P["Product release<br/>.deb + .sig"] -->|daily pull| V["verify-debs.sh<br/>release key"]
-  V -->|admitted| R["reprepro builds the index<br/>offered by hash, signed<br/>archive key"]
-  R --> S["apt.glyndor.net<br/>R2 + Cloudflare"]
-  S -->|apt update| C["Client<br/>glyndor-archive-keyring"]
-  V -.->|bad signature| X["publish fails, nothing served"]
-```
-
-**Two keys, two jobs.** The *release* key proves a package is the one its
-product published; the *archive* key proves the index is the one this
-repository built. You check the second, this repository checks the first.
-
-**A second, post-quantum release signature.** The verifier also reads a file
-named after the `.deb` with `.mldsa65.sig` appended, so
-`podup_1.0.0_amd64.deb.mldsa65.sig` beside `podup_1.0.0_amd64.deb.sig`. It holds
-an ML-DSA-65 (FIPS 204) signature over the same bytes, and when it is present
-both signatures must verify. It is an addition,
-never a replacement for Ed25519. No product produces it yet and no ML-DSA-65 key
-is configured, so today every package is admitted on its Ed25519 signature, as
-before. The index apt checks stays Ed25519: the verifiers apt uses do not accept
-a post-quantum signature.
-
-Rebuilt from scratch every run, so the failure mode is *an archive that does not update*, never *one that serves something
-unverified*.
-
-**An update during a publish does not fail, from the second publish that offers
-the index by hash.** The signed index says `Acquire-By-Hash: yes`, so apt asks
-for each index file under the SHA-256 the index declares for it
-(`dists/stable/main/binary-amd64/by-hash/SHA256/<hash>`) rather than under its
-fixed name. A publish uploads those copies before the new index, and keeps the
-old ones, so an `apt update` that read the index of one publish while the next
-one lands still gets the bytes it was told to expect, instead of
-`Hash Sum mismatch`.
-
-The first publish with the field replaces an index without it, whose clients
-ask by the fixed name. The new index lands before the files under fixed names
-change, so only a client that read the old index just before and asks for
-`Packages` just after can still see the mismatch: the same window every publish
-had before. `apt update` succeeds again on the next try.
-
-A publish cut short does not leave a client that asks by hash without its
-files: cut before the new index lands, the previous one is still served with
-everything it declares; cut after, the new one is served with all its copies,
-and some files under fixed names may still be the previous ones. That case
-fails the publish, whose last step reads the archive back by those names, and
-the health check every six hours, until a publish completes.
+To opt out, run `sudo systemctl disable --now glyndor-upgrade.timer`. That choice
+survives upgrades of the package.
 
 ## Verify the signing key
 
@@ -181,10 +148,33 @@ sudo dpkg -i glyndor-archive-keyring.deb
 > only the script installs that when it is missing. Run the install command at
 > the top instead.
 
+## How it works
+
+```mermaid
+flowchart LR
+  P["Product release<br/>.deb + .sig"] -->|daily pull| V["verify-debs.sh<br/>release key"]
+  V -->|admitted| R["reprepro builds the index<br/>offered by hash, signed<br/>archive key"]
+  R --> S["apt.glyndor.net<br/>R2 + Cloudflare"]
+  S -->|apt update| C["Client<br/>glyndor-archive-keyring"]
+  V -.->|bad signature| X["publish fails, nothing served"]
+```
+
+Two keys do two jobs. The *release* key proves a package is the one its product
+published, and this repository checks it. The *archive* key proves the index is
+the one this repository built, and you check it above. The archive is rebuilt
+from scratch on every run, so the failure mode is an archive that does not
+update, never one that serves something unverified.
+
+A second, post-quantum release signature (ML-DSA-65) is supported beside the
+Ed25519 one and never replaces it; no ML-DSA-65 key is configured yet, so every
+package is admitted on its Ed25519 signature.
+
+The [threat model](docs/threat-model.md) covers these controls and the others, with the test
+that holds each one in place.
+
 ---
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). The tests are the specification;
-the [threat model](docs/threat-model.md) says what they specify against.
-
-[MIT](LICENSE). Report a problem via the
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report a problem via the
 [Security](https://github.com/Glyndor/apt/security) tab.
+
+[MIT](LICENSE).
