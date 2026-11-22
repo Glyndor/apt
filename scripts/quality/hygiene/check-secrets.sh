@@ -56,16 +56,16 @@ allow_args=()
 if git cat-file -e "$base:.secret-scan-allow" 2>/dev/null; then
 	allow="$(git show "$base:.secret-scan-allow")" \
 		|| { echo "::error::could not read .secret-scan-allow at $base" >&2; exit 1; }
-	while IFS= read -r expr; do
-		[ -n "$expr" ] || continue
+	while IFS= read -r numbered; do
+		n="${numbered%%:*}"; expr="${numbered#*:}"
 		rc=0; printf '' | grep -qE -- "$expr" || rc=$?
 		[ "$rc" -le 1 ] \
-			|| { echo "::error::.secret-scan-allow: not a regular expression: $expr" >&2; exit 1; }
+			|| { echo "::error::.secret-scan-allow line $n: not a regular expression: $expr" >&2; exit 1; }
 		# One that matches a path no repository holds would excuse every file.
-		! printf '%s\n' 'no-such-path-in-any-repository' | grep -qE -- "^($expr)" \
-			|| { echo "::error::.secret-scan-allow: matches every path, which would switch the scan off: $expr" >&2; exit 1; }
+		! printf '%s\n' 'zz-canary-9f3a/zz-canary-9f3a' | grep -qE -- "^($expr)" \
+			|| { echo "::error::.secret-scan-allow line $n: matches every path, which would switch the scan off: $expr" >&2; exit 1; }
 		allow_args+=(-e "^($expr)")
-	done < <(printf '%s\n' "$allow" | grep -vE '^[[:space:]]*(#|$)' || true)
+	done < <(printf '%s\n' "$allow" | grep -nvE '^[[:space:]]*(#|$)' || true)
 fi
 
 path_allowed() { # <path>

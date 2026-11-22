@@ -155,6 +155,19 @@ check "and says so for that change too" 1 "$(printf '%s' "$out" | grep -c 'not a
 bad_list '^.*$' "$aws"
 check "an expression that matches every path fails" 1 "$rc"
 check "and says it would switch the scan off" 1 "$(printf '%s' "$out" | grep -c 'matches every path')"
+# An expression that matches a path no repository has excuses every file, however it is
+# written, and the refusal names the line of the list it is on.
+for every in '.*' 'a|' '()' 'x*'; do
+	bad_list "$every" 'just an ordinary line'
+	check "the expression '$every' fails the scan" 1 "$rc"
+	check "and the refusal names its line, the second of the list" 1 "$(printf '%s' "$out" | grep -c 'line 2: matches every path')"
+done
+bad_list $'^fixtures/\n.*' 'just an ordinary line'
+check "an expression after a good one is found on its own line" 1 "$(printf '%s' "$out" | grep -c 'line 3: matches every path')"
+bad_list '[unclosed' 'just an ordinary line'
+check "an expression that does not compile is named by its line" 1 "$(printf '%s' "$out" | grep -c 'line 2: not a regular expression')"
+bad_list $'^fixtures/\n^other/' 'just an ordinary line'
+check "two expressions that match some paths are accepted" 0 "$rc"
 bad_list '^fixtures/' "$aws"
 check "a list of paths that compile still reports a key outside them" 1 "$rc"
 check "and names the key, not the list" 1 "$(printf '%s' "$out" | grep -c 'AWS access key')"
