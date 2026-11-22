@@ -5,6 +5,12 @@ name: commit hygiene
 # the lines it adds. Shell only, no third-party tooling, so neither job needs a
 # secret or a network.
 #
+# Both jobs check out the head of the pull request, so the scripts in that checkout are
+# the pull request's own. Each step therefore reads its script from the base commit and
+# runs that copy: a change that rewrote a script to pass would otherwise be judged by
+# itself. A change to either script is judged by the rule the base holds and takes
+# effect once it is merged.
+#
 # The dco check only asks for "a name and an address" and passed thirty-four
 # commits signed off with a personal one; GitHub's push protection knows the
 # formats of other people's tokens, not a signing key of our own.
@@ -43,7 +49,11 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-        run: bash ./scripts/quality/hygiene/check-commit-identity.sh "$BASE" "$HEAD"
+        run: |
+          set -euo pipefail
+          identity="$(mktemp "$RUNNER_TEMP/check-commit-identity.XXXXXX")"
+          git show "$BASE:scripts/quality/hygiene/check-commit-identity.sh" > "$identity"
+          bash "$identity" "$BASE" "$HEAD"
 
   secret-scan:
     name: secret scan
@@ -63,4 +73,8 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-        run: bash ./scripts/quality/hygiene/check-secrets.sh "$BASE" "$HEAD"
+        run: |
+          set -euo pipefail
+          scan="$(mktemp "$RUNNER_TEMP/check-secrets.XXXXXX")"
+          git show "$BASE:scripts/quality/hygiene/check-secrets.sh" > "$scan"
+          bash "$scan" "$BASE" "$HEAD"

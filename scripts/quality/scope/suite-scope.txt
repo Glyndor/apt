@@ -730,6 +730,14 @@ tests/quality/lint/check-action-pins.test.sh
 	scripts/quality/**
 	tests/quality/**
 
+# The steps of commit-hygiene.yml are run against the two scripts as the repository holds them.
+
+tests/ci/policy/commit-hygiene-base-rule.test.sh
+	.github/workflows/commit-hygiene.yml
+	scripts/quality/hygiene/check-commit-identity.sh
+	scripts/quality/hygiene/check-secrets.sh
+	tests/ci/policy/commit-hygiene-base-rule.test.sh
+
 tests/quality/hygiene/check-commit-identity.test.sh
 	scripts/quality/hygiene/check-commit-identity.sh
 	tests/quality/**
