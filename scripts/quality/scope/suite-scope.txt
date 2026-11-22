@@ -148,7 +148,6 @@ tests/verify/verify-published/verify-published-by-hash.test.sh
 tests/build/add-by-hash.test.sh
 	scripts/build/add-by-hash.sh
 	tests/fixtures/build/**
-	tests/build/add-by-hash.test.sh
 
 tests/build/add-by-hash/add-by-hash-apt.test.sh
 	scripts/build/add-by-hash.sh
@@ -184,25 +183,18 @@ tests/verify/verify-installers.test.sh
 # the script and this suite can change its verdict.
 tests/verify/reference-installers.test.sh
 	scripts/verify/reference-installers.sh
-	tests/verify/reference-installers.test.sh
 
 tests/ci/policy/roster-releases-workflow.test.sh
 	.github/workflows/roster-releases.yml
 
 tests/ci/policy/workflows-run-their-scripts.test.sh
-	.github/workflows/drift.yml
-	.github/workflows/freshness.yml
-	.github/workflows/health-check.yml
-	.github/workflows/publish.yml
-	.github/workflows/roster-releases.yml
+	.github/workflows/**
 
 tests/verify/roster-has-releases.test.sh
 	scripts/verify/roster-has-releases.sh
-	tests/verify/roster-has-releases.test.sh
 
 tests/verify/published-roster.test.sh
 	scripts/verify/published-roster.sh
-	tests/verify/published-roster.test.sh
 	.github/workflows/health-check.yml
 	.github/workflows/publish.yml
 
@@ -244,7 +236,6 @@ tests/verify/verify-debs-same-bytes.test.sh
 tests/verify/verify-debs-mldsa.test.sh
 	scripts/verify/verify-debs.sh
 	scripts/verify/verify-debs-requirements.txt
-	tests/verify/verify-debs-mldsa.test.sh
 	tests/fixtures/verify-debs/**
 	keyring/**
 	.github/workflows/tests.yml
@@ -325,7 +316,6 @@ tests/keyring/keyring-fingerprints.test.sh
 
 tests/keyring/readme-fingerprint-form.test.sh
 	keyring/glyndor-apt-key.asc
-	tests/keyring/readme-fingerprint-form.test.sh
 	README.md
 
 # --- the installer ------------------------------------------------------------
@@ -532,7 +522,6 @@ tests/ci/policy/network-calls-are-bounded.test.sh
 
 tests/ci/policy/workflow-network-calls-are-bounded.test.sh
 	.github/workflows/**
-	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
 
 # The kill is looked for wherever a cleanup can call it.
 tests/ci/policy/gpgconf-kill-is-bounded.test.sh
@@ -562,9 +551,7 @@ tests/ci/policy/cancel-policy.test.sh
 # the filter has to name are the inputs.
 
 tests/ci/policy/freshness-pr-scope.test.sh
-	.github/workflows/freshness.yml
-	.github/workflows/reusable-dependabot-freshness.yml
-	.github/workflows/reusable-schedule-freshness.yml
+	.github/workflows/**
 
 # Every scheduled workflow, and the freshness jobs that watch them.
 
@@ -711,7 +698,6 @@ tests/ci/suites/mldsa-job-scope.test.sh
 	scripts/quality/scope/suite-scope.txt
 	scripts/verify/**
 	.github/workflows/tests.yml
-	tests/ci/suites/mldsa-job-scope.test.sh
 	tests/verify/verify-debs-mldsa.test.sh
 
 # The drift check compares the seven reusables of this repository against the
@@ -766,7 +752,6 @@ tests/ci/policy/commit-hygiene-base-rule.test.sh
 	.github/workflows/commit-hygiene.yml
 	scripts/quality/hygiene/check-commit-identity.sh
 	scripts/quality/hygiene/check-secrets.sh
-	tests/ci/policy/commit-hygiene-base-rule.test.sh
 
 tests/quality/hygiene/check-commit-identity.test.sh
 	scripts/quality/hygiene/check-commit-identity.sh
@@ -800,7 +785,6 @@ tests/quality/scope/ci-job-scope-packages.test.sh
 	tests/quality/**
 
 tests/quality/scope/suite-scope-map.test.sh
-	scripts/quality/scope/suite-scope.txt
 	.github/workflows/**
 	tests/**
 	scripts/**
@@ -834,34 +818,28 @@ tests/quality/coverage/check-mutation-coverage.test.sh
 	tests/mutation/catalog.txt
 	tests/mutation/catalog.d/**
 	tests/mutation/exemptions.txt
-	tests/quality/coverage/check-mutation-coverage.test.sh
 	.github/workflows/**
 
 # The same check over the run: blocks of every workflow, and over this
 # repository, so a change to any workflow selects it.
 tests/quality/coverage/check-mutation-coverage-workflows.test.sh
-	scripts/quality/coverage/check-mutation-coverage.sh
 	scripts/**
 	keyring/upgrade/**
 	.github/workflows/**
 	tests/mutation/catalog.txt
 	tests/mutation/catalog.d/**
 	tests/mutation/exemptions.txt
-	tests/quality/coverage/check-mutation-coverage-workflows.test.sh
 
 # The decider calls the suite resolver, so a change to either can change it.
 tests/quality/scope/mutation-scope.test.sh
 	scripts/quality/scope/mutation-scope.sh
 	scripts/quality/scope/ci-job-scope.sh
-	tests/quality/scope/mutation-scope.test.sh
 
 tests/ci/policy/mutation-workflow.test.sh
 	.github/workflows/mutation.yml
-	tests/ci/policy/mutation-workflow.test.sh
 
 # The suite reads the workflows whose calls it pins.
 
 tests/ci/policy/workflow-calls-are-exact.test.sh
 	.github/workflows/freshness.yml
 	.github/workflows/commit-hygiene.yml
-	tests/ci/policy/workflow-calls-are-exact.test.sh
