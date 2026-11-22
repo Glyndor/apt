@@ -152,10 +152,25 @@ for entry in "${patterns[@]}"; do
 	[ -z "$hits" ] || report "$name" "$hits"
 done
 
-# A credential with a format of its own is caught by the name it is assigned to.
+# A credential with a format of its own is caught by the name it is assigned to. What
+# excuses a match is read from the part it concerns: the words of a sample value
+# (example, placeholder, fake...) in the value alone, as whole words, and the suffix of
+# a name that points at something else (a path, a file, a variable) in the name alone.
+# A comment that says "example" or a name that does, next to a real key, excuses nothing.
 generic='(token|secret|passw(or)?d|api[_-]?key|private[_-]?key|signing[_-]?key|access[_-]?key|ed25519[_-]?key|ml[_-]?dsa[_-]?(44|65|87)?[_-]?key|credential)[a-z0-9_]*["'"'"']?[ \t]*[:=][ \t]*["'"'"']?[a-z0-9+/_=-]{32,}'
-skip='_(file|path|dir|url|name|env|var)[a-z0-9_]*["'"'"']?[ \t]*[:=]|secrets\.|\$\{|\$\(|example|placeholder|dummy|fake|fixture|changeme|redacted|your|<[a-z_-]+>'
-hits="$(grep -aniE -- "$generic" "$work/texts" | grep -aviE -- "$skip" | cut -d: -f1 | locate || true)"
+hits="$(grep -anoiE -- "$generic" "$work/texts" | awk -v sq="'" '
+	{
+		n = substr($0, 1, index($0, ":") - 1)
+		assign = substr($0, index($0, ":") + 1)
+		i = match(assign, /[:=]/)
+		name = tolower(substr(assign, 1, i))
+		value = tolower(substr(assign, i + 1))
+		sub(/^[ \t]*/, "", value)
+		if (substr(value, 1, 1) == "\"" || substr(value, 1, 1) == sq) value = substr(value, 2)
+		if (name ~ /_(file|path|dir|url|name|env|var)[a-z0-9_]*[^a-z0-9_]*$/) next
+		if (value ~ /(^|[^a-z0-9])(example|placeholder|dummy|fake|fixture|changeme|redacted|your)([^a-z0-9]|$)/) next
+		print n
+	}' | sort -un | locate || true)"
 [ -z "$hits" ] || report "long value assigned to a secret-like name" "$hits"
 
 if [ "$bad" -ne 0 ]; then

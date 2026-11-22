@@ -79,6 +79,23 @@ check "a variable that names a file or a path passes" 0 "$?"
 out="$(scan "api_key = \"your-$(rep x 40)\"")"
 check "a placeholder passes" 0 "$?"
 
+# The words of a sample value excuse a value that is one, and nothing near it: they are
+# read from the value alone, as whole words.
+flag "a key that starts with a sample word and goes on" "GLYNDOR_RELEASE_ED25519_KEY=example$(rep A 40)=" "secret-like name"
+flag "a real key followed by a comment that says example" "release_secret = \"$(rep c 40)\" # example" "secret-like name"
+flag "a real key whose name says example" "example_release_secret = \"$(rep c 40)\"" "secret-like name"
+flag "a base64 value that holds fake between letters" "signing_key = \"$(rep c 20)fake$(rep d 20)\"" "secret-like name"
+flag "a base64 value that holds fake after letters and before a dash" "signing_key = \"$(rep c 20)fake-$(rep d 20)\"" "secret-like name"
+flag "a real key whose name goes on with a sample word" "signing_key_fake = \"$(rep c 40)\"" "secret-like name"
+out="$(scan "api_key = \"your-api-key-here-$(rep x 20)\"")"
+check "a value that starts with the word your is a sample" 0 "$?"
+out="$(scan "GLYNDOR_RELEASE_ED25519_KEY=placeholder_$(rep x 40)")"
+check "a value that starts with the word placeholder is a sample" 0 "$?"
+out="$(scan "release_secret = \"fake-$(rep x 40)\"")"
+check "a value with the word fake before a dash is a sample" 0 "$?"
+out="$(scan "release_secret_path = \"$(rep x 40)\"")"
+check "a name that ends in path is not a secret" 0 "$?"
+
 # A secret that was already in the base is not a reason to fail this change.
 printf 'old_token = "%s"\n' "$(rep z 40)" > "$repo/old.txt"; gitc add -A; gitc commit -q -m "old"
 base2="$(git -C "$repo" rev-parse HEAD)"

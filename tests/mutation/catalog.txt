@@ -302,9 +302,12 @@ check-secrets-a-path-is-literal	scripts/quality/hygiene/check-secrets.sh	git --l
 check-secrets-no-list-excuses-no-path	scripts/quality/hygiene/check-secrets.sh	[ "${#allow_args[@]}" -gt 0 ] || return 1	true	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-a-diff-of-one-file-that-cannot-be-read-fails	scripts/quality/hygiene/check-secrets.sh	|| { echo "::error::could not diff $path" >&2; exit 1; }	|| true	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-a-size-that-cannot-be-read-fails	scripts/quality/hygiene/check-secrets.sh	|| { echo "::error::could not read the size of $path" >&2; exit 1; }	|| true	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-the-generic-rule-reads-the-text-alone	scripts/quality/hygiene/check-secrets.sh	grep -aniE -- "$generic" "$work/texts"	grep -aniE -- "$generic" "$work/added"	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-the-marker-is-read-from-the-text-alone	scripts/quality/hygiene/check-secrets.sh	if (index(text, "secret-scan:allow") == 0)	if (index(file text, "secret-scan:allow") == 0)	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-a-line-of-text-does-not-name-a-file	scripts/quality/hygiene/check-secrets.sh	inhunk && /^\+/ {	/^\+\+\+ / { file = substr($0, 7) } inhunk && /^\+/ {	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-sample-word-is-read-from-the-value-alone	scripts/quality/hygiene/check-secrets.sh	value = tolower(substr(assign, i + 1))	value = tolower(assign)	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-sample-word-starts-at-a-boundary	scripts/quality/hygiene/check-secrets.sh	(^|[^a-z0-9])(example	(example	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-sample-word-ends-at-a-boundary	scripts/quality/hygiene/check-secrets.sh	|your)([^a-z0-9]|$)	|your)	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-name-that-points-elsewhere-is-excused	scripts/quality/hygiene/check-secrets.sh	if (name ~ /_(file|path|dir|url|name|env|var)[a-z0-9_]*[^a-z0-9_]*$/) next	if (0) next	tests/quality/hygiene/check-secrets.test.sh
 check-suites-wired-if-errors-sys-exit-1	scripts/quality/coverage/check-suites-wired.sh	if errors:	if False:	tests/quality/coverage/check-suites-wired.test.sh
 check-test-coverage-missing-script-have-no-test	scripts/quality/coverage/check-test-coverage.sh	if [ ${#missing[@]} -gt 0 ]; then	if false; then	tests/quality/coverage/check-test-coverage.test.sh
 check-test-coverage-no-scripts-directory-under-root	scripts/quality/coverage/check-test-coverage.sh	[ -d "$root/scripts" ] || { echo "no scripts/ directory under $root" >&2; exit 1; }	[ -d "$root/scripts" ] || true || { echo "no scripts/ directory under $root" >&2; exit 1; }	tests/quality/coverage/check-test-coverage.test.sh
