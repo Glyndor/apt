@@ -236,6 +236,7 @@ tests/verify/verify-debs-same-bytes.test.sh
 tests/verify/verify-debs-mldsa.test.sh
 	scripts/verify/verify-debs.sh
 	scripts/verify/verify-debs-requirements.txt
+	tests/verify/verify-debs-mldsa.test.sh
 	tests/fixtures/verify-debs/**
 	keyring/**
 	.github/workflows/tests.yml
