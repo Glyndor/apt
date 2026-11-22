@@ -52,6 +52,21 @@
 #     and nothing else: the reusable turns it into a regular expression, so a
 #     new line, a tab, a `|` or a bracket would mean to it something the rule
 #     does not read.
+#   - a condition that reads `steps.<id>.outputs` or `needs.<job>.outputs`
+#     when the step or job that writes them differs from the base commit's in
+#     what it runs or passes (`run:`, `env:`, `with:`, `uses:`, `outputs:`), is
+#     new in the pull request, or does not exist. A condition on an output is
+#     only as sound as what writes it: a scope step that always writes
+#     `needed=false` skips the check through a form the lists accept. Without a
+#     base commit (a push, a schedule) nothing is compared; a base that is named
+#     and cannot be read stops the rule. A producer is changed on purpose in two
+#     pull requests: the first lists it in PRODUCERS_MAY_CHANGE, the second
+#     changes it and removes the entry, since the base copy judges each.
+#   - `skip-suite-paths` of reusable-shell-ci.yml, which decides what counts as
+#     documentation only and so when `shell / test` is skipped, with the same
+#     care as `extensions`: words of paths or globs that name a file, not
+#     `*`, `**` or any pattern that holds no letter or digit (it would match
+#     every file), and no word the callers of the base commit do not pass.
 #   - for a caller of reusable-shell-ci.yml, a test-command whose first
 #     non-blank token is not a suite invocation.
 #     The accepted grammar is a list of `./tests/<name>.test.sh` or
@@ -257,6 +272,21 @@ KEEP_BASE_WORDS = (("reusable-line-limit.yml", "extensions"),)
 # or `[` would mean something else to it than to the rule that compares words.
 WORD_LIST_RE = re.compile(r"[a-z0-9]+( [a-z0-9]+)*")
 
+# The inputs that are a list of paths or globs a caller may take from and may
+# not add to, as (reusable, input): the words of the base commit are the most it
+# may pass. The reusable splits the value on whitespace with globbing off and
+# matches every changed file against each word with `[[ == ]]`, so a word is
+# made of the characters of a path and `*`, and one with no letter or digit
+# (`*`, `**`, `*.*`) matches every file.
+CAP_BASE_WORDS = (("reusable-shell-ci.yml", "skip-suite-paths"),)
+PATH_WORD_RE = re.compile(r"[A-Za-z0-9_./*-]*[A-Za-z0-9_][A-Za-z0-9_./*-]*")
+
+# What a condition may read: the output of a step of its job or of a job of its
+# file. The producers a pull request may change on purpose, as
+# (workflow file, step id or job id) pairs; see the header.
+PRODUCER_REF = re.compile(r"\b(steps|needs)\.([A-Za-z0-9_-]+)\.outputs\b")
+PRODUCERS_MAY_CHANGE = ()
+
 # A single suite invocation, as the grammar accepts it: the path
 # alone, or `bash` in front of it. Names are constrained to what
 # the shell treats as ordinary characters, so `./tests/a-b_c.test.sh`
@@ -298,9 +328,9 @@ def normalize(value):
     return " ".join(value.split())
 
 
+# Return None on success, else a refusal message that already
+# names the file and the job.
 def check_test_command(cmd, path, job_id):
-    """Return None on success, else a refusal message that already
-    names the file and the job."""
     if OR_TRUE_RE.search(cmd):
         return (
             f"job `{job_id}` in {path} has `|| true` in its "
@@ -372,33 +402,39 @@ def workflow_files():
     ))
 
 
-def base_words(reusable, name):
-    """The words every caller of `reusable` in the base commit passes as
-    `name`, or None when no base commit is named (a push, a schedule, a run by
-    hand). A base that is named and cannot be read stops the rule: a floor
-    that cannot be read is not one the pull request has met."""
+# The commit the event names, "" when none (a push, a schedule, a run by
+# hand).
+def base_sha():
     base = os.environ.get("BASE_SHA", "")
-    if not base:
-        return None
-
-    def git(*args):
-        done = subprocess.run(
-            ["git", *args], capture_output=True, text=True, check=False
-        )
-        if done.returncode != 0:
-            print(f"::error::BASE_SHA {base} cannot be read: {' '.join(args)} failed")
-            sys.exit(1)
-        return done.stdout
-
-    if not re.fullmatch(r"[0-9a-f]{40}", base):
+    if base and not re.fullmatch(r"[0-9a-f]{40}", base):
         print(f"::error::BASE_SHA {base!r} is not a commit id")
         sys.exit(1)
+    return base
+
+
+# What git prints for the base commit. A base that is named and cannot be
+# read stops the rule: a floor that cannot be read is not one the pull
+# request has met.
+def base_git(base, *args):
+    done = subprocess.run(["git", *args], capture_output=True, text=True, check=False)
+    if done.returncode != 0:
+        print(f"::error::BASE_SHA {base} cannot be read: {' '.join(args)} failed")
+        sys.exit(1)
+    return done.stdout
+
+
+# The words every caller of `reusable` in the base commit passes as
+# `name`, or None when no base commit is named.
+def base_words(reusable, name):
+    base = base_sha()
+    if not base:
+        return None
     words = set()
-    for path in git("ls-tree", "-r", "--name-only", base, "--", ".github/workflows").split("\n"):
+    for path in base_git(base, "ls-tree", "-r", "--name-only", base, "--", ".github/workflows").split("\n"):
         if not path.endswith((".yml", ".yaml")) or os.path.basename(path).startswith("reusable-"):
             continue
         try:
-            spec = yaml.safe_load(git("show", f"{base}:{path}"))
+            spec = yaml.safe_load(base_git(base, "show", f"{base}:{path}"))
         except yaml.YAMLError:
             continue
         for job in ((spec or {}).get("jobs") or {}).values() if isinstance(spec, dict) else ():
@@ -411,8 +447,71 @@ def base_words(reusable, name):
     return words
 
 
+def steps_of(job):
+    steps = job.get("steps") if isinstance(job, dict) else None
+    return [s for s in steps if isinstance(s, dict)] if isinstance(steps, list) else []
+
+
+def pin_step(step):
+    pin = {k: step.get(k) for k in ("run", "env", "shell", "working-directory", "with")}
+    pin["uses"] = str(step.get("uses") or "").split("@")[0]  # a bump of the pin is not a change
+    return pin
+
+
+def pin_job(job):
+    pin = {k: job.get(k) for k in ("outputs", "uses", "with")}
+    pin["steps"] = [pin_step(s) for s in steps_of(job)]
+    return pin
+
+
+# The jobs of the workflow as the base commit has it; none when the file is
+# not there or does not parse.
+def base_jobs(base, path):
+    if not base_git(base, "ls-tree", "--name-only", base, "--", path).strip():
+        return {}
+    try:
+        spec = yaml.safe_load(base_git(base, "show", f"{base}:{path}"))
+    except yaml.YAMLError:
+        spec = None
+    jobs = spec.get("jobs") if isinstance(spec, dict) else None
+    return jobs if isinstance(jobs, dict) else {}
+
+
+# The refusals of the producers that a condition of the file reads.
+def producer_refusals(base, path, jobs):
+    old_jobs = base_jobs(base, path)
+    found = []
+    for job_id, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        steps = steps_of(job)
+        reads = {
+            ref for cond in [job.get("if")] + [s.get("if") for s in steps]
+            for ref in PRODUCER_REF.findall(str(cond))
+        }
+        for kind, ident in sorted(reads):
+            if kind == "steps":
+                what, now, before, pin = f"step `{ident}` of job `{job_id}`", [s for s in steps if s.get("id") == ident], [s for s in steps_of(old_jobs.get(job_id)) if s.get("id") == ident], pin_step
+            else:
+                what, now, before, pin = f"job `{ident}`", [jobs.get(ident)], [old_jobs.get(ident)], pin_job
+            now, before = (x[0] if x and isinstance(x[0], dict) else None for x in (now, before))
+            if now is None:
+                found.append(f"job `{job_id}` in {path} reads `{kind}.{ident}.outputs`, which nothing in the file writes.")
+            elif before is None:
+                found.append(f"{what} in {path} writes outputs a condition reads and is new in this pull request, so the base commit cannot vouch for it.")
+            elif pin(now) != pin(before) and (path, ident) not in PRODUCERS_MAY_CHANGE:
+                found.append(
+                    f"{what} in {path} writes outputs a condition reads, and what it runs or passes "
+                    "differs from the base commit's. A condition on an output is only as sound as "
+                    "what writes it, so a pull request cannot change both. To change it on purpose, "
+                    f"list (`{path}`, `{ident}`) in PRODUCERS_MAY_CHANGE of this script in a pull "
+                    "request of its own, then change it in the next and delete the entry."
+                )
+    return found
+
+
+# The refusals of what the job passes to the reusable: one per input.
 def refused_inputs(job, reusable, path, job_id):
-    """The refusals of what the job passes to the reusable: one per input."""
     given = job.get("with")
     if given is None:
         given = {}
@@ -432,6 +531,31 @@ def refused_inputs(job, reusable, path, job_id):
             "reusable defines, and nothing else reads its value. Delete it; "
             "to admit one, list it in ALLOWED_INPUTS of this script."
         )
+    for capped, name in CAP_BASE_WORDS:
+        if capped != reusable or name not in given:
+            continue
+        value = given[name]
+        words = value.split() if isinstance(value, str) else None
+        odd = [repr(value)] if words is None else [w for w in words if not PATH_WORD_RE.fullmatch(w)]
+        if odd:
+            found.append(
+                f"job `{job_id}` in {path} passes the input `{name}` to `{reusable}` "
+                f"with {', '.join(f'`{w}`' for w in odd)}, which is not a path or a glob "
+                "that names a file: it is words of letters, digits and `_./-*`, and a "
+                "word holds at least one letter or digit, since `*`, `**` and `*.*` "
+                "match every file and the suite would be skipped for all of them."
+            )
+            continue
+        ceiling = base_words(reusable, name)
+        extra = [] if ceiling is None else sorted(set(words) - ceiling)
+        if extra:
+            found.append(
+                f"job `{job_id}` in {path} passes the input `{name}` to `{reusable}` "
+                f"with {', '.join(f'`{w}`' for w in extra)}, which the callers of the "
+                "base commit do not pass. A caller may take from the list and may not "
+                "add to it: a path listed is a path whose change skips the suite. To "
+                "widen it on purpose, take the check apart in a pull request of its own first."
+            )
     for kept_reusable, name in KEEP_BASE_WORDS:
         if kept_reusable != reusable:
             continue
@@ -463,9 +587,9 @@ def refused_inputs(job, reusable, path, job_id):
     return found
 
 
+# The refusal of the first switch the job carries, or None. `reusable` is
+# the local reusable the job calls, None for a job that runs steps.
 def job_switch(path, job_id, job, reusable):
-    """The refusal of the first switch the job carries, or None. `reusable` is
-    the local reusable the job calls, None for a job that runs steps."""
     forms = CONDITIONAL_JOBS.get((path, job_id, reusable), [])
     if isinstance(forms, dict):
         forms = [forms]
@@ -509,9 +633,9 @@ def job_switch(path, job_id, job, reusable):
     return None
 
 
+# The refusals of the steps of a job: a condition its entry of
+# STEP_CONDITIONS does not list, and any `continue-on-error:`.
 def step_switches(path, job_id, job):
-    """The refusals of the steps of a job: a condition its entry of
-    STEP_CONDITIONS does not list, and any `continue-on-error:`."""
     forms = STEP_CONDITIONS.get((path, job_id), ())
     steps = job.get("steps")
     found = []
@@ -544,6 +668,7 @@ def main():
 
     callers = 0
     violations = []
+    base = base_sha()
 
     for path in files:
         try:
@@ -560,6 +685,8 @@ def main():
         jobs = spec.get("jobs") or {}
         if not isinstance(jobs, dict):
             continue
+        if base:
+            violations.extend((path, "", msg) for msg in producer_refusals(base, path, jobs))
         for job_id, job in jobs.items():
             if not isinstance(job, dict):
                 continue

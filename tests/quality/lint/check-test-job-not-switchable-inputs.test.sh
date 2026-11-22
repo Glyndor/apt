@@ -318,6 +318,66 @@ LIST
 rm -f "$G/.github/workflows/reusable-wrapper.yml"
 floor "a base file of a reusable asks for no extension of a caller" 0 line-limit.yml line-limit "sh"
 
+# --- skip-suite-paths: paths that name a file, and no more than the base's --------
+#
+# The list decides which changes count as documentation only, and so when
+# `shell / test` is skipped. The reusable splits it on whitespace with globbing
+# off and matches every changed file against each word, so a word that matches
+# every file skips the suite for all of them.
+shell_caller() { # $1=dir $2=the value of skip-suite-paths, written as YAML
+	{
+		printf 'name: Tests\non: pull_request\njobs:\n  shell:\n'
+		printf '    uses: ./.github/workflows/reusable-shell-ci.yml\n    with:\n'
+		printf '      test-command: ./tests/one.test.sh\n'
+		[ -z "$2" ] || printf '      skip-suite-paths: %s\n' "$2"
+	} > "$1/.github/workflows/tests.yml"
+}
+said_fixed() { printf '%s' "$1" | grep -q -F -- "$2" && echo 1 || echo 0; }
+skip() { # $1=what $2=expected status $3=YAML value; the tree of the last base_shell
+	shell_caller "$G" "$3"
+	out="$(run_base "$G" "$BASE")"; rc=$?
+	check "$1" "$2" "$rc"
+}
+refused_word() { # $1=the word the message names
+	check "and the message names $1 and the input" "1" \
+		"$(said_fixed "$out" "passes the input \`skip-suite-paths\` to \`reusable-shell-ci.yml\` with \`$1\`")"
+}
+base_shell() { # $1=the value the base caller passes ("" for none)
+	rm -rf "$G"; mkdir -p "$G/.github/workflows"; gitg init -q -b main
+	shell_caller "$G" "$1"
+	gitg add -A; gitg commit -qm base; BASE="$(gitg rev-parse HEAD)"
+}
+
+base_shell '"docs/** README.md"'
+skip "the paths of the base are accepted" 0 '"docs/** README.md"'
+skip "the same paths in another order are accepted" 0 '"README.md docs/**"'
+skip "a path taken from the base's is accepted" 0 '"docs/**"'
+skip "no paths at all is accepted" 0 ''
+skip "an empty list is accepted" 0 '""'
+skip "a path added to the base's is refused" 1 '"docs/** README.md CONTRIBUTING.md"'
+refused_word 'CONTRIBUTING.md'
+check "and it says the callers of the base commit do not pass it" "1" "$(said_fixed "$out" 'which the callers of the base commit do not pass')"
+base_shell ''
+skip "a list added where the base had none is refused" 1 '"docs/**"'
+refused_word 'docs/**'
+shell_caller "$G" '"docs/**"'
+out="$(run_in "$G")"; rc=$?
+check "the same list with no base commit named is accepted" "0" "$rc"
+
+for bad in '"*"' '"**"' '"*.*"' '"docs/** *"' '"**/*"' '"docs/[a-z]*"' '"a?b"' '"docs/**|x"' '${{ vars.SKIP }}' '5' '"docs/**;x"'; do
+	shell_caller "$G" "$bad"
+	out="$(run_in "$G")"; rc=$?
+	check "the list $bad is refused with no base commit named" "1" "$rc"
+	check "and it is refused for what it holds, not for a base" "1" \
+		"$(said_fixed "$out" 'is not a path or a glob that names a file')"
+done
+shell_caller "$G" '"docs/** README.md **/x.md src/a-b_c.d/*"'
+out="$(run_in "$G")"; rc=$?
+check "paths and globs made of letters, digits and _./-* are accepted" "0" "$rc"
+shell_caller "$G" '"docs/**"'
+out="$(run_in "$G")"; rc=$?
+check "and so is one glob" "0" "$rc"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

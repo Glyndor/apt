@@ -219,6 +219,26 @@ check "the same job and condition in another file is refused" "1" "$rc"
 check "and it is refused for the if:, naming that file" "1" \
 	"$(said "$out" 'job `empty-diff` in .github/workflows/renamed.yml carries a job-level `if:`')"
 
+# A form lists the keys it allows and no others: a key the form lacks is
+# refused even when it has no value, which YAML reads as null and which equals
+# the null of a key that is not there.
+d="$(new)"; sound "$d"; printf -v body "$EMPTY" empty-diff "$PR"; body="${body/runs-on:/needs:
+    runs-on:}"; workflow "$d" reusable-empty-diff.yml "$body"
+out="$(run_in "$d")"; rc=$?
+check "the empty diff job with a needs: with no value is refused" "1" "$rc"
+check "and it is refused for the needs:" "1" \
+	"$(said "$out" 'job `empty-diff` in .github/workflows/reusable-empty-diff.yml carries `needs:`')"
+
+UPDATE=$'name: Update\non: schedule\njobs:\n  render:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  validate:\n    needs: render\n%s    runs-on: ubuntu-latest\n    steps:\n      - run: true\n'
+d="$(new)"; sound "$d"; printf -v body "$UPDATE" ''; workflow "$d" update.yml "$body"
+out="$(run_in "$d")"; rc=$?
+check "a job that waits for the job it is listed to wait for is accepted" "0" "$rc"
+d="$(new)"; sound "$d"; printf -v body "$UPDATE" $'    if:\n'; workflow "$d" update.yml "$body"
+out="$(run_in "$d")"; rc=$?
+check "the same job with an if: with no value is refused" "1" "$rc"
+check "and it is refused for the if:" "1" \
+	"$(said "$out" 'job `validate` in .github/workflows/update.yml carries a job-level `if:`')"
+
 # The condition of the job that runs the tests is the one it has, and a caller
 # of the reusable keeps no way to make it skip.
 d="$(new)"; sound "$d"
@@ -262,6 +282,114 @@ out="$(run_in "$d")"; rc=$?
 check "a condition another job may carry, on a step of a job that may not, is refused" "1" "$rc"
 check "and it is refused for the if:, naming the job" "1" \
 	"$(said "$out" 'step `Compare with the generator` of job `compare` in .github/workflows/direct.yml carries an `if:`')"
+
+# ===========================================================================
+# What a condition reads is held to the base commit
+# ===========================================================================
+#
+# A form the lists accept (`steps.scope.outputs.needed != 'false'`) is only as
+# sound as the step that writes the output. A pull request that makes that step
+# write `false` skips the check through an accepted form, so the step is held to
+# the base commit: what it runs, passes and writes may not differ from there.
+
+G="$WORK/g"
+gitg() { git -C "$G" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "$@"; }
+run_base() { ( cd "$1" && BASE_SHA="$2" bash "${3:-$SCRIPT}" 2>&1 ); }
+
+# A job with a step that writes an output and a job that reads it, as
+# freshness.yml has them: the lists name both.
+SCOPE_FILE=$'name: Freshness\non: pull_request\njobs:\n  scope:\n    if: github.event_name == \'pull_request\'\n    runs-on: ubuntu-latest\n    outputs:\n      suite: ${{ steps.scope.outputs.suite }}\n    steps:\n      - uses: actions/checkout@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa # v1\n      - id: scope\n        run: echo "suite=true" >> "$GITHUB_OUTPUT"\n  suite-on-main:\n    needs: scope\n    if: ${{ !cancelled() && needs.scope.outputs.suite != \'false\' }}\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n'
+base_repo() { # the real callers and reusables, and the file above, as the base commit
+	rm -rf "$G"; mkdir -p "$G/.github/workflows"; gitg init -q -b main
+	cp "$HERE"/.github/workflows/*.yml "$G/.github/workflows/"
+	printf '%s' "$SCOPE_FILE" > "$G/.github/workflows/freshness.yml"
+	gitg add -A; gitg commit -qm base; BASE="$(gitg rev-parse HEAD)"
+}
+# The pull request changes a step or a job of a workflow the way the expression says.
+# `doc` is the parsed file, `job` the named job: change it in place.
+change() { # $1=file $2=python statements acting on doc
+	python3 -I - "$G/.github/workflows/$1" "$2" <<'PY'
+import sys, yaml
+doc = yaml.safe_load(open(sys.argv[1]))
+exec(sys.argv[2])
+yaml.safe_dump(doc, open(sys.argv[1], "w"))
+PY
+}
+verdict() { # $1=description $2=expected status
+	out="$(run_base "$G" "$BASE")"; rc=$?
+	check "$1" "$2" "$rc"
+}
+SHELL_CI=reusable-shell-ci.yml
+SCOPE_STEP='[s for s in doc["jobs"]["test"]["steps"] if s.get("id") == "scope"][0]'
+
+base_repo
+verdict "the producers as the base has them are accepted" 0
+change "$SHELL_CI" "doc['jobs']['test']['name'] = 'renamed'"
+verdict "a pull request that rewrites the file without changing a producer is accepted" 0
+
+change "$SHELL_CI" "s = $SCOPE_STEP; s['run'] += chr(10) + 'echo docs_only=true >> \"\$GITHUB_OUTPUT\"'"
+verdict "the scope step that always writes docs_only=true is refused" 1
+check "and the refusal names the file, the job and the step" "1" \
+	"$(said "$out" 'step `scope` of job `test` in .github/workflows/reusable-shell-ci.yml writes outputs a condition reads')"
+check "and says how to change a producer on purpose" "1" "$(said "$out" 'PRODUCERS_MAY_CHANGE of this script')"
+out="$(cd "$G" && env -u BASE_SHA bash "$SCRIPT" 2>&1)"; rc=$?
+check "the same change with no base commit named is not compared" "0" "$rc"
+
+# The same change on a copy of the rule that lists the step: the two-step way.
+sed 's|^PRODUCERS_MAY_CHANGE = ()|PRODUCERS_MAY_CHANGE = ((".github/workflows/reusable-shell-ci.yml", "scope"),)|' "$SCRIPT" > "$WORK/listed.sh"
+out="$(run_base "$G" "$BASE" "$WORK/listed.sh")"; rc=$?
+check "the change is accepted once a pull request of its own has listed the step" "0" "$rc"
+
+base_repo
+change "$SHELL_CI" "s = $SCOPE_STEP; s['env']['SKIP_PATHS'] = 'docs/**'"
+verdict "the scope step with another env is refused" 1
+check "and it is refused as a producer that differs" "1" "$(said "$out" 'differs from the base commit')"
+
+base_repo
+change "$SHELL_CI" "s = $SCOPE_STEP; del s['id']"
+verdict "a step that stopped writing the output a condition reads is refused" 1
+check "and the refusal says nothing writes it, naming the job" "1" \
+	"$(said "$out" 'job `test` in .github/workflows/reusable-shell-ci.yml reads `steps.scope.outputs`, which nothing in the file writes')"
+
+base_repo
+change freshness.yml "doc['jobs']['scope']['steps'][1]['run'] = 'echo \"suite=false\" >> \"\$GITHUB_OUTPUT\"'"
+verdict "the scope job that writes suite=false is refused" 1
+check "and the refusal names the file and the job" "1" \
+	"$(said "$out" 'job `scope` in .github/workflows/freshness.yml writes outputs a condition reads')"
+
+base_repo
+change freshness.yml "doc['jobs']['scope']['outputs']['suite'] = 'false'"
+verdict "the scope job whose output is a constant is refused" 1
+check "and the refusal names the job" "1" "$(said "$out" 'job `scope` in .github/workflows/freshness.yml')"
+
+base_repo
+change freshness.yml "doc['jobs']['scope']['steps'][0]['uses'] = 'actions/checkout@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'"
+verdict "a bump of the pin of an action in the producer is accepted" 0
+
+base_repo
+change freshness.yml "doc['jobs']['scope']['steps'][0]['with'] = {'fetch-depth': 0}"
+verdict "an argument of an action in the producer changed is refused" 1
+
+base_repo
+rm "$G/.github/workflows/freshness.yml"; gitg add -A; gitg commit -qm 'without it'; BASE="$(gitg rev-parse HEAD)"
+printf '%s' "$SCOPE_FILE" > "$G/.github/workflows/freshness.yml"
+verdict "a producer and its reader that both arrive in the pull request are refused" 1
+check "and the refusal says the base cannot vouch for it" "1" "$(said "$out" 'is new in this pull request')"
+
+base_repo
+printf 'jobs: [\n' > "$G/.github/workflows/freshness.yml"; gitg add -A; gitg commit -qm 'broken'; BASE="$(gitg rev-parse HEAD)"
+printf '%s' "$SCOPE_FILE" > "$G/.github/workflows/freshness.yml"
+verdict "a producer whose file the base commit cannot parse is refused" 1
+check "and the refusal says the base cannot vouch for it" "1" "$(said "$out" 'is new in this pull request')"
+
+base_repo
+change freshness.yml "del doc['jobs']['scope']"
+verdict "a reader whose producer was deleted is refused" 1
+check "and the refusal says nothing writes the output" "1" "$(said "$out" 'reads `needs.scope.outputs`, which nothing in the file writes')"
+
+out="$(run_base "$G" 0000000000000000000000000000000000000000)"; rc=$?
+check "a base that is named and cannot be read stops the rule" "1" "$rc"
+check "and says so" "1" "$(said "$out" 'cannot be read')"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
