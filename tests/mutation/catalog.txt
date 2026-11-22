@@ -152,8 +152,26 @@ quality-test-coverage	scripts/quality/coverage/check-test-coverage.sh	[ -f "$roo
 suites-wired-watcher-dropped	.github/workflows/tests.yml	./tests/ci/suites/ci-runs-every-test.test.sh	./tests/quality/coverage/check-test-coverage.test.sh	tests/quality/coverage/check-suites-wired.test.sh
 suites-wired-unwired	scripts/quality/coverage/check-suites-wired.sh	for path in sorted(suites - wired - set(exempt)):	for path in []:	tests/quality/coverage/check-suites-wired.test.sh
 suites-wired-needs	scripts/quality/coverage/check-suites-wired.sh	                    if "needs" in job else "") \	                    if False else "") \	tests/quality/coverage/check-suites-wired.test.sh
-lint-caller-needs	scripts/quality/lint/check-test-job-not-switchable.sh	            if "needs" in job:	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-caller-continue	scripts/quality/lint/check-test-job-not-switchable.sh	            if "continue-on-error" in job:	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-caller-if	scripts/quality/lint/check-test-job-not-switchable.sh	            if "if" in job and job["if"] != allowed.get("if"):	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-caller-needs	scripts/quality/lint/check-test-job-not-switchable.sh	            if "needs" in job and job["needs"] != allowed.get("needs"):	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-caller-all-reusables	scripts/quality/lint/check-test-job-not-switchable.sh	            if local is None:	            if local is None or local.group(1) != REUSABLE:	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-caller-grammar-only-shell	scripts/quality/lint/check-test-job-not-switchable.sh	            if reusable != REUSABLE:	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-caller-count-shell	scripts/quality/lint/check-test-job-not-switchable.sh	                callers += 1	                callers += 0	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-if-exact	scripts/quality/lint/check-test-job-not-switchable.sh	job["if"] != allowed.get("if")	not allowed	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-needs-exact	scripts/quality/lint/check-test-job-not-switchable.sh	job["needs"] != allowed.get("needs")	not allowed	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-by-file	scripts/quality/lint/check-test-job-not-switchable.sh	CONDITIONAL_CALLERS.get((path, job_id, reusable), {})	CONDITIONAL_CALLERS.get((".github/workflows/freshness.yml", job_id, reusable), {})	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-by-job	scripts/quality/lint/check-test-job-not-switchable.sh	CONDITIONAL_CALLERS.get((path, job_id, reusable), {})	CONDITIONAL_CALLERS.get((path, "freshness-itself", reusable), {})	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-by-reusable	scripts/quality/lint/check-test-job-not-switchable.sh	(path, job_id, reusable), {})	(path, job_id, "reusable-schedule-freshness.yml"), {})	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-bytes-job	scripts/quality/lint/check-test-job-not-switchable.sh	        "freshness-published-bytes",	        "freshness-published-bytesx",	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-bytes-if	scripts/quality/lint/check-test-job-not-switchable.sh	"if": "needs.published-bytes-ready.outputs.ready == 'true'",	"if": "needs.published-bytes-ready.outputs.ready == 'false'",	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-dependabot	scripts/quality/lint/check-test-job-not-switchable.sh	    ): _SCOPED("dependabot"),	    ): _SCOPED("schedule"),	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-freshness-publish	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-publish",	            "freshness-publishx",	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-freshness-distro-floor	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-distro-floor",	            "freshness-distro-floorx",	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-freshness-health-check	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-health-check",	            "freshness-health-checkx",	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-freshness-itself	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-itself",	            "freshness-itselfx",	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-freshness-drift	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-drift",	            "freshness-driftx",	tests/quality/lint/check-test-job-not-switchable.test.sh
+lint-exempt-freshness-mutation	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-mutation",	            "freshness-mutationx",	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-callers-none	scripts/quality/lint/check-test-job-not-switchable.sh	    if callers == 0:	    if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-callers-verdict	scripts/quality/lint/check-test-job-not-switchable.sh	    if violations:	    if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-tooling-verdict	scripts/quality/lint/check-tooling-isolation.sh	    if violations:	    if False:	tests/quality/lint/check-tooling-isolation.test.sh
@@ -162,6 +180,8 @@ tooling-token-default	scripts/quality/lint/check-tooling-isolation.sh	        re
 tooling-token-writeall	scripts/quality/lint/check-tooling-isolation.sh	        return None if perms == "read-all" else f"`permissions: {perms}`"	        return None	tests/quality/lint/check-tooling-isolation.test.sh
 tooling-token-job-first	scripts/quality/lint/check-tooling-isolation.sh	    if "permissions" in job:	    if False:	tests/quality/lint/check-tooling-isolation.test.sh
 lint-callers-wired	.github/workflows/reusable-workflow-lint.yml	run: bash "$RUNNER_TEMP/lint-rules/check-test-job-not-switchable.sh"	run: "true"	tests/ci/reusable/reusable-workflow-lint.test.sh
+scope-lint-compare	tests/ci/reusable/reusable-workflow-lint.test.sh	    if path is None or path not in entry:	    if path is None:	tests/ci/reusable/reusable-workflow-lint.test.sh
+scope-lint-executed	tests/ci/reusable/reusable-workflow-lint.test.sh	executed = sorted(set(re.findall(r"lint-rules/(check-[A-Za-z0-9_-]+\.sh)", runs)))	executed = []	tests/ci/reusable/reusable-workflow-lint.test.sh
 lint-tooling-wired	.github/workflows/reusable-workflow-lint.yml	run: bash "$RUNNER_TEMP/lint-rules/check-tooling-isolation.sh"	run: "true"	tests/ci/reusable/reusable-workflow-lint.test.sh
 lint-rules-from-base	.github/workflows/reusable-workflow-lint.yml	            if git cat-file -e "${BASE_SHA}:${want}" 2>/dev/null; then	            if false; then	tests/ci/reusable/reusable-workflow-lint.test.sh,tests/quality/coverage/check-suites-wired.test.sh
 lint-rules-event-base	.github/workflows/reusable-workflow-lint.yml	              git show "${BASE_SHA}:${from}" > "$dir/$name"	              git show "HEAD^1:${from}" > "$dir/$name"	tests/ci/reusable/reusable-workflow-lint.test.sh,tests/quality/coverage/check-suites-wired.test.sh
@@ -297,7 +317,6 @@ check-secrets-a-refused-expression-is-named-by-its-line	scripts/quality/hygiene/
 check-secrets-a-failed-grep-does-not-empty-the-set	scripts/quality/hygiene/check-secrets.sh	[ "$rc" -le 1 ] || { echo "::error::could not apply .secret-scan-allow" >&2; exit 1; }	true	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-a-file-name-with-a-control-character-is-refused	scripts/quality/hygiene/check-secrets.sh	*[[:cntrl:]]*)	NOSUCHNAME)	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-the-list-is-compared-with-the-path-alone	scripts/quality/hygiene/check-secrets.sh	printf '%s\n' "$1" | grep -qE "${allow_args[@]}" || rc=$?	printf '%s:1:x\n' "$1" | grep -qE "${allow_args[@]}" || rc=$?	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-binary-file-fails-the-scan	scripts/quality/hygiene/check-secrets.sh	if grep -aqE '^(Binary files .* differ|GIT binary patch)$' "$work/file.diff"; then	if false; then	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-a-file-with-no-change-shown-fails-the-scan	scripts/quality/hygiene/check-secrets.sh	if [ "$hunks" -eq 0 ] && [ "$old_blob" != "$new_blob" ]; then	if false; then	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-a-change-of-mode-alone-is-not-refused	scripts/quality/hygiene/check-secrets.sh	[ "$hunks" -eq 0 ] && [ "$old_blob" != "$new_blob" ]	[ "$hunks" -eq 0 ] && true	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-an-empty-file-is-not-refused	scripts/quality/hygiene/check-secrets.sh	[ "$size" -eq 0 ] \	false \	tests/quality/hygiene/check-secrets.test.sh
@@ -528,3 +547,6 @@ coverage-an-exit-in-shell-is-a-refusal	scripts/quality/coverage/check-mutation-c
 coverage-an-exit-that-hands-on-a-status-is-a-refusal	scripts/quality/coverage/check-mutation-coverage.sh	hit = EXIT.search(code) or (n not in python and EXIT_HANDED.search(code_of(line, STRING))) \	hit = EXIT.search(code) \	tests/quality/coverage/check-mutation-coverage.test.sh
 upgrade-hands-on-the-status-of-the-upgrade	keyring/upgrade/glyndor-upgrade	exit "$rc"	exit 0	tests/keyring/glyndor-upgrade-errors.test.sh
 shell-ci-a-script-that-is-not-executable-fails-the-job	.github/workflows/reusable-shell-ci.yml	exit "$rc"	exit 0	tests/ci/reusable/reusable-shell-ci.test.sh
+reusable-drift-the-download-has-no-size-cap	scripts/monitoring/check-reusable-drift.sh	--max-time 60 --max-filesize 1048576 "$url"	--max-time 60 "$url"	tests/monitoring/check-reusable-drift.test.sh
+reusable-drift-a-redirect-may-leave-https	scripts/monitoring/check-reusable-drift.sh	--proto =https --proto-redir =https --connect-timeout 10	--proto =https --connect-timeout 10	tests/monitoring/check-reusable-drift.test.sh
+reusable-drift-any-protocol-is-fetched	scripts/monitoring/check-reusable-drift.sh	curl -fsSL --proto =https --proto-redir =https	curl -fsSL --proto-redir =https	tests/monitoring/check-reusable-drift.test.sh

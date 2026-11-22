@@ -26,9 +26,14 @@
 # never name another file: a line of added text that looks like a diff header is
 # only text. A path with a control character in it is refused, because no record
 # of it could be told from two. The diffs ignore what the tree under review says
-# about how to show a file (`.gitattributes`, a textconv or an external diff), and a
-# changed file that git shows as binary, or shows no change for although its
-# content changed, fails the scan: a file nobody can read is not a clean one.
+# about how to show a file (`.gitattributes`, a textconv or an external diff), and
+# they ask git for text with --text. A binary file is therefore read like any other:
+# the bytes it adds are split into lines and checked against the same patterns, so a
+# credential inside one is found, and an image that holds none passes. Git never prints
+# "Binary files differ" under --text, so there is no separate refusal for a binary. What
+# it can still print is nothing at all for a file whose content changed (an empty file
+# is the one honest case, and passes: it has no line to read); that fails the scan,
+# since a file git shows no change for is a file nobody read.
 # A file whose content the base already holds, as a move or a copy leaves it, adds
 # nothing to the history and is not read again.
 #
@@ -104,10 +109,6 @@ while IFS= read -r -d '' meta && IFS= read -r -d '' path; do
 	if grep -qxF -- "$new_blob" "$work/base-blobs"; then continue; fi
 	git_diff -U0 "$base...$head" -- "$path" > "$work/file.diff" \
 		|| { echo "::error::could not diff $path" >&2; exit 1; }
-	if grep -aqE '^(Binary files .* differ|GIT binary patch)$' "$work/file.diff"; then
-		echo "::error::git shows $path as binary, so the lines it adds were not scanned" >&2
-		exit 1
-	fi
 	hunks="$(grep -ac '^@@ ' "$work/file.diff" || true)"
 	if [ "$hunks" -eq 0 ] && [ "$old_blob" != "$new_blob" ]; then
 		size="$(git cat-file -s "$new_blob")" \

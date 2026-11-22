@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Behaviour tests for scripts/quality/lint/check-test-job-not-switchable.sh, the
-# check reusable-workflow-lint.yml runs so that the required `shell / test`
-# check cannot be switched off without failing.
+# check reusable-workflow-lint.yml runs so that a required check cannot be
+# switched off without failing.
 #
-# It is a gate over another gate. It parses every caller of reusable-shell-ci
+# It is a gate over another gate. It parses every caller of a local reusable
 # and refuses, each with its own message, the mechanisms that can switch the
-# required check off without failing it: a job-level `if:` or `needs:`, an
+# check it defines off without failing it: a job-level `if:`, `needs:` or
+# `continue-on-error:`. For the callers of reusable-shell-ci it also refuses an
 # empty or malformed test-command, a literal block scalar, the suppression
-# forms (`|| true`, `true ||`, `exit 0`) and the absence of any caller.
+# forms (`|| true`, `true ||`, `exit 0`) and the absence of any caller. The few
+# callers that carry a condition on purpose are accepted by their exact form
+# only.
 #
 # Each case plants a workflow in a temporary tree shaped like a repository and
 # runs the script as it ships. Every refusal asserts which refusal, and every
@@ -259,6 +262,176 @@ d="$(new)"
 cp "$HERE/.github/workflows/reusable-shell-ci.yml" "$d/.github/workflows/"
 rc=0; run_in "$d" "$SCRIPT" >/dev/null || rc=$?
 check "the reusable's own file does not count as a caller" "1" "$rc"
+
+# ===========================================================================
+# The same rule holds for every other local reusable
+# ===========================================================================
+#
+# dco, line limit, workflow-lint and empty diff are required checks as well, and
+# a skipped required check reports Success. Each caller below sits in a tree
+# whose shell caller is sound, so the one defect in the tree is the one the
+# case plants, and each is paired with the same caller left alone.
+
+# A caller of a local reusable. $5 is the lines to add to the job, written with
+# its own indentation and newlines.
+other_caller() { # $1=dir $2=workflow file $3=job $4=reusable $5=extra job lines
+	{
+		printf 'name: Other\non: pull_request\njobs:\n  %s:\n' "$3"
+		printf '%s' "$5"
+		printf '    uses: ./.github/workflows/%s\n' "$4"
+	} > "$1/.github/workflows/$2"
+}
+
+while IFS=' ' read -r file job reusable; do
+	d="$(new)"; caller "$d" './tests/one.test.sh'
+	other_caller "$d" "$file" "$job" "$reusable" ''
+	out="$(run_in "$d" "$SCRIPT")"; rc=$?
+	check "$job: the caller of $reusable with no switch is accepted" "0" "$rc"
+
+	d="$(new)"; caller "$d" './tests/one.test.sh'
+	other_caller "$d" "$file" "$job" "$reusable" $'    if: false\n'
+	out="$(run_in "$d" "$SCRIPT")"; rc=$?
+	check "$job: a caller of $reusable with a job-level if: is refused" "1" "$rc"
+	check "$job: and the message names that job, that file and that reusable" "1" \
+		"$(said "$out" "job \`$job\` in .github/workflows/$file calls \`$reusable\`")"
+	check "$job: and it is refused for the if:, not for something else" "1" \
+		"$(said "$out" 'job-level `if:`')"
+	check "$job: and the sound shell caller is not blamed" "0" \
+		"$(said "$out" 'in .github/workflows/tests.yml')"
+
+	d="$(new)"; caller "$d" './tests/one.test.sh'
+	other_caller "$d" "$file" "$job" "$reusable" $'    needs: setup\n'
+	out="$(run_in "$d" "$SCRIPT")"; rc=$?
+	check "$job: a caller of $reusable with needs: is refused" "1" "$rc"
+	check "$job: and it is refused for the needs:, naming the reusable" "1" \
+		"$(said "$out" "calls \`$reusable\` and carries \`needs:\`")"
+
+	d="$(new)"; caller "$d" './tests/one.test.sh'
+	other_caller "$d" "$file" "$job" "$reusable" $'    continue-on-error: true\n'
+	out="$(run_in "$d" "$SCRIPT")"; rc=$?
+	check "$job: a caller of $reusable with continue-on-error: is refused" "1" "$rc"
+	check "$job: and it is refused for the continue-on-error:, naming the reusable" "1" \
+		"$(said "$out" "calls \`$reusable\` and carries \`continue-on-error:\`")"
+done <<'LIST'
+dco.yml dco reusable-dco.yml
+line-limit.yml line-limit reusable-line-limit.yml
+workflow-lint.yml workflow-lint reusable-workflow-lint.yml
+pr-hygiene.yml empty-diff reusable-empty-diff.yml
+LIST
+
+# The headline case, written out: the DCO check switched off with `if: false`
+# beside a sound test job. The loop above holds the same case for every
+# required reusable; this one has a name a document can cite.
+d="$(new)"; caller "$d" './tests/one.test.sh'
+other_caller "$d" dco.yml dco reusable-dco.yml $'    if: false\n'
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "the DCO check switched off with if: false is refused" "1" "$rc"
+check "and the message says the DCO caller carries the switch" "1" \
+	"$(said "$out" 'job `dco` in .github/workflows/dco.yml calls `reusable-dco.yml` and carries a job-level')"
+
+# Every workflow this repository ships passes, the ones that carry a
+# condition on purpose among them.
+d="$(new)"
+cp "$HERE"/.github/workflows/*.yml "$d/.github/workflows/"
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "the repository's own workflows are accepted" "0" "$rc"
+
+# --- the conditions that are on purpose, by exact form --------------------
+#
+# A watcher that waits for the job that says whether it applies. Each form
+# below is accepted exactly as written, and each is refused when the job, the
+# file, the reusable or any value differs by one thing.
+SCOPE_IF="\${{ !cancelled() && needs.scope.outputs.%s != 'false' }}"
+BYTES_IF="needs.published-bytes-ready.outputs.ready == 'true'"
+
+fresh() { # $1=dir $2=workflow file $3=job $4=reusable $5=if value $6=needs value
+	local lines
+	printf -v lines '    needs: %s\n    if: %s\n' "$6" "$5"
+	other_caller "$1" "$2" "$3" "$4" "$lines"
+}
+
+d="$(new)"; caller "$d" './tests/one.test.sh'
+fresh "$d" freshness.yml freshness-published-bytes reusable-schedule-freshness.yml \
+	"$BYTES_IF" published-bytes-ready
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "the published-bytes watcher with its own condition is accepted" "0" "$rc"
+
+d="$(new)"; caller "$d" './tests/one.test.sh'
+fresh "$d" freshness.yml freshness-published-bytes reusable-schedule-freshness.yml \
+	"false" published-bytes-ready
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "the published-bytes watcher with another if: value is refused" "1" "$rc"
+check "and it is refused for the if:" "1" "$(said "$out" 'job-level `if:`')"
+
+d="$(new)"; caller "$d" './tests/one.test.sh'
+fresh "$d" freshness.yml freshness-published-bytes reusable-schedule-freshness.yml \
+	"$BYTES_IF" other-job
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "the published-bytes watcher with another needs: value is refused" "1" "$rc"
+check "and it is refused for the needs:" "1" "$(said "$out" 'carries `needs:`')"
+
+d="$(new)"; caller "$d" './tests/one.test.sh'
+fresh "$d" other.yml freshness-published-bytes reusable-schedule-freshness.yml \
+	"$BYTES_IF" published-bytes-ready
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "the same watcher in another workflow file is refused" "1" "$rc"
+check "and it is refused for the if:" "1" "$(said "$out" 'job-level `if:`')"
+
+d="$(new)"; caller "$d" './tests/one.test.sh'
+fresh "$d" freshness.yml freshness-other reusable-schedule-freshness.yml \
+	"$BYTES_IF" published-bytes-ready
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "the same condition on another job is refused" "1" "$rc"
+check "and it is refused for the if:" "1" "$(said "$out" 'job-level `if:`')"
+
+# The condition of a watcher is not a licence for a required check.
+d="$(new)"; caller "$d" './tests/one.test.sh'
+fresh "$d" freshness.yml freshness-published-bytes reusable-dco.yml \
+	"$BYTES_IF" published-bytes-ready
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "the same condition on a call of reusable-dco is refused" "1" "$rc"
+check "and the message names the reusable" "1" "$(said "$out" 'calls `reusable-dco.yml`')"
+
+d="$(new)"; caller "$d" './tests/one.test.sh'
+printf -v lines '    needs: published-bytes-ready\n    if: %s\n    continue-on-error: true\n' "$BYTES_IF"
+other_caller "$d" freshness.yml freshness-published-bytes reusable-schedule-freshness.yml "$lines"
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "the published-bytes watcher may not also continue on error" "1" "$rc"
+check "and it is refused for the continue-on-error:" "1" \
+	"$(said "$out" 'carries `continue-on-error:`')"
+
+# The watchers that wait for the scope job.
+while IFS=' ' read -r job reusable key; do
+	# shellcheck disable=SC2059
+	ok_if="$(printf "$SCOPE_IF" "$key")"
+	# shellcheck disable=SC2059
+	other_if="$(printf "$SCOPE_IF" "nothing")"
+
+	d="$(new)"; caller "$d" './tests/one.test.sh'
+	fresh "$d" freshness.yml "$job" "$reusable" "$ok_if" scope
+	out="$(run_in "$d" "$SCRIPT")"; rc=$?
+	check "$job: the watcher with the scope condition is accepted" "0" "$rc"
+
+	d="$(new)"; caller "$d" './tests/one.test.sh'
+	fresh "$d" freshness.yml "$job" "$reusable" "$other_if" scope
+	out="$(run_in "$d" "$SCRIPT")"; rc=$?
+	check "$job: the same watcher with another output in its if: is refused" "1" "$rc"
+	check "$job: and it is refused for the if:" "1" "$(said "$out" 'job-level `if:`')"
+
+	d="$(new)"; caller "$d" './tests/one.test.sh'
+	fresh "$d" freshness.yml "$job" "$reusable" "$ok_if" "[scope, other]"
+	out="$(run_in "$d" "$SCRIPT")"; rc=$?
+	check "$job: the same watcher with more in its needs: is refused" "1" "$rc"
+	check "$job: and it is refused for the needs:" "1" "$(said "$out" 'carries `needs:`')"
+done <<'LIST'
+dependabot-freshness reusable-dependabot-freshness.yml dependabot
+freshness-publish reusable-schedule-freshness.yml schedule
+freshness-distro-floor reusable-schedule-freshness.yml schedule
+freshness-health-check reusable-schedule-freshness.yml schedule
+freshness-itself reusable-schedule-freshness.yml schedule
+freshness-drift reusable-schedule-freshness.yml schedule
+freshness-mutation reusable-schedule-freshness.yml schedule
+LIST
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

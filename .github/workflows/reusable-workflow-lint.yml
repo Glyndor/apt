@@ -264,13 +264,14 @@ jobs:
           SHELLCHECK_BIN: ${{ env.SHELLCHECK_BIN }}
         run: actionlint -color "-shellcheck=${SHELLCHECK_BIN}"
 
-      # A required test job must not be switchable off: every caller of
-      # reusable-shell-ci.yml passes a test-command that runs a suite, carries
-      # no job-level `if:` or `needs:`, and at least one caller exists. The
-      # rule and its reasons are in the script, taken from the base commit
-      # above. It runs here rather than in the shell job because that is the
-      # job an `if:` would skip, and a check inside it would share the fate of
-      # what it checks.
+      # A required job must not be switchable off: no caller of a local
+      # reusable carries a job-level `if:`, `needs:` or `continue-on-error:`
+      # (bar the few watchers the script lists by their exact form), every
+      # caller of reusable-shell-ci.yml passes a test-command that runs a
+      # suite, and at least one such caller exists. The rule and its reasons
+      # are in the script, taken from the base commit above. It runs here
+      # rather than in the shell job because that is the job an `if:` would
+      # skip, and a check inside it would share the fate of what it checks.
       - name: A required test job must not be switchable off
         if: steps.scope.outputs.needed != 'false'
         run: bash "$RUNNER_TEMP/lint-rules/check-test-job-not-switchable.sh"
