@@ -31,10 +31,9 @@ jobs:
       # so this repository's choice stays visible in this repository's own file
       # and the reusable stays a recognisable copy of the shared one.
       #
-      # Nothing needed splitting to turn this on. Counted the way the check
-      # counts -- comments and blank lines dropped -- the longest YAML in the
-      # three channel repositories was 183 lines against a soft limit of 300; the
-      # shared reusable-workflow-lint.yml has since grown past that soft limit.
+      # Nothing needed splitting to turn this on: counted the way the check
+      # counts -- comments and blank lines dropped -- every YAML in the three
+      # channel repositories was under the soft limit of 300, and still is.
       #
       # `txt` is there for the lists and maps the tools read. The largest file
       # no gate opened was scripts/quality/scope/suite-scope.txt, the map that
