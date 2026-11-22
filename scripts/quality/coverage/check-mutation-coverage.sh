@@ -13,7 +13,8 @@
 # WHAT IS A REFUSAL
 #
 # A line of code, comments and quoted text aside, that exits with a non-zero
-# status: `exit N`, a call of `fail` where the file defines that helper,
+# status: `exit N`, an `exit` that hands on a status it holds in a variable
+# (`exit "$rc"`, `exit $?`), a call of `fail` where the file defines that helper,
 # `return N` in the shell of a function (`return 1` is one; `return 0`, a bare
 # `return` and `return "$rc"` are not), or, in
 # the Python a script carries, `sys.exit(...)` or `raise SystemExit(...)` whose
@@ -55,10 +56,12 @@
 # way, and is exempted with that reason. A `return` inside the Python of a
 # heredoc is Python returning a value, and is not read.
 #
-# Only a literal non-zero status or a string counts: `exit "$rc"`,
-# `return "$rc"` and `sys.exit(message)`, whose value is not known without
-# running the code (a status that may be 0 as likely as a message), are not
-# read, so a helper that refuses that way is invisible here.
+# An `exit` with a status in a variable is the last line of a step or a script
+# that collected a verdict on the way. Changed to `exit 0`, nothing it collected
+# reaches the caller, so it is read as a refusal, though the status may be 0 on
+# a given run. `return "$rc"` and `sys.exit(message)` with a message in a
+# variable are not read: a helper that hands a status back to its caller
+# refuses nothing itself, and one that refuses that way is invisible here.
 #
 # WHAT IS READ
 #
@@ -84,6 +87,9 @@ WATCHED_DIRS = ("scripts", "keyring/upgrade")
 WORKFLOWS = ".github/workflows"
 SHEBANG = re.compile(r"^#!.*(/| )(sh|bash|dash)(\s|$)")
 EXIT = re.compile(r"(?<![\w$.-])exit\s+[1-9][0-9]*\b")
+# An exit that hands on a status: a quoted word (read as STRING, see code_of) or
+# an expansion.
+EXIT_HANDED = re.compile(r"(?<![\w$.-])exit\s+(?:" + "\x01" + r"|\$[{A-Za-z_?])")
 RETURN = re.compile(r"(?<![\w$.-])return\s+[1-9][0-9]*\b")
 # A heredoc handed to python3, and the word that ends it.
 PY_HEREDOC = re.compile(r"\bpython3\b[^\n]*<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?")
@@ -232,7 +238,8 @@ def refusals(rel, lines):
         code = code_of(line)
         if FAIL_DEF.match(line):
             continue
-        hit = EXIT.search(code) or PY_EXIT.search(code_of(line, STRING)) \
+        hit = EXIT.search(code) or (n not in python and EXIT_HANDED.search(code_of(line, STRING))) \
+            or PY_EXIT.search(code_of(line, STRING)) \
             or (defines_fail and FAIL_CALL.search(code)) \
             or (n not in python and RETURN.search(code))
         if not hit:

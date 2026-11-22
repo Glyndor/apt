@@ -159,6 +159,35 @@ rc=0; run || rc=$?
 check "a return 1 in the Python of a heredoc is not read, and is once the heredoc is not Python" "1" "$rc"
 check "naming the line" "1" "$(said "scripts/area/funcs.sh:$(line_of scripts/area/funcs.sh '    if value:')-")"
 
+# An exit that hands on a status it holds in a variable is the verdict of a step or
+# of a script: changed to `exit 0`, nothing it collected reaches the caller. It is
+# read, whatever the status is on a given run. The forms that hand nothing on are
+# not, and neither is a helper that returns a status to its caller.
+# shellcheck disable=SC2016 # the forms are literal shell code
+for form in 'exit "$verdict"' 'exit $verdict' 'exit "${verdict}"' 'exit $?'; do
+	reset; printf '%s\n' 'verdict=0' 'true || verdict=1' "$form" >> "$F/scripts/area/guard.sh"
+	rc=0; run || rc=$?
+	check "$form hands on a status, and is a refusal" "1" "$rc"
+	check "naming the line it is on" "1" "$(said ": $form")"
+done
+# shellcheck disable=SC2016
+for form in 'exit 0' 'exit' 'echo "exit $verdict"' "trap 'exit \"\$verdict\"' EXIT" 'hand_back() { "$@"; local rc=$?; return "$rc"; }'; do
+	reset; printf '%s\n' 'verdict=0' "$form" >> "$F/scripts/area/guard.sh"
+	rc=0; run || rc=$?
+	check "$form hands on nothing, and is not a refusal" "0" "$rc"
+done
+# The word in the Python of a heredoc is not the shell's, and is once the heredoc
+# is not Python.
+# shellcheck disable=SC2016
+for reader in "python3 -" cat; do
+	reset; printf '%s\n' '#!/usr/bin/env bash' "$reader <<'PY'" 'verdict = 0' 'exit $verdict' 'PY' > "$F/scripts/area/heredoc.sh"
+	rc=0; run || rc=$?
+	case "$reader" in
+		cat) check "an exit with an expansion in a heredoc that is not Python is read" "1 1" "$rc $(said ': exit $verdict')" ;;
+		*) check "an exit with an expansion in the Python of a heredoc is not read as the shell's" "0 0" "$rc $(said ': exit $verdict')" ;;
+	esac
+done
+
 reset; : > "$F/tests/mutation/exemptions.txt"
 rc=0; run || rc=$?
 check "a fail call of a helper the file defines is a refusal" "1" "$rc"
