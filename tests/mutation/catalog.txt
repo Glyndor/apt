@@ -3,6 +3,19 @@
 #   id <TAB> file to mutate <TAB> exact text to replace <TAB> text that replaces it
 #        <TAB> tests of tests/ that must fail when the mutation is applied
 #
+# THE CATALOGUE IS SEVERAL FILES
+#
+# This file and every tests/mutation/catalog.d/*.txt, read in the order LC_ALL=C
+# sorts their names, are one catalogue with one set of ids: an id in two entries is
+# refused wherever they are. The format is the same in all of them. The entries of
+# an area live in the file that names it (hygiene.txt for the scan of credentials
+# and the identity of commits, callers.txt for the rule on what a caller of a
+# reusable may switch off or pass, instrument.txt for the readers of the catalogue
+# themselves), and this file holds the rest. A file stays under 400 lines of code:
+# when one grows past it, it splits by what its entries sustain, not by size alone.
+# The runner, the coverage check and the decision of which entries a pull request
+# runs all read them this way; `run-mutations.sh --catalog <file>` reads one file.
+#
 # The text to replace has to appear EXACTLY ONCE in the file: a text that appears
 # nowhere changes nothing and proves nothing, and one that appears twice is
 # ambiguous. The runner refuses both, so an inert entry cannot sit in this file
@@ -152,42 +165,7 @@ quality-test-coverage	scripts/quality/coverage/check-test-coverage.sh	[ -f "$roo
 suites-wired-watcher-dropped	.github/workflows/tests.yml	./tests/ci/suites/ci-runs-every-test.test.sh	./tests/quality/coverage/check-test-coverage.test.sh	tests/quality/coverage/check-suites-wired.test.sh
 suites-wired-unwired	scripts/quality/coverage/check-suites-wired.sh	for path in sorted(suites - wired - set(exempt)):	for path in []:	tests/quality/coverage/check-suites-wired.test.sh
 suites-wired-needs	scripts/quality/coverage/check-suites-wired.sh	                    if "needs" in job else "") \	                    if False else "") \	tests/quality/coverage/check-suites-wired.test.sh
-lint-caller-continue	scripts/quality/lint/check-test-job-not-switchable.sh	            if "continue-on-error" in job:	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-caller-if	scripts/quality/lint/check-test-job-not-switchable.sh	            if "if" in job and job["if"] != allowed.get("if"):	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-caller-needs	scripts/quality/lint/check-test-job-not-switchable.sh	            if "needs" in job and job["needs"] != allowed.get("needs"):	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-caller-all-reusables	scripts/quality/lint/check-test-job-not-switchable.sh	            if local is None:	            if local is None or local.group(1) != REUSABLE:	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-caller-grammar-only-shell	scripts/quality/lint/check-test-job-not-switchable.sh	            if reusable != REUSABLE:	            if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-caller-count-shell	scripts/quality/lint/check-test-job-not-switchable.sh	                callers += 1	                callers += 0	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-if-exact	scripts/quality/lint/check-test-job-not-switchable.sh	job["if"] != allowed.get("if")	not allowed	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-needs-exact	scripts/quality/lint/check-test-job-not-switchable.sh	job["needs"] != allowed.get("needs")	not allowed	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-by-file	scripts/quality/lint/check-test-job-not-switchable.sh	CONDITIONAL_CALLERS.get((path, job_id, reusable), {})	CONDITIONAL_CALLERS.get((".github/workflows/freshness.yml", job_id, reusable), {})	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-by-job	scripts/quality/lint/check-test-job-not-switchable.sh	CONDITIONAL_CALLERS.get((path, job_id, reusable), {})	CONDITIONAL_CALLERS.get((path, "freshness-itself", reusable), {})	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-by-reusable	scripts/quality/lint/check-test-job-not-switchable.sh	(path, job_id, reusable), {})	(path, job_id, "reusable-schedule-freshness.yml"), {})	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-bytes-job	scripts/quality/lint/check-test-job-not-switchable.sh	        "freshness-published-bytes",	        "freshness-published-bytesx",	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-bytes-if	scripts/quality/lint/check-test-job-not-switchable.sh	"if": "needs.published-bytes-ready.outputs.ready == 'true'",	"if": "needs.published-bytes-ready.outputs.ready == 'false'",	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-dependabot	scripts/quality/lint/check-test-job-not-switchable.sh	    ): _SCOPED("dependabot"),	    ): _SCOPED("schedule"),	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-freshness-publish	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-publish",	            "freshness-publishx",	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-freshness-distro-floor	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-distro-floor",	            "freshness-distro-floorx",	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-freshness-health-check	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-health-check",	            "freshness-health-checkx",	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-freshness-itself	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-itself",	            "freshness-itselfx",	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-freshness-drift	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-drift",	            "freshness-driftx",	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-exempt-freshness-mutation	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-mutation",	            "freshness-mutationx",	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-callers-none	scripts/quality/lint/check-test-job-not-switchable.sh	    if callers == 0:	    if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-callers-verdict	scripts/quality/lint/check-test-job-not-switchable.sh	    if violations:	    if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
-lint-tooling-verdict	scripts/quality/lint/check-tooling-isolation.sh	    if violations:	    if False:	tests/quality/lint/check-tooling-isolation.test.sh
-tooling-token-write	scripts/quality/lint/check-tooling-isolation.sh	        if not (holds_secret or writes):	        if not holds_secret:	tests/quality/lint/check-tooling-isolation.test.sh
-tooling-token-default	scripts/quality/lint/check-tooling-isolation.sh	        return "no `permissions` at the job or the workflow, so the repository default applies"	        return None	tests/quality/lint/check-tooling-isolation.test.sh
-tooling-token-writeall	scripts/quality/lint/check-tooling-isolation.sh	        return None if perms == "read-all" else f"`permissions: {perms}`"	        return None	tests/quality/lint/check-tooling-isolation.test.sh
-tooling-token-job-first	scripts/quality/lint/check-tooling-isolation.sh	    if "permissions" in job:	    if False:	tests/quality/lint/check-tooling-isolation.test.sh
-lint-callers-wired	.github/workflows/reusable-workflow-lint.yml	run: bash "$RUNNER_TEMP/lint-rules/check-test-job-not-switchable.sh"	run: "true"	tests/ci/reusable/reusable-workflow-lint.test.sh
-scope-lint-compare	tests/ci/reusable/reusable-workflow-lint.test.sh	    if path is None or path not in entry:	    if path is None:	tests/ci/reusable/reusable-workflow-lint.test.sh
-scope-lint-executed	tests/ci/reusable/reusable-workflow-lint.test.sh	executed = sorted(set(re.findall(r"lint-rules/(check-[A-Za-z0-9_-]+\.sh)", runs)))	executed = []	tests/ci/reusable/reusable-workflow-lint.test.sh
-lint-tooling-wired	.github/workflows/reusable-workflow-lint.yml	run: bash "$RUNNER_TEMP/lint-rules/check-tooling-isolation.sh"	run: "true"	tests/ci/reusable/reusable-workflow-lint.test.sh
-lint-rules-from-base	.github/workflows/reusable-workflow-lint.yml	            if git cat-file -e "${BASE_SHA}:${want}" 2>/dev/null; then	            if false; then	tests/ci/reusable/reusable-workflow-lint.test.sh,tests/quality/coverage/check-suites-wired.test.sh
-lint-rules-event-base	.github/workflows/reusable-workflow-lint.yml	              git show "${BASE_SHA}:${from}" > "$dir/$name"	              git show "HEAD^1:${from}" > "$dir/$name"	tests/ci/reusable/reusable-workflow-lint.test.sh,tests/quality/coverage/check-suites-wired.test.sh
-lint-rules-fetch	.github/workflows/reusable-workflow-lint.yml	              git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true	              true	tests/ci/reusable/reusable-workflow-lint.test.sh
 scope-lint-rule-scripts	scripts/quality/scope/ci-job-scope.sh	    "scripts/quality/lint/check-tooling-isolation.sh",	    "scripts/quality/unused.sh",	tests/quality/scope/ci-job-scope.test.sh
-lint-actionlint-sha256	.github/workflows/reusable-workflow-lint.yml	printf '%s  %s\n' "$ACTIONLINT_SHA256" "$tarball" | sha256sum -c -	true	tests/ci/reusable/reusable-workflow-lint.test.sh
 tools-past-lag	scripts/monitoring/check-tool-versions.sh	    if days > lag_days:	    if False:	tests/monitoring/check-tool-versions.test.sh
 tools-first-newer	scripts/monitoring/check-tool-versions.sh	    days = (now - min(newer)).days	    days = (now - max(newer)).days	tests/monitoring/check-tool-versions.test.sh
 tools-unreadable	scripts/monitoring/check-tool-versions.sh	        problems.append(f"cannot read the releases of {upstream}: {exc}")	        pass	tests/monitoring/check-tool-versions.test.sh
@@ -197,21 +175,11 @@ tools-verdict	scripts/monitoring/check-tool-versions.sh	if problems or behind:	i
 tools-lag-constant	scripts/monitoring/check-tool-versions.sh	lag_days = LAG_DAYS	lag_days = int(os.environ.get("MAX_LAG_DAYS", LAG_DAYS))	tests/monitoring/check-tool-versions.test.sh
 tools-overrides	scripts/monitoring/check-tool-versions.sh	            if given:	            if False:	tests/monitoring/check-tool-versions.test.sh
 fresh-mutation-watched	.github/workflows/freshness.yml	      workflow: mutation.yml	      workflow: unwatched.yml	tests/ci/policy/scheduled-workflows-are-watched.test.sh
-shell-pinned-shellcheck	.github/workflows/reusable-shell-ci.yml	            if [ "$package" = shellcheck ]; then	            if false; then	tests/ci/reusable/reusable-shell-ci.test.sh
-shell-pinned-sha256	.github/workflows/reusable-shell-ci.yml	            printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -	            true	tests/ci/reusable/reusable-shell-ci.test.sh
-grace-shallow	.github/workflows/reusable-schedule-freshness.yml	              && [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = false ]; then	              ; then	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
-grace-limit	.github/workflows/reusable-schedule-freshness.yml	[ $(( (now_s - added) / unit_seconds )) -lt "$limit" ]; then	[ $(( (now_s - added) / unit_seconds )) -lt 99999 ]; then	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
-grace-no-runs	.github/workflows/reusable-schedule-freshness.yml	            if [ "$any_runs" = 0 ] \	            if true \	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
-grace-by-default	.github/workflows/reusable-schedule-freshness.yml	            added=""	            added="$now_s"	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
-grace-future	.github/workflows/reusable-schedule-freshness.yml	            if [[ "$added" =~ ^[0-9]+$ ]] && [ "$added" -gt "$now_s" ]; then	            if false; then	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
 suites-wired-base-exemptions	scripts/quality/coverage/check-suites-wired.sh	    return {path: why for path, why in exempt.items() if path in base}	    return exempt	tests/quality/coverage/check-suites-wired.test.sh
-lint-base-exemptions	.github/workflows/reusable-workflow-lint.yml	              git show "${BASE_SHA}:${from}" > "$dir/suite-exemptions.base"	              cp scripts/quality/coverage/suite-exemptions.txt "$dir/suite-exemptions.base"	tests/quality/coverage/check-suites-wired.test.sh
 suites-wired-operators	scripts/quality/coverage/check-suites-wired.sh	OPERATOR_RE = re.compile(r"[|&;<>`]|\$\(")	OPERATOR_RE = re.compile(r"(?!)")	tests/quality/coverage/check-suites-wired.test.sh
 suites-wired-heredoc	scripts/quality/coverage/check-suites-wired.sh	                        if "<<" in run else "") \	                        if False else "") \	tests/quality/coverage/check-suites-wired.test.sh
 suites-wired-skip-paths	scripts/quality/coverage/check-suites-wired.sh	                             skip_gate, where)	                             job_gate, where)	tests/quality/coverage/check-suites-wired.test.sh
 suites-wired-skip-literal	scripts/quality/coverage/check-suites-wired.sh	    if [[ "$f" == $pattern ]]; then	    if [[ "$f" == "$pattern" ]]; then	tests/quality/coverage/check-suites-wired.test.sh
-quality-action-pins	scripts/quality/lint/check-action-pins.sh	if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then	if true; then	tests/quality/lint/check-action-pins.test.sh
-quality-lint-workflow-shell	scripts/quality/lint/lint-workflow-shell.sh	if ! out="$(shellcheck -S "$severity" -f gcc "$block" 2>&1)"; then	if false; then	tests/quality/lint/lint-workflow-shell.test.sh
 # The refusals below were catalogued when scripts/quality/coverage/check-mutation-coverage.sh
 # started requiring an entry or an exemption for every refusal. Each one was
 # measured on 2026-11-21 against a copy of the tree: its mutation applied, the
@@ -297,49 +265,9 @@ purge-cache-required-missing-from-built-dir	scripts/publish/purge-cache.sh	|| { 
 purge-cache-transfer-integer	scripts/publish/purge-cache.sh	case "$TRANSFER_MAX" in '' | *[!0-9]*)	case "$TRANSFER_MAX" in __mutation_never__)	tests/publish/purge-cache/purge-cache-guards.test.sh
 purge-cache-usage-purge-cache-sh-archive	scripts/publish/purge-cache.sh	if [ -z "$ARCHIVE_URL" ] || [ -z "$BUILT_DIR" ]; then	if false; then	tests/publish/purge-cache.test.sh
 sync-archive-v-not-configured	scripts/publish/sync-archive.sh	|| { echo "::error::$v is not configured."; exit 1; }	|| true || { echo "::error::$v is not configured."; exit 1; }	tests/publish/sync-archive.test.sh
-check-action-pins-no-workflow-file-was-checked	scripts/quality/lint/check-action-pins.sh	if [ "$files" -eq 0 ]; then	if false; then	tests/quality/lint/check-action-pins.test.sh
-check-action-pins-some-remote-action-reference-not	scripts/quality/lint/check-action-pins.sh	if [ "$fail" -ne 0 ]; then	if false; then	tests/quality/lint/check-action-pins.test.sh
-check-commit-identity-use-your-github-noreply-address	scripts/quality/hygiene/check-commit-identity.sh	[ "$bad" -eq 0 ] || { echo "Use your GitHub noreply address (git config user.email)." >&2; exit 1; }	[ "$bad" -eq 0 ] || true || { echo "Use your GitHub noreply address (git config user.email)." >&2; exit 1; }	tests/quality/hygiene/check-commit-identity.test.sh
-check-commit-identity-a-range-it-cannot-list-fails	scripts/quality/hygiene/check-commit-identity.sh	|| { echo "::error::could not list the commits of $base..$head" >&2; exit 1; }	|| true	tests/quality/hygiene/check-commit-identity.test.sh
-check-commit-identity-a-trailer-in-any-paragraph-is-read	scripts/quality/hygiene/check-commit-identity.sh	printf '%s\n' "$message" | grep -iE "^[[:space:]]*$key:"	printf '%s\n' "$message" | tail -n 1 | grep -iE "^[[:space:]]*$key:"	tests/quality/hygiene/check-commit-identity.test.sh
-check-commit-identity-a-trailer-key-is-read-in-any-case	scripts/quality/hygiene/check-commit-identity.sh	grep -iE "^[[:space:]]*$key:"	grep -E "^[[:space:]]*$key:"	tests/quality/hygiene/check-commit-identity.test.sh
-check-commit-identity-a-merge-is-read	scripts/quality/hygiene/check-commit-identity.sh	git rev-list "$base..$head"	git rev-list --no-merges "$base..$head"	tests/quality/hygiene/check-commit-identity.test.sh
-check-commit-identity-the-committer-of-a-merge-is-read	scripts/quality/hygiene/check-commit-identity.sh	printf '%s\n' "$committer" | grep -qE "$allowed" || flag "$sha" "the committer address of a merge"	:	tests/quality/hygiene/check-commit-identity.test.sh
-check-commit-identity-a-merge-is-told-from-a-commit	scripts/quality/hygiene/check-commit-identity.sh	*" "*)	NOSUCHMERGE)	tests/quality/hygiene/check-commit-identity.test.sh
-check-secrets-remove-value-rotate-it-if	scripts/quality/hygiene/check-secrets.sh	if [ "$bad" -ne 0 ]; then	if false; then	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-names-the-ml-dsa-release-key	scripts/quality/hygiene/check-secrets.sh	ml[_-]?dsa[_-]?(44|65|87)?[_-]?key|	nonexistent[_-]?key|	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-range-it-cannot-diff-fails	scripts/quality/hygiene/check-secrets.sh	|| { echo "::error::could not diff $base...$head" >&2; exit 1; }	|| true	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-the-list-is-read-from-the-base	scripts/quality/hygiene/check-secrets.sh	if git cat-file -e "$base:.secret-scan-allow" 2>/dev/null; then	if git cat-file -e "$head:.secret-scan-allow" 2>/dev/null; then	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-the-list-content-is-read-from-the-base	scripts/quality/hygiene/check-secrets.sh	allow="$(git show "$base:.secret-scan-allow")"	allow="$(git show "$head:.secret-scan-allow")"	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-an-expression-that-does-not-compile-fails	scripts/quality/hygiene/check-secrets.sh	[ "$rc" -le 1 ] \	[ "$rc" -le 2 ] \	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-an-expression-that-matches-every-path-fails	scripts/quality/hygiene/check-secrets.sh	! printf '%s\n' 'zz-canary-9f3a/zz-canary-9f3a' | grep -qE -- "^($expr)" \	true \	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-refused-expression-is-named-by-its-line	scripts/quality/hygiene/check-secrets.sh	n="${numbered%%:*}"; expr="${numbered#*:}"	n=0; expr="${numbered#*:}"	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-failed-grep-does-not-empty-the-set	scripts/quality/hygiene/check-secrets.sh	[ "$rc" -le 1 ] || { echo "::error::could not apply .secret-scan-allow" >&2; exit 1; }	true	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-file-name-with-a-control-character-is-refused	scripts/quality/hygiene/check-secrets.sh	*[[:cntrl:]]*)	NOSUCHNAME)	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-the-list-is-compared-with-the-path-alone	scripts/quality/hygiene/check-secrets.sh	printf '%s\n' "$1" | grep -qE "${allow_args[@]}" || rc=$?	printf '%s:1:x\n' "$1" | grep -qE "${allow_args[@]}" || rc=$?	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-file-with-no-change-shown-fails-the-scan	scripts/quality/hygiene/check-secrets.sh	if [ "$hunks" -eq 0 ] && [ "$old_blob" != "$new_blob" ]; then	if false; then	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-change-of-mode-alone-is-not-refused	scripts/quality/hygiene/check-secrets.sh	[ "$hunks" -eq 0 ] && [ "$old_blob" != "$new_blob" ]	[ "$hunks" -eq 0 ] && true	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-an-empty-file-is-not-refused	scripts/quality/hygiene/check-secrets.sh	[ "$size" -eq 0 ] \	false \	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-the-diff-ignores-the-text-attribute	scripts/quality/hygiene/check-secrets.sh	git --literal-pathspecs diff --no-color --no-renames --text --no-textconv --no-ext-diff "$@"	git --literal-pathspecs diff --no-color --no-renames --no-textconv --no-ext-diff "$@"	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-the-diff-ignores-a-textconv	scripts/quality/hygiene/check-secrets.sh	git --literal-pathspecs diff --no-color --no-renames --text --no-textconv --no-ext-diff "$@"	git --literal-pathspecs diff --no-color --no-renames --text --no-ext-diff "$@"	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-the-diff-ignores-an-external-diff	scripts/quality/hygiene/check-secrets.sh	git --literal-pathspecs diff --no-color --no-renames --text --no-textconv --no-ext-diff "$@"	git --literal-pathspecs diff --no-color --no-renames --text --no-textconv "$@"	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-path-is-literal	scripts/quality/hygiene/check-secrets.sh	git --literal-pathspecs diff	git diff	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-no-list-excuses-no-path	scripts/quality/hygiene/check-secrets.sh	[ "${#allow_args[@]}" -gt 0 ] || return 1	true	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-diff-of-one-file-that-cannot-be-read-fails	scripts/quality/hygiene/check-secrets.sh	|| { echo "::error::could not diff $path" >&2; exit 1; }	|| true	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-size-that-cannot-be-read-fails	scripts/quality/hygiene/check-secrets.sh	|| { echo "::error::could not read the size of $path" >&2; exit 1; }	|| true	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-the-marker-is-read-from-the-text-alone	scripts/quality/hygiene/check-secrets.sh	if (index(text, "secret-scan:allow") == 0)	if (index(file text, "secret-scan:allow") == 0)	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-line-of-text-does-not-name-a-file	scripts/quality/hygiene/check-secrets.sh	inhunk && /^\+/ {	/^\+\+\+ / { file = substr($0, 7) } inhunk && /^\+/ {	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-sample-word-is-read-from-the-value-alone	scripts/quality/hygiene/check-secrets.sh	value = tolower(substr(assign, i + 1))	value = tolower(assign)	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-sample-word-starts-at-a-boundary	scripts/quality/hygiene/check-secrets.sh	(^|[^a-z0-9])(example	(example	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-sample-word-ends-at-a-boundary	scripts/quality/hygiene/check-secrets.sh	|your)([^a-z0-9]|$)	|your)	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-name-that-points-elsewhere-is-excused	scripts/quality/hygiene/check-secrets.sh	if (name ~ /_(file|path|dir|url|name|env|var)[a-z0-9_]*[^a-z0-9_]*$/) next	if (0) next	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-file-the-base-holds-adds-nothing	scripts/quality/hygiene/check-secrets.sh	if grep -qxF -- "$new_blob" "$work/base-blobs"; then continue; fi	if false; then continue; fi	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-base-that-cannot-be-listed-fails	scripts/quality/hygiene/check-secrets.sh	|| { echo "::error::could not list the files of $base" >&2; exit 1; }	|| true	tests/quality/hygiene/check-secrets.test.sh
 check-suites-wired-if-errors-sys-exit-1	scripts/quality/coverage/check-suites-wired.sh	if errors:	if False:	tests/quality/coverage/check-suites-wired.test.sh
 check-test-coverage-missing-script-have-no-test	scripts/quality/coverage/check-test-coverage.sh	if [ ${#missing[@]} -gt 0 ]; then	if false; then	tests/quality/coverage/check-test-coverage.test.sh
 check-test-coverage-no-scripts-directory-under-root	scripts/quality/coverage/check-test-coverage.sh	[ -d "$root/scripts" ] || { echo "no scripts/ directory under $root" >&2; exit 1; }	[ -d "$root/scripts" ] || true || { echo "no scripts/ directory under $root" >&2; exit 1; }	tests/quality/coverage/check-test-coverage.test.sh
-lint-workflow-shell-found-no-run-blocks-under	scripts/quality/lint/lint-workflow-shell.sh	if [ "$blocks" -eq 0 ]; then	if false; then	tests/quality/lint/lint-workflow-shell.test.sh
-lint-workflow-shell-shellcheck-severity-severity-found-problems	scripts/quality/lint/lint-workflow-shell.sh	if [ "$failed" -ne 0 ]; then	if false; then	tests/quality/lint/lint-workflow-shell.test.sh
 check-release-order-could-not-compare-product-candidate	scripts/verify/check-release-order.sh	if ! verdict="$(release_order "$PRODUCT" "$candidate" "$DEBS_DIR" "${packages[@]}")"; then	if verdict="$(release_order "$PRODUCT" "$candidate" "$DEBS_DIR" "${packages[@]}")"; false; then	tests/verify/check-release-order.test.sh
 check-release-order-could-not-fetch-served-index	scripts/verify/check-release-order.sh	if ! fetch "$BASE_URL/$DIST_PATH/InRelease" "$WORK/InRelease" "$MAX_INRELEASE_BYTES"; then	if false; then	tests/verify/check-release-order.test.sh
 check-release-order-could-not-fetch-served-index-2	scripts/verify/check-release-order.sh	if ! fetch "$url" "$dest" "$MAX_INDEX_BYTES"; then	if false; then	tests/verify/check-release-order.test.sh
@@ -392,7 +320,7 @@ health-check-valid-until	.github/workflows/health-check.yml	if [ "$valid_epoch" 
 mutation-gate-decide	.github/workflows/mutation.yml	if [ "$DECIDE" != success ]; then	if false; then	tests/ci/policy/mutation-workflow.test.sh
 mutation-scope-global-inputs	scripts/quality/scope/mutation-scope.sh	if paths & GLOBAL_INPUTS:	if False:	tests/quality/scope/mutation-scope.test.sh
 mutation-coverage-errors	scripts/quality/coverage/check-mutation-coverage.sh	if errors:	if False:	tests/quality/coverage/check-mutation-coverage.test.sh
-mutation-coverage-entry-applies	scripts/quality/coverage/check-mutation-coverage.sh	applies(*fields[:4])	pass	tests/quality/coverage/check-mutation-coverage.test.sh
+mutation-coverage-entry-applies	scripts/quality/coverage/check-mutation-coverage.sh	applies(catalogue, *fields[:4])	pass	tests/quality/coverage/check-mutation-coverage.test.sh
 release-order-package-twice-refused	scripts/verify/check-release-order.sh	if len(fields["Package"]) != 1:	if False:	tests/verify/check-release-order.test.sh
 release-order-version-not-once	scripts/verify/check-release-order.sh	if len(fields.get("Version", [])) != 1:	if False:	tests/verify/check-release-order.test.sh
 release-order-tool-cannot-run	scripts/verify/check-release-order.sh	sys.exit(f"cannot run {args[0]} to read/compare package versions: {error}")	return subprocess.CompletedProcess(args, 0, "", "")	tests/verify/check-release-order.test.sh
@@ -409,22 +337,14 @@ prune-installers-built-dir-missing	scripts/publish/prune-installers.sh	|| { echo
 verify-published-pool-cap	scripts/verify/verify-published.sh	if [ "$pool_count" -gt "$MAX_ENTRIES" ]; then	if false; then	tests/verify/verify-published/verify-published-budget.test.sh
 mutation-coverage-python-string	scripts/quality/coverage/check-mutation-coverage.sh	(?:[1-9][0-9]*\s*\)|[rRbBfFuU]{0,2}" + STRING + ")	[1-9][0-9]*\s*\)	tests/quality/coverage/check-mutation-coverage.test.sh
 mutation-coverage-python-string-prefix	scripts/quality/coverage/check-mutation-coverage.sh	[rRbBfFuU]{0,2}" + STRING	" + STRING	tests/quality/coverage/check-mutation-coverage.test.sh
-lint-rules-earlier-path	.github/workflows/reusable-workflow-lint.yml	              from="$(base_copy "$file")"	              from=""	tests/ci/reusable/reusable-workflow-lint.test.sh
-lint-rules-ambiguous	.github/workflows/reusable-workflow-lint.yml	            if [ "$count" -gt 1 ]; then	            if false; then	tests/ci/reusable/reusable-workflow-lint.test.sh
 scope-suite-needed-push-parent	scripts/quality/scope/ci-job-scope.sh	    if not parents or parents[0] != before:	    if not parents:	tests/quality/scope/ci-job-scope-suite-needed.test.sh
 scope-suite-needed-push-event	scripts/quality/scope/ci-job-scope.sh	    elif event == "push":	    elif False:	tests/quality/scope/ci-job-scope-suite-needed.test.sh
 scope-suite-needed-arity	scripts/quality/scope/ci-job-scope.sh	        if len(argv) != 2:	        if False:	tests/quality/scope/ci-job-scope-suite-needed.test.sh
 mldsa-decision-base	.github/workflows/tests.yml	            base=HEAD^1	            base=HEAD	tests/ci/suites/mldsa-job-scope.test.sh
 mldsa-run-fails-open	.github/workflows/tests.yml	          if [ "$NEEDED" = false ]; then	          if [ "$NEEDED" != true ]; then	tests/ci/suites/mldsa-job-scope.test.sh
-freshness-pip-behind	.github/workflows/reusable-dependabot-freshness.yml	            behind="$(pins_behind_upstream; pip_pins_behind_upstream)"	            behind="$(pins_behind_upstream)"	tests/ci/reusable/reusable-dependabot-freshness.test.sh
-freshness-pip-empty	.github/workflows/reusable-dependabot-freshness.yml	              if [ "$kind" = empty ]; then	              if false; then	tests/ci/reusable/reusable-dependabot-freshness.test.sh
-freshness-pip-unreadable	.github/workflows/reusable-dependabot-freshness.yml	              if ! [[ "$newest" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then	              if false; then	tests/ci/reusable/reusable-dependabot-freshness.test.sh
 packages-unusable-diff	scripts/quality/scope/ci-job-scope.sh	        raise ValueError("no usable PR diff")	        pass	tests/quality/scope/ci-job-scope-packages.test.sh
 packages-invalid-entry	scripts/quality/scope/ci-job-scope.sh	or (deps != ["-"] and any(d not in allowed for d in deps))):	or False):	tests/quality/scope/ci-job-scope-packages.test.sh,tests/ci/reusable/reusable-shell-ci.test.sh
 packages-suite-unknown	scripts/quality/scope/ci-job-scope.sh	    if any(s not in dependencies for s in selected):	    if False:	tests/quality/scope/ci-job-scope-packages.test.sh,tests/ci/reusable/reusable-shell-ci.test.sh
-line-limit-scope-base	.github/workflows/reusable-line-limit.yml	            && git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then	            && cat scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then	tests/ci/suites/lint-job-scope.test.sh
-line-limit-txt-comments	.github/workflows/reusable-line-limit.yml	*.yml|*.yaml|*.toml|*.txt) hash_comment=1	*.yml|*.yaml|*.toml) hash_comment=1	tests/ci/reusable/reusable-line-limit.test.sh
-line-limit-caller-txt	.github/workflows/line-limit.yml	svelte yml yaml txt"	svelte yml yaml"	tests/ci/reusable/reusable-line-limit.test.sh
 
 # The refusals below became visible when the check started reading a literal
 # `return N` of a shell function. Each was measured the same way as the ones above.
@@ -446,20 +366,6 @@ health-check-no-valid-until	.github/workflows/health-check.yml	if [ -z "$valid_l
 health-check-valid-until-unreadable	.github/workflows/health-check.yml	if ! valid_epoch="$(date -u -d "$valid_line" +%s 2>/dev/null)"; then	if valid_epoch="$(date -u -d "$valid_line" +%s 2>/dev/null)"; false; then	tests/publication/health-check/health-check-workflow.test.sh
 health-check-roster-unreadable	.github/workflows/health-check.yml	products="$(./scripts/verify/published-roster.sh)" || exit 1	products="$(./scripts/verify/published-roster.sh)" || true	tests/publication/health-check/health-check-workflow.test.sh
 mutation-gate-verdict	.github/workflows/mutation.yml	echo "::error::the decision said run=$RUN and the sweep ended $SWEEP"	exit 0	tests/ci/policy/mutation-workflow.test.sh
-dco-range-unlisted	.github/workflows/reusable-dco.yml	|| { echo "::error::could not list ${BASE_SHA}..${HEAD_SHA}; the range could not be checked"; exit 1; }	|| true	tests/ci/reusable/reusable-dco.test.sh
-dco-missing-signoff	.github/workflows/reusable-dco.yml	if [ "$missing" -ne 0 ]; then	if false; then	tests/ci/reusable/reusable-dco.test.sh
-dco-evil-merge-verdict	.github/workflows/reusable-dco.yml	if [ "$bad" -ne 0 ]; then	if false; then	tests/ci/reusable/reusable-dco.test.sh
-dependabot-freshness-no-pull-request	.github/workflows/reusable-dependabot-freshness.yml	if [ -z "$latest" ]; then	if false; then	tests/ci/reusable/reusable-dependabot-freshness.test.sh
-empty-diff-no-base	.github/workflows/reusable-empty-diff.yml	if [ -z "${BASE:-}" ]; then	if false; then	tests/ci/reusable/reusable-empty-diff.test.sh
-empty-diff-empty	.github/workflows/reusable-empty-diff.yml	echo "::error::this pull request has an empty diff against ${BASE}"	exit 0	tests/ci/reusable/reusable-empty-diff.test.sh
-empty-diff-cannot-compare	.github/workflows/reusable-empty-diff.yml	echo "::error::could not compare this pull request with origin/${BASE} (git diff exited ${rc})"	exit 0	tests/ci/reusable/reusable-empty-diff.test.sh
-line-limit-hard	.github/workflows/reusable-line-limit.yml	if [ "$fail" -ne 0 ]; then	if false; then	tests/ci/reusable/reusable-line-limit.test.sh
-schedule-freshness-both-limits	.github/workflows/reusable-schedule-freshness.yml	if [ -n "$days" ] && [ -n "$hours" ]; then	if false; then	tests/ci/reusable/reusable-schedule-freshness.test.sh
-schedule-freshness-no-limit	.github/workflows/reusable-schedule-freshness.yml	if [ -z "$days" ] && [ -z "$hours" ]; then	if false; then	tests/ci/reusable/reusable-schedule-freshness.test.sh
-schedule-freshness-limit-number	.github/workflows/reusable-schedule-freshness.yml	if ! [[ "$limit" =~ ^[1-9][0-9]*$ ]]; then	if false; then	tests/ci/reusable/reusable-schedule-freshness.test.sh
-schedule-freshness-unreconciled	.github/workflows/reusable-schedule-freshness.yml	echo "::error::The windowed query saw nothing 3 times, but the unwindowed query returned ${latest}."	exit 0	tests/ci/reusable/reusable-schedule-freshness.test.sh
-schedule-freshness-stale	.github/workflows/reusable-schedule-freshness.yml	echo "the next scheduled fire rather than the next few minutes." >&2	exit 0	tests/ci/reusable/reusable-schedule-freshness.test.sh
-lint-rules-base-unfetched	.github/workflows/reusable-workflow-lint.yml	echo "::error::Could not fetch the base commit ${BASE_SHA}, so the rules cannot be read from it." >&2	exit 0	tests/ci/reusable/reusable-workflow-lint.test.sh
 mutation-coverage-workflow-shell	scripts/quality/coverage/check-mutation-coverage.sh	        lines = shell_of(lines)	        pass	tests/quality/coverage/check-mutation-coverage-workflows.test.sh
 mutation-coverage-every-workflow	scripts/quality/coverage/check-mutation-coverage.sh	if n.endswith((".yml", ".yaml"))]	if n == "publish.yml"]	tests/quality/coverage/check-mutation-coverage-workflows.test.sh
 
@@ -496,10 +402,6 @@ publish-checkout-keeps-no-token	.github/workflows/publish.yml	persist-credential
 freshness-reads-tests	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" tests.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 freshness-reads-line-limit	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" line-limit.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 freshness-reads-workflow-lint	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" workflow-lint.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
-commit-hygiene-identity	.github/workflows/commit-hygiene.yml	bash "$identity" "$BASE" "$HEAD"	true	tests/ci/policy/workflow-calls-are-exact.test.sh,tests/ci/policy/commit-hygiene-base-rule.test.sh
-commit-hygiene-identity-reads-the-base-copy	.github/workflows/commit-hygiene.yml	git show "$BASE:scripts/quality/hygiene/check-commit-identity.sh" > "$identity"	cp scripts/quality/hygiene/check-commit-identity.sh "$identity"	tests/ci/policy/commit-hygiene-base-rule.test.sh
-commit-hygiene-secrets	.github/workflows/commit-hygiene.yml	bash "$scan" "$BASE" "$HEAD"	true	tests/ci/policy/workflow-calls-are-exact.test.sh,tests/ci/policy/commit-hygiene-base-rule.test.sh
-commit-hygiene-scan-reads-the-base-copy	.github/workflows/commit-hygiene.yml	git show "$BASE:scripts/quality/hygiene/check-secrets.sh" > "$scan"	cp scripts/quality/hygiene/check-secrets.sh "$scan"	tests/ci/policy/commit-hygiene-base-rule.test.sh
 verify-debs-private-dir	scripts/verify/verify-debs.sh	|| { echo "::error::cannot create a private directory to hold the verified packages" >&2; exit 1; }	|| true	tests/verify/verify-debs-same-bytes.test.sh
 verify-debs-copy-not-kept	scripts/verify/verify-debs.sh	sys.exit(4)	sys.exit(1)	tests/verify/verify-debs-same-bytes.test.sh
 verify-debs-copy-not-kept-message	scripts/verify/verify-debs.sh	elif [ "$python_rc" -eq 4 ]; then	elif false; then	tests/verify/verify-debs-same-bytes.test.sh
@@ -510,19 +412,11 @@ verify-debs-version-from-the-file	scripts/verify/verify-debs.sh	dpkg-deb -f "$ve
 verify-debs-architecture-from-the-file	scripts/verify/verify-debs.sh	dpkg-deb -f "$verified" Architecture	dpkg-deb -f "$deb" Architecture	tests/verify/verify-debs-same-bytes.test.sh
 permissions-not-declared	.github/workflows/drift.yml	permissions:	x-permissions:	tests/ci/policy/permissions-declared.test.sh
 permissions-workflow-write	.github/workflows/drift.yml	contents: read	contents: write	tests/ci/policy/permissions-declared.test.sh
-permissions-write-all	.github/workflows/commit-hygiene.yml	permissions: {}	permissions: write-all	tests/ci/policy/permissions-declared.test.sh
 permissions-secret-job-inherits	.github/workflows/publish.yml	    permissions:	    x-permissions:	tests/ci/policy/permissions-declared.test.sh
 upgrade-names-collation	keyring/upgrade/glyndor-upgrade	names="$(printf '%s\n' "$names_raw" | grep -v '^$' | LC_ALL=C sort -u || true)"	names="$(printf '%s\n' "$names_raw" | grep -v '^$' | sort -u || true)"	tests/ci/policy/locale-pinned.test.sh
 upgrade-plan-collation	keyring/upgrade/glyndor-upgrade	plan="$(printf '%s\n' "$plan_raw" | grep -v '^$' | LC_ALL=C sort -u || true)"	plan="$(printf '%s\n' "$plan_raw" | grep -v '^$' | sort -u || true)"	tests/ci/policy/locale-pinned.test.sh
 distro-floor-refusal-is-the-readme-floor	scripts/verify/distro-floor.sh	grep -qF "libc6 (>= $floor_libc)" "$work/log"	grep -qE 'podman \(>= 5\.0\)|libc6 \(>= [0-9]+\.[0-9]+\)' "$work/log"	tests/verify/distro-floor.test.sh
 distro-floor-libc-number	scripts/verify/distro-floor.sh	floor_libc="2.39"	floor_libc="2.35"	tests/verify/distro-floor.test.sh
-group-per-run-shell-ci	.github/workflows/reusable-shell-ci.yml	shell-ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}	shell-ci-${{ github.workflow }}-${{ github.ref }}	tests/ci/policy/cancel-policy.test.sh
-group-per-run-workflow-lint	.github/workflows/reusable-workflow-lint.yml	workflow-lint-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}	workflow-lint-${{ github.workflow }}-${{ github.ref }}	tests/ci/policy/cancel-policy.test.sh
-group-per-run-line-limit	.github/workflows/reusable-line-limit.yml	line-limit-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}	line-limit-${{ github.workflow }}-${{ github.ref }}	tests/ci/policy/cancel-policy.test.sh
-group-per-run-schedule-freshness	.github/workflows/reusable-schedule-freshness.yml	schedule-freshness-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}	schedule-freshness-${{ github.workflow }}-${{ github.ref }}	tests/ci/policy/cancel-policy.test.sh
-group-per-run-dependabot-freshness	.github/workflows/reusable-dependabot-freshness.yml	dependabot-freshness-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}	dependabot-freshness-${{ github.workflow }}-${{ github.ref }}	tests/ci/policy/cancel-policy.test.sh
-group-per-run-dco	.github/workflows/reusable-dco.yml	dco-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}	dco-${{ github.workflow }}-${{ github.ref }}	tests/ci/policy/cancel-policy.test.sh
-group-per-run-empty-diff	.github/workflows/reusable-empty-diff.yml	empty-diff-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}	empty-diff-${{ github.workflow }}-${{ github.ref }}	tests/ci/policy/cancel-policy.test.sh
 group-rule-push	tests/ci/policy/cancel-policy.test.sh	grep -qE '^  (push|workflow_call):' "$f" || continue	grep -qE '^  (workflow_call):' "$f" || continue	tests/ci/policy/cancel-policy.test.sh
 group-rule-reusable	tests/ci/policy/cancel-policy.test.sh	grep -qE '^  (push|workflow_call):' "$f" || continue	grep -qE '^  (push):' "$f" || continue	tests/ci/policy/cancel-policy.test.sh
 group-rule-form	tests/ci/policy/cancel-policy.test.sh	*"$PER_RUN"*) continue ;;	*"github.run_id"*) continue ;;	tests/ci/policy/cancel-policy.test.sh
@@ -533,20 +427,9 @@ netflags-max-time	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	(?:
 netflags-max-filesize	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	(?:^|\s)--max-filesize\s+[0-9$]	(?:^|\s)--max-filesize\s*	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
 netflags-comment-skipped	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	if line.lstrip().startswith("#") or not CURL.search(line):	if not CURL.search(line):	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
 netflags-empty-scan	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	if curls == 0:	if False:	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
-grace-deepen	.github/workflows/reusable-schedule-freshness.yml	git fetch --quiet --unshallow --no-tags origin >/dev/null 2>&1 || true	true	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
-grace-checkout-depth	.github/workflows/reusable-schedule-freshness.yml	fetch-depth: 1	fetch-depth: 0	tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
-sort-pinned-shell-ci-1	.github/workflows/reusable-shell-ci.yml	LC_ALL=C sort -u || true)"	sort -u || true)"	tests/ci/policy/locale-pinned.test.sh
-sort-pinned-dependabot-freshness-2	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -u \	sort -u \	tests/ci/policy/locale-pinned.test.sh
-sort-pinned-dependabot-freshness-3	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -V | tail -n 1 || true)"	sort -V | tail -n 1 || true)"	tests/ci/policy/locale-pinned.test.sh
-sort-pinned-dependabot-freshness-4	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -V | tail -n 1)" != "$tag" ]; then	sort -V | tail -n 1)" != "$tag" ]; then	tests/ci/policy/locale-pinned.test.sh
-sort-pinned-dependabot-freshness-5	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -V | tail -n 1)" != "$version" ]; then	sort -V | tail -n 1)" != "$version" ]; then	tests/ci/policy/locale-pinned.test.sh
-sort-pinned-dependabot-freshness-6	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -u | wc -l | tr -d ' ')"	sort -u | wc -l | tr -d ' ')"	tests/ci/policy/locale-pinned.test.sh
-pins-enumerated-as-keys	.github/workflows/reusable-dependabot-freshness.yml	grep -rhE '^[[:space:]]*(-[[:space:]]+)?uses:	grep -rhE 'uses:	tests/ci/reusable/reusable-dependabot-freshness.test.sh
-pins-counted-as-keys	.github/workflows/reusable-dependabot-freshness.yml	grep -rhoE '^[[:space:]]*(-[[:space:]]+)?uses:	grep -rhoE 'uses:	tests/ci/reusable/reusable-dependabot-freshness.test.sh
 coverage-an-exit-in-shell-is-a-refusal	scripts/quality/coverage/check-mutation-coverage.sh	hit = EXIT.search(code) or (n not in python and EXIT_HANDED.search(code_of(line, STRING))) \	hit = (n not in python and EXIT_HANDED.search(code_of(line, STRING))) \	tests/quality/coverage/check-mutation-coverage.test.sh
 coverage-an-exit-that-hands-on-a-status-is-a-refusal	scripts/quality/coverage/check-mutation-coverage.sh	hit = EXIT.search(code) or (n not in python and EXIT_HANDED.search(code_of(line, STRING))) \	hit = EXIT.search(code) \	tests/quality/coverage/check-mutation-coverage.test.sh
 upgrade-hands-on-the-status-of-the-upgrade	keyring/upgrade/glyndor-upgrade	exit "$rc"	exit 0	tests/keyring/glyndor-upgrade-errors.test.sh
-shell-ci-a-script-that-is-not-executable-fails-the-job	.github/workflows/reusable-shell-ci.yml	exit "$rc"	exit 0	tests/ci/reusable/reusable-shell-ci.test.sh
 reusable-drift-the-download-has-no-size-cap	scripts/monitoring/check-reusable-drift.sh	--max-time 60 --max-filesize 1048576 "$url"	--max-time 60 "$url"	tests/monitoring/check-reusable-drift.test.sh
 reusable-drift-a-redirect-may-leave-https	scripts/monitoring/check-reusable-drift.sh	--proto =https --proto-redir =https --connect-timeout 10	--proto =https --connect-timeout 10	tests/monitoring/check-reusable-drift.test.sh
 reusable-drift-any-protocol-is-fetched	scripts/monitoring/check-reusable-drift.sh	curl -fsSL --proto =https --proto-redir =https	curl -fsSL --proto-redir =https	tests/monitoring/check-reusable-drift.test.sh

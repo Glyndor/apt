@@ -30,6 +30,7 @@ import subprocess
 import sys
 
 CATALOG = "tests/mutation/catalog.txt"
+CATALOG_D = "tests/mutation/catalog.d"
 RESOLVER = "scripts/quality/scope/ci-job-scope.sh"
 # A change to any of these changes what the sweep does or who decides it.
 GLOBAL_INPUTS = {
@@ -67,15 +68,27 @@ def changed_paths():
     return paths
 
 
+def catalogue_files(ref):
+    """catalog.txt, then every catalog.d/*.txt of the commit, in the order LC_ALL=C sorts them."""
+    listing = git("ls-tree", "-z", ref, "--", CATALOG_D + "/").split(b"\0")
+    parts = []
+    for record in listing:
+        meta, _, path = record.partition(b"\t")
+        if meta.split()[1:2] == [b"blob"] and path.endswith(b".txt"):
+            parts.append(path)
+    return [CATALOG] + [os.fsdecode(path) for path in sorted(parts)]
+
+
 def catalogue(ref):
     entries = {}
-    for raw in git("show", f"{ref}:{CATALOG}").decode("utf-8").splitlines():
-        if not raw.strip() or raw.lstrip().startswith("#"):
-            continue
-        fields = raw.split("\t")
-        if len(fields) != 5 or not ID.match(fields[0]) or fields[0] in entries:
-            raise Undecided(f"a catalogue line cannot be read in {ref}")
-        entries[fields[0]] = (raw, fields[1], [t for t in fields[4].split(",") if t])
+    for name in catalogue_files(ref):
+        for raw in git("show", f"{ref}:{name}").decode("utf-8").splitlines():
+            if not raw.strip() or raw.lstrip().startswith("#"):
+                continue
+            fields = raw.split("\t")
+            if len(fields) != 5 or not ID.match(fields[0]) or fields[0] in entries:
+                raise Undecided(f"a catalogue line cannot be read in {ref}")
+            entries[fields[0]] = (raw, fields[1], [t for t in fields[4].split(",") if t])
     if not entries:
         raise Undecided(f"the catalogue of {ref} has no entries")
     return entries

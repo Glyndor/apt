@@ -627,6 +627,9 @@ tests/quality/lint/check-test-job-not-switchable.test.sh
 	.github/workflows/reusable-shell-ci.yml
 	.github/workflows/tests.yml
 
+tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
+	scripts/quality/lint/check-test-job-not-switchable.sh
+
 tests/quality/lint/check-tooling-isolation.test.sh
 	scripts/quality/lint/check-tooling-isolation.sh
 
@@ -803,6 +806,7 @@ tests/quality/coverage/check-mutation-coverage.test.sh
 	scripts/**
 	keyring/upgrade/**
 	tests/mutation/catalog.txt
+	tests/mutation/catalog.d/**
 	tests/mutation/exemptions.txt
 	tests/quality/coverage/check-mutation-coverage.test.sh
 	.github/workflows/publish.yml
@@ -815,6 +819,7 @@ tests/quality/coverage/check-mutation-coverage-workflows.test.sh
 	keyring/upgrade/**
 	.github/workflows/**
 	tests/mutation/catalog.txt
+	tests/mutation/catalog.d/**
 	tests/mutation/exemptions.txt
 	tests/quality/coverage/check-mutation-coverage-workflows.test.sh
 

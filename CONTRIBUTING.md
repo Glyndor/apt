@@ -113,7 +113,7 @@ as its script, which the coverage check above enforces:
 | Folder | What its scripts decide |
 |---|---|
 | `hygiene/` | that the tree and its commits agree with the rules the repository states: `.editorconfig`, commit identities, secrets |
-| `lint/` | static rules over workflows and shell: action pins, the shell inside `run:` blocks, a required job that cannot be switched off, tooling next to a secret |
+| `lint/` | static rules over workflows and shell: action pins, the shell inside `run:` blocks, a required job that cannot be switched off or weakened by what its caller passes, tooling next to a secret |
 | `scope/` | which jobs, suites and mutation entries a change can affect, with the maps they read |
 | `coverage/` | that every script has a test, every suite is run by a workflow and every refusal has a mutation entry or an exemption, with the list of suites no workflow can run |
 
@@ -177,7 +177,7 @@ CI is split by responsibility rather than gathered in one file:
 | `distro-floor.yml` | a release the README lists as supported stops installing, or the unsupported one stops being refused |
 | `drift.yml` | this repository's reusables or shared files differ from the sibling channels |
 | `roster-releases.yml` | a product of the publish roster has no usable release (advisory, only on pull requests that change the roster) |
-| `mutation.yml` | a guard the suite would no longer notice, broken on purpose: every catalogued guard once a week, and on a pull request the ones it can affect (its `gate` job tells a sweep that was not needed from one that did not run) |
+| `mutation.yml` | a guard the suite would no longer notice, broken on purpose (the catalogue is `tests/mutation/catalog.txt` and the files of `tests/mutation/catalog.d/`): every catalogued guard once a week, and on a pull request the ones it can affect (its `gate` job tells a sweep that was not needed from one that did not run) |
 
 Every reusable this repository calls lives in `.github/workflows/reusable-*.yml`
 as a copy kept identical in logic to the

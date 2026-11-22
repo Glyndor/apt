@@ -433,6 +433,42 @@ freshness-drift reusable-schedule-freshness.yml schedule
 freshness-mutation reusable-schedule-freshness.yml schedule
 LIST
 
+# --- a switch with no value is still a switch -----------------------------
+#
+# YAML reads `if:` with nothing after it as null, so a rule that compares the
+# value with the one it allows (none) sees two nulls and lets it through. The
+# key is what the rule looks at first, and then the value.
+d="$(new)"; caller "$d" './tests/one.test.sh'
+other_caller "$d" dco.yml dco reusable-dco.yml ''
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "the caller of reusable-dco with neither if: nor needs: is accepted" "0" "$rc"
+
+for form in $'    if:\n' $'    if: \'\'\n'; do
+	d="$(new)"; caller "$d" './tests/one.test.sh'
+	other_caller "$d" dco.yml dco reusable-dco.yml "$form"
+	out="$(run_in "$d" "$SCRIPT")"; rc=$?
+	check "an if: with no value ($(printf '%s' "$form" | tr -d '\n ')) is refused" "1" "$rc"
+	check "and it is refused for the if:, naming the job and the file" "1" \
+		"$(said "$out" 'job `dco` in .github/workflows/dco.yml calls `reusable-dco.yml` and carries a job-level `if:`')"
+done
+
+for form in $'    needs:\n' $'    needs: \'\'\n' $'    needs: []\n'; do
+	d="$(new)"; caller "$d" './tests/one.test.sh'
+	other_caller "$d" dco.yml dco reusable-dco.yml "$form"
+	out="$(run_in "$d" "$SCRIPT")"; rc=$?
+	check "a needs: with no value ($(printf '%s' "$form" | tr -d '\n ')) is refused" "1" "$rc"
+	check "and it is refused for the needs:, naming the job and the file" "1" \
+		"$(said "$out" 'job `dco` in .github/workflows/dco.yml calls `reusable-dco.yml` and carries `needs:`')"
+done
+
+# A watcher that is allowed a condition is allowed that one, not none.
+d="$(new)"; caller "$d" './tests/one.test.sh'
+printf -v lines '    needs: published-bytes-ready\n    if:\n'
+other_caller "$d" freshness.yml freshness-published-bytes reusable-schedule-freshness.yml "$lines"
+out="$(run_in "$d" "$SCRIPT")"; rc=$?
+check "the published-bytes watcher with an if: and no condition is refused" "1" "$rc"
+check "and it is refused for the if:" "1" "$(said "$out" 'job-level `if:`')"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

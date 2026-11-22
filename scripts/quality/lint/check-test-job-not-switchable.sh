@@ -25,6 +25,22 @@
 #     CONDITIONAL_CALLERS below, by workflow file, job, reusable and exact
 #     value, and the comment above each says why that condition is not a
 #     switch.
+#     The condition is compared by presence and by value: an `if:` with no
+#     value, which YAML reads as null, is still an `if:`.
+#   - a caller of a local reusable that passes an input the reusable's entry in
+#     ALLOWED_INPUTS below does not list. The inputs that weaken a check
+#     (`tooling-isolation`, `severity`, `check-exec-bit`, `hard-limit`,
+#     `soft-limit`, `exclude-pattern`) switch it off as surely as an `if:` does,
+#     and no suite reads the values a caller hands over. The list is closed: a
+#     local reusable with no entry fails the rule until someone declares what its
+#     callers may pass. `extensions` of reusable-line-limit.yml may grow but may
+#     not shrink: a caller keeps every extension the callers of the base commit
+#     (BASE_SHA, the commit the pull request event names) pass, since dropping
+#     `sh` from the list is a way not to measure the scripts. The list is
+#     lowercase words of letters and digits with one space between two of them
+#     and nothing else: the reusable turns it into a regular expression, so a
+#     new line, a tab, a `|` or a bracket would mean to it something the rule
+#     does not read.
 #   - for a caller of reusable-shell-ci.yml, a test-command whose first
 #     non-blank token is not a suite invocation.
 #     The accepted grammar is a list of `./tests/<name>.test.sh` or
@@ -65,12 +81,14 @@
 # directory and not this file's location.
 #
 # Usage: check-test-job-not-switchable.sh [repo-root]   (default: the current directory)
+# BASE_SHA, when set, names the commit the extensions of a caller are held to.
 set -euo pipefail
 cd "${1:-$PWD}"
 python3 -I - <<'PY'
 import glob
 import os
 import re
+import subprocess
 import sys
 
 import yaml
@@ -129,6 +147,42 @@ CONDITIONAL_CALLERS = {
         )
     },
 }
+
+# The inputs a caller may pass to each local reusable, by reusable. The list is
+# closed. An input that is not here is refused, whatever its value, because the
+# ones a caller could use to weaken the check are the ones nothing else reads:
+# `tooling-isolation` (reusable-workflow-lint.yml) turns the secret rule off,
+# `severity` and `check-exec-bit` (reusable-shell-ci.yml) make the shell lint
+# report nothing and stop looking at file modes, `hard-limit`, `soft-limit` and
+# `exclude-pattern` (reusable-line-limit.yml) raise the ceiling or skip every
+# file, and `working-directory` moves what the shell job looks at. The pins of
+# shellcheck are read by scripts/monitoring/check-tool-versions.sh. A reusable
+# that has no entry fails the rule; add one, with the inputs its callers pass
+# today, in the change that adds the reusable.
+ALLOWED_INPUTS = {
+    "reusable-dco.yml": frozenset(),
+    "reusable-dependabot-freshness.yml": frozenset({"max-age-days"}),
+    "reusable-empty-diff.yml": frozenset(),
+    "reusable-line-limit.yml": frozenset({"extensions"}),
+    "reusable-schedule-freshness.yml": frozenset({
+        "workflow", "max-age-days", "max-age-hours", "count-any-conclusion",
+    }),
+    "reusable-shell-ci.yml": frozenset({
+        "test-command", "apt-packages", "skip-suite-paths",
+    }),
+    "reusable-workflow-lint.yml": frozenset(),
+}
+
+# The inputs that are a list of words a caller may add to and may not take from,
+# as (reusable, input). What it keeps is what the callers of the base commit
+# pass: see base_words().
+KEEP_BASE_WORDS = (("reusable-line-limit.yml", "extensions"),)
+
+# The shape of such a list: lowercase words of letters and digits, one space
+# between two of them. The reusable turns the list into a regular expression
+# (`\.(a|b|c)$`), so a newline, a tab, two spaces in a row or a `|`, `.*`, `(`
+# or `[` would mean something else to it than to the rule that compares words.
+WORD_LIST_RE = re.compile(r"[a-z0-9]+( [a-z0-9]+)*")
 
 # A single suite invocation, as the grammar accepts it: the path
 # alone, or `bash` in front of it. Names are constrained to what
@@ -238,11 +292,106 @@ def check_test_command(cmd, path, job_id):
     return None
 
 
-def main():
-    files = sorted(set(
+def workflow_files():
+    return sorted(set(
         glob.glob(".github/workflows/*.yml")
         + glob.glob(".github/workflows/*.yaml")
     ))
+
+
+def base_words(reusable, name):
+    """The words every caller of `reusable` in the base commit passes as
+    `name`, or None when no base commit is named (a push, a schedule, a run by
+    hand). A base that is named and cannot be read stops the rule: a floor
+    that cannot be read is not one the pull request has met."""
+    base = os.environ.get("BASE_SHA", "")
+    if not base:
+        return None
+
+    def git(*args):
+        done = subprocess.run(
+            ["git", *args], capture_output=True, text=True, check=False
+        )
+        if done.returncode != 0:
+            print(f"::error::BASE_SHA {base} cannot be read: {' '.join(args)} failed")
+            sys.exit(1)
+        return done.stdout
+
+    if not re.fullmatch(r"[0-9a-f]{40}", base):
+        print(f"::error::BASE_SHA {base!r} is not a commit id")
+        sys.exit(1)
+    words = set()
+    for path in git("ls-tree", "-r", "--name-only", base, "--", ".github/workflows").split("\n"):
+        if not path.endswith((".yml", ".yaml")) or os.path.basename(path).startswith("reusable-"):
+            continue
+        try:
+            spec = yaml.safe_load(git("show", f"{base}:{path}"))
+        except yaml.YAMLError:
+            continue
+        for job in ((spec or {}).get("jobs") or {}).values() if isinstance(spec, dict) else ():
+            if not isinstance(job, dict) or not isinstance(job.get("uses"), str):
+                continue
+            local = LOCAL_REUSABLE_RE.match(job["uses"])
+            given = job.get("with")
+            if local and local.group(1) == reusable and isinstance(given, dict):
+                words |= set(str(given.get(name, "")).split())
+    return words
+
+
+def refused_inputs(job, reusable, path, job_id):
+    """The refusals of what the job passes to the reusable: one per input."""
+    given = job.get("with")
+    if given is None:
+        given = {}
+    if not isinstance(given, dict):
+        return [f"job `{job_id}` in {path} calls `{reusable}` with a `with:` "
+                "that is not a mapping, so what it passes cannot be read."]
+    found = []
+    allowed = ALLOWED_INPUTS[reusable]
+    for name in sorted(given, key=str):
+        if name in allowed:
+            continue
+        listed = ", ".join(f"`{n}`" for n in sorted(allowed)) or "none"
+        found.append(
+            f"job `{job_id}` in {path} passes the input `{name}` to "
+            f"`{reusable}`, which its callers may not pass (they may pass: "
+            f"{listed}). An input a caller sets can weaken the check the "
+            "reusable defines, and nothing else reads its value. Delete it; "
+            "to admit one, list it in ALLOWED_INPUTS of this script."
+        )
+    for kept_reusable, name in KEEP_BASE_WORDS:
+        if kept_reusable != reusable:
+            continue
+        value = given.get(name, "")
+        if name in given and not (
+            isinstance(value, str) and WORD_LIST_RE.fullmatch(value)
+        ):
+            found.append(
+                f"job `{job_id}` in {path} passes the input `{name}` to "
+                f"`{reusable}` as something other than lowercase words of "
+                "letters and digits with one space between them. The reusable "
+                "turns the list into a regular expression, and any other "
+                "shape (a new line, a tab, a `|`, a `.*`, a bracket) can mean "
+                "something else to it than to the rule that reads the words."
+            )
+            continue
+        floor = base_words(reusable, name)
+        if not floor:
+            continue
+        missing = sorted(floor - set(str(value).split(" ")))
+        if missing:
+            found.append(
+                f"job `{job_id}` in {path} passes the input `{name}` to "
+                f"`{reusable}` without {', '.join(f'`{w}`' for w in missing)}, "
+                "which the callers of the base commit pass. A caller may add "
+                f"to the list and may not take from it: a file type left out "
+                "of it is a file the check does not measure."
+            )
+    return found
+
+
+def main():
+    files = workflow_files()
 
     callers = 0
     violations = []
@@ -282,7 +431,7 @@ def main():
             # is a switch. Any value: `false`, `inputs.foo`, even
             # `true` would skip the call when the expression is
             # false, and a skipped required check reports Success.
-            if "if" in job and job["if"] != allowed.get("if"):
+            if "if" in job and ("if" not in allowed or job["if"] != allowed["if"]):
                 violations.append((
                     path, job_id,
                     f"job `{job_id}` in {path} calls `{reusable}` "
@@ -296,7 +445,7 @@ def main():
                 continue
             # Rule: `needs:` is the same switch one job away. A
             # caller that needs a skipped job is skipped too.
-            if "needs" in job and job["needs"] != allowed.get("needs"):
+            if "needs" in job and ("needs" not in allowed or job["needs"] != allowed["needs"]):
                 violations.append((
                     path, job_id,
                     f"job `{job_id}` in {path} calls `{reusable}` "
@@ -318,6 +467,22 @@ def main():
                     "without failing the run lets a red suite through. "
                     "Delete it."
                 ))
+                continue
+            # Rule: a caller passes only the inputs the reusable's entry of
+            # ALLOWED_INPUTS lists. A reusable with no entry is refused, so a
+            # new one cannot be called with anything until it is declared.
+            if reusable not in ALLOWED_INPUTS:
+                violations.append((
+                    path, job_id,
+                    f"job `{job_id}` in {path} calls `{reusable}`, which has "
+                    "no entry in ALLOWED_INPUTS of this script, so what a "
+                    "caller may pass to it is not declared. Add the entry, "
+                    "listing the inputs its callers pass today."
+                ))
+                continue
+            refused = refused_inputs(job, reusable, path, job_id)
+            if refused:
+                violations.extend((path, job_id, msg) for msg in refused)
                 continue
             if reusable != REUSABLE:
                 continue

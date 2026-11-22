@@ -2,7 +2,7 @@
 # Fail when a refusal in a script of this repository has neither an entry in the
 # mutation catalogue nor a written exemption.
 #
-# The catalogue in tests/mutation/catalog.txt is what the mutation sweep runs,
+# The catalogue, tests/mutation/catalog.txt and every tests/mutation/catalog.d/*.txt, is what the mutation sweep runs,
 # and the sweep only ever measures the guards it was told about. A guard nobody
 # catalogued is invisible to the one instrument that would say whether a suite
 # notices it gone, and an audit found four such guards that could be deleted
@@ -82,6 +82,7 @@ import sys
 
 root = sys.argv[1]
 CATALOG = "tests/mutation/catalog.txt"
+CATALOG_D = "tests/mutation/catalog.d"
 EXEMPTIONS = "tests/mutation/exemptions.txt"
 WATCHED_DIRS = ("scripts", "keyring/upgrade")
 WORKFLOWS = ".github/workflows"
@@ -321,37 +322,53 @@ def span_of(text, needle):
     return found[0] if len(found) == 1 else None
 
 
+def catalogue_files():
+    """The catalogue: catalog.txt, then every catalog.d/*.txt in the order LC_ALL=C sorts them."""
+    files = [CATALOG]
+    directory = os.path.join(root, CATALOG_D)
+    if os.path.isdir(directory):
+        files += [f"{CATALOG_D}/{name}" for name in sorted(os.listdir(directory))
+                  if name.endswith(".txt") and os.path.isfile(os.path.join(directory, name))]
+    return files
+
+
 def entries():
     found = {}
-    try:
-        body = read(CATALOG)
-    except OSError as exc:
-        errors.append(f"cannot read {CATALOG}: {exc}")
-        return found
-    for raw in body.splitlines():
-        if not raw.strip() or raw.lstrip().startswith("#"):
+    ids = {}
+    for catalogue in catalogue_files():
+        try:
+            body = read(catalogue)
+        except OSError as exc:
+            errors.append(f"cannot read {catalogue}: {exc}")
             continue
-        fields = raw.split("\t")
-        if len(fields) != 5:
-            errors.append(f"{CATALOG}: a line does not hold five fields: {raw}")
-            continue
-        found.setdefault(fields[1], []).append((fields[0], fields[2]))
-        applies(*fields[:4])
+        for raw in body.splitlines():
+            if not raw.strip() or raw.lstrip().startswith("#"):
+                continue
+            fields = raw.split("\t")
+            if len(fields) != 5:
+                errors.append(f"{catalogue}: a line does not hold five fields: {raw}")
+                continue
+            if fields[0] in ids:
+                errors.append(f"{catalogue}: {fields[0]}: the id is already an entry of {ids[fields[0]]}, "
+                              "so the sweep refuses the catalogue")
+            ids.setdefault(fields[0], catalogue)
+            found.setdefault(fields[1], []).append((fields[0], fields[2]))
+            applies(catalogue, *fields[:4])
     return found
 
 
-def applies(ident, rel, old, new):
+def applies(catalogue, ident, rel, old, new):
     """The runner's own conditions for applying an entry, checked without running it."""
     try:
         count = read(rel).count(old)
     except OSError:
-        errors.append(f"{CATALOG}: {ident}: {rel} cannot be read, so the sweep cannot apply the entry")
+        errors.append(f"{catalogue}: {ident}: {rel} cannot be read, so the sweep cannot apply the entry")
         return
     if count != 1:
-        errors.append(f"{CATALOG}: {ident}: its text is in {rel} {count} time(s), not once, "
+        errors.append(f"{catalogue}: {ident}: its text is in {rel} {count} time(s), not once, "
                       "so the sweep cannot apply the entry")
     elif old == new:
-        errors.append(f"{CATALOG}: {ident}: it replaces its text with itself, so the sweep cannot apply the entry")
+        errors.append(f"{catalogue}: {ident}: it replaces its text with itself, so the sweep cannot apply the entry")
 
 
 def exemptions():

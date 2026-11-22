@@ -172,6 +172,41 @@ check "and raises no warning, because the comments are not counted" "0" \
 caller_exts="$(sed -n 's/^ *extensions: "\(.*\)"$/\1/p' "$HERE/.github/workflows/line-limit.yml")"
 check "the caller opens .txt files" "1" "$(printf ' %s ' "$caller_exts" | grep -q ' txt ' && echo 1 || echo 0)"
 
+# --- the list is words, and only words ---------------------------------------
+#
+# The extensions become the alternatives of a regular expression, so a `|`, a `.*`,
+# a bracket or a star in one of them would select other files than it names. The
+# step refuses such a list instead of building the pattern, and says so; the list
+# the callers pass today, and the same words split by tabs and new lines, are
+# measured as before.
+
+sandbox "$WORK/j" "scripts/huge.sh:600"
+for bad in 'sh|.*' '.*' 'sh|yml' 'sh(' '[a-z]' 'sh*' 'sh.'; do
+	out="$(run_step "$WORK/j" "$bad")"; rc=$?
+	check "the extension list '$bad' is refused" "1" "$rc"
+	check "and it is refused for its shape, naming the extension" "1" \
+		"$(printf '%s' "$out" | grep -q 'is not made of letters and digits only' && echo 1 || echo 0)"
+	check "and no file is measured for it" "0" \
+		"$(printf '%s' "$out" | grep -c '600 code lines')"
+done
+
+for empty in '' '   '; do
+	out="$(run_step "$WORK/j" "$empty")"; rc=$?
+	check "an extension list with no word ('$empty') is refused" "1" "$rc"
+	check "and it is refused for naming nothing to measure" "1" \
+		"$(printf '%s' "$out" | grep -q 'names no extension' && echo 1 || echo 0)"
+done
+
+out="$(run_step "$WORK/j" "$SH_EXTS")"; rc=$?
+check "the list of today is measured and the 600-line script fails it" "1" "$rc"
+check "and the refusal of a shape is not what said so" "0" \
+	"$(printf '%s' "$out" | grep -c 'letters and digits only')"
+out="$(run_step "$WORK/j" "rs	go
+  sh   yml")"; rc=$?
+check "words split by a tab, a new line and repeated spaces are measured too" "1" "$rc"
+check "and the 600-line script is the one reported" "1" \
+	"$(printf '%s' "$out" | grep -q 'scripts/huge.sh has 600 code lines' && echo 1 || echo 0)"
+
 # --- vendored and minified files are skipped by design -------------------
 
 sandbox "$WORK/d" "vendor/big.sh:600" "app.min.js:600"

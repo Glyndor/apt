@@ -41,6 +41,11 @@ repo() {
 	cp "$HERE/scripts/quality/scope/ci-job-scope.sh" "$R/scripts/quality/scope/ci-job-scope.sh"
 	printf '%s' "$MAP" > "$R/scripts/quality/scope/suite-scope.txt"
 	printf '%s' "$CATALOG" > "$R/tests/mutation/catalog.txt"
+	if [ -n "${SPLIT:-}" ]; then # the second entry lives in a part of catalog.d
+		mkdir -p "$R/tests/mutation/catalog.d"
+		grep '^b-guard' "$R/tests/mutation/catalog.txt" > "$R/tests/mutation/catalog.d/b.txt"
+		grep -v '^b-guard' "$R/tests/mutation/catalog.txt" > "$WORK/first"; mv "$WORK/first" "$R/tests/mutation/catalog.txt"
+	fi
 	printf 'runner\n' > "$R/tests/mutation/run-mutations.sh"
 	printf 'runner\n' > "$R/tests/ci/suites/check-suite-completeness.test.sh"
 	printf 'on: pull_request\n' > "$R/.github/workflows/mutation.yml"
@@ -116,6 +121,32 @@ git -C "$R" checkout -q main; git -C "$R" rm -q tests/mutation/catalog.txt; git 
 git -C "$R" branch -D pr -q; git -C "$R" checkout -q -b pr
 printf '%s' "$CATALOG" > "$R/tests/mutation/catalog.txt"; merge
 check "a base without a catalogue runs every entry" "all" "$(decide)"
+
+# --- the catalogue in parts -----------------------------------------------------
+# The entries of tests/mutation/catalog.d/*.txt are read like those of catalog.txt, in
+# the base commit and in the merge, and the decision is about the entry, not the file.
+SPLIT=1 repo partscript; echo more >> "$R/scripts/b/y.sh"; merge
+check "a change to a script an entry of a part mutates runs that entry" "b-guard" "$(decide)"
+SPLIT=1 repo partfirst; echo more >> "$R/scripts/a/x.sh"; merge
+check "and the entry of catalog.txt is told apart from it" "a-guard" "$(decide)"
+SPLIT=1 repo partboth; echo more >> "$R/scripts/a/x.sh"; echo more >> "$R/scripts/b/y.sh"; merge
+check "when both are selected the decision says all" "all" "$(decide)"
+SPLIT=1 repo partskip; echo more >> "$R/README.md"; merge
+check "a change no entry of either file can see runs nothing" "" "$(decide)"
+SPLIT=1 repo partline; sed -i 's|^b-guard\t\(.*\)\ttests/b/two.test.sh$|b-guard\t\1\ttests/b/two.test.sh,tests/a/one.test.sh|' "$R/tests/mutation/catalog.d/b.txt"; merge
+check "a changed line of a part runs that entry, and only it" "b-guard" "$(decide)"
+SPLIT=1 repo partnew; printf 'c-guard\tscripts/b/y.sh\texit 1\tfalse\ttests/b/two.test.sh\n' > "$R/tests/mutation/catalog.d/c.txt"; merge
+check "an entry in a new part runs, and only it" "c-guard" "$(decide)"
+SPLIT=1 repo partmove; cat "$R/tests/mutation/catalog.d/b.txt" >> "$R/tests/mutation/catalog.txt"; git -C "$R" rm -q -f tests/mutation/catalog.d/b.txt; merge
+check "an entry moved from a part into catalog.txt unchanged runs nothing" "" "$(decide)"
+SPLIT=1 repo partdup; grep '^b-guard' "$R/tests/mutation/catalog.d/b.txt" > "$R/tests/mutation/catalog.txt.dup"; cat "$R/tests/mutation/catalog.txt.dup" >> "$R/tests/mutation/catalog.txt"; rm "$R/tests/mutation/catalog.txt.dup"; merge
+check "an id in two files runs every entry" "all" "$(decide)"
+SPLIT=1 repo partbad; printf 'broken line without tabs\n' >> "$R/tests/mutation/catalog.d/b.txt"; merge
+check "a line of a part that cannot be read runs every entry" "all" "$(decide)"
+SPLIT=1 repo partdir; mkdir -p "$R/tests/mutation/catalog.d/dir.txt"; printf 'x\n' > "$R/tests/mutation/catalog.d/dir.txt/inside"; echo more >> "$R/README.md"; merge
+check "a directory of catalog.d named like a .txt is not read" "" "$(decide)"
+SPLIT=1 repo partnotes; printf 'broken line without tabs\n' > "$R/tests/mutation/catalog.d/notes.md"; echo more >> "$R/README.md"; merge
+check "a file of catalog.d that is not a .txt is not read" "" "$(decide)"
 
 # --- the control: without the resolver, a fixture change selects nothing ----------
 # The fixture case above passes only because the suite map is consulted. A

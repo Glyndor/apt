@@ -206,6 +206,13 @@ for r in "${RULES[@]}"; do
 	check "$name: and the checkout's rule refuses the violation" "1" "$rc"
 done
 
+# The extensions a caller of the line limit passes are held to the ones the base
+# commit's callers pass, and the rule can only know that commit if the step hands
+# it over: the commit the event names, not whatever the checkout points at.
+check "check-test-job-not-switchable: the step passes the base commit the event names as BASE_SHA" \
+	"{'BASE_SHA': '\${{ github.event.pull_request.base.sha }}'}" \
+	"$(field "${STEP[check-test-job-not-switchable.sh]}" env)"
+
 # The pull request that moves the scripts into their folders. The base carries
 # them, and the list of exempt suites, where they were before, so none of the new
 # paths is in the base. A pull request that moves a rule and weakens it in the

@@ -1,4 +1,5 @@
-# The refusals that have no entry in tests/mutation/catalog.txt, and why. One per
+# The refusals that have no entry in tests/mutation/catalog.txt or in a file of
+# tests/mutation/catalog.d/, and why. One per
 # line, three fields separated by TAB:
 #
 #   file <TAB> a text that occurs exactly once in that file <TAB> the reason
