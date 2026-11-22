@@ -67,9 +67,9 @@
 #     different is refused, and so is one that runs a script of the repository
 #     from the checkout of a pull request, which the pull request writes, in a
 #     workflow a pull request can run (read it with `git show HEAD^1:<path>`,
-#     as the scope steps do; PRODUCER_RUNS_CHECKOUT lists the ones that do not
-#     yet). Without a base commit (a push, a schedule) nothing is compared; a
-#     base that is named and cannot be read stops the rule. A producer is
+#     as the scope steps do, into a temporary file, and run that). Without a
+#     base commit (a push, a schedule) nothing is compared; a base that is
+#     named and cannot be read stops the rule. A producer is
 #     changed on purpose in two pull requests: the first lists it in
 #     PRODUCERS_MAY_CHANGE, the second changes it and removes the entry, since
 #     the base copy judges each.
@@ -282,11 +282,6 @@ PATH_WORD_RE = re.compile(r"[A-Za-z0-9_./*-]*[A-Za-z0-9_][A-Za-z0-9_./*-]*")
 PRODUCER_REF = re.compile(r"\b(steps|needs)\.([A-Za-z0-9_-]+)\.outputs\b")
 PRODUCERS_MAY_CHANGE = ()
 
-# The producers in a workflow a pull request can run that execute a script of
-# the repository from the checkout, as (workflow file, job): the pull request
-# writes what that script prints. scoop-bucket: the job that says whether the
-# published bytes have a history yet runs scripts/monitoring/check-schedule-history-ready.sh.
-PRODUCER_RUNS_CHECKOUT = ((".github/workflows/freshness.yml", "published-bytes-ready"),)
 # A script run from the checkout, at the start of a command: a path under one of
 # these folders, alone or after an interpreter. `git show <rev>:<path>` is not one.
 RUN_FROM_CHECKOUT = re.compile(
@@ -531,7 +526,7 @@ def producer_refusals(base, path, spec):
                 found.append(f"job `{job_id}` in {path} reads `{kind}.{ident}.outputs`, which nothing in the file writes.")
                 continue
             runs = [re.sub(r"(?m)^\s*[^\s()]+\)", "", str(v.get("run") or "")) for n, v in now.items() if n.startswith("step ")]
-            if runs_pr and any(RUN_FROM_CHECKOUT.search(r) for r in runs) and (path, ident if kind == "needs" else job_id) not in PRODUCER_RUNS_CHECKOUT:
+            if runs_pr and any(RUN_FROM_CHECKOUT.search(r) for r in runs):
                 found.append(f"{what} in {path} writes outputs a condition reads and runs a script of the repository from the "
                              "checkout of the pull request, which the pull request writes. Read it from the base commit "
                              "with `git show HEAD^1:<path>`, as the scope steps do.")

@@ -492,11 +492,51 @@ for event in pull_request_target workflow_call; do
 done
 change freshness.yml "doc['on'] = {'schedule': [{'cron': '0 0 * * *'}]}; doc['jobs']['scope']['steps'][1]['run'] = 'bash ./scripts/scope.sh >> \"\$GITHUB_OUTPUT\"'; doc.pop(True, None)"
 nobase "a workflow no pull request can run may run the script of its own checkout" 0
-BYTES=$'name: Freshness\non: pull_request\njobs:\n  published-bytes-ready:\n    runs-on: ubuntu-latest\n    outputs:\n      ready: ${{ steps.check.outputs.ready }}\n    steps:\n      - id: check\n        run: bash ./scripts/monitoring/check-schedule-history-ready.sh >> "$GITHUB_OUTPUT"\n  freshness-published-bytes:\n    needs: published-bytes-ready\n    if: needs.published-bytes-ready.outputs.ready == \'true\'\n    uses: ./.github/workflows/reusable-schedule-freshness.yml\n'
-printf '%s' "$BYTES" > "$G/.github/workflows/freshness.yml"
-nobase "the producer the rule lists as running its checkout's script is accepted" 0
+# The readiness probe of scoop-bucket: what the producer prints decides whether
+# the watcher runs, so in a pull request it runs the copy of the script in the
+# base commit. There is one invocation, `bash "$script"`, and only the source of
+# `$script` changes; the older form ran the checkout's script by its path.
+bytes_workflow() { # $1=the line that runs the script
+	cat > "$G/.github/workflows/freshness.yml" <<EOF
+name: Freshness
+on: pull_request
+jobs:
+  published-bytes-ready:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: \${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          EVENT: \${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          path=scripts/monitoring/check-schedule-history-ready.sh
+          script="\$path"
+          if [ "\$EVENT" = pull_request ]; then
+            copy="\$(mktemp "\$RUNNER_TEMP/history-ready.XXXXXX")"
+            trap 'rm -f "\$copy"' EXIT
+            if git show "HEAD^1:\$path" > "\$copy" 2>/dev/null; then script="\$copy"; else script=""; fi
+          fi
+          ready=ready=true
+          if [ -n "\$script" ]; then
+            $1
+          fi
+          echo "\$ready" >> "\$GITHUB_OUTPUT"
+  freshness-published-bytes:
+    needs: published-bytes-ready
+    if: needs.published-bytes-ready.outputs.ready == 'true'
+    uses: ./.github/workflows/reusable-schedule-freshness.yml
+EOF
+}
+bytes_workflow 'printed="$(bash "$script" published-bytes.yml 3)"'
+nobase "the readiness probe that runs the base's copy through one invocation is accepted" 0
+bytes_workflow 'printed="$(bash ./scripts/monitoring/check-schedule-history-ready.sh published-bytes.yml 3)"'
+nobase "the readiness probe that runs the script of the checkout by its path is refused" 1
+check "and the refusal names the job and the file" "1" \
+	"$(said "$out" 'job `published-bytes-ready` in .github/workflows/freshness.yml writes outputs a condition reads and runs a script of the repository from the checkout')"
 sed -i 's/published-bytes-ready:$/ready-too:/; s/needs: published-bytes-ready/needs: ready-too/; s/needs\.published-bytes-ready/needs.ready-too/' "$G/.github/workflows/freshness.yml"
-nobase "the same producer under another job id is refused" 1
+nobase "the same probe under another job id is refused as well" 1
 
 out="$(run_base "$G" 0000000000000000000000000000000000000000)"; rc=$?
 check "a base that is named and cannot be read stops the rule" "1" "$rc"
