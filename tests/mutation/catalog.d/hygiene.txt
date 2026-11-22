@@ -38,11 +38,20 @@ check-secrets-the-list-excuses-what-it-names	scripts/quality/hygiene/check-secre
 check-secrets-a-directory-entry-excuses-what-is-under-it	scripts/quality/hygiene/check-secrets.sh	if [ "${1#"$entry"}" != "$1" ]; then return 0; fi	if false; then return 0; fi	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-only-a-slash-names-a-directory	scripts/quality/hygiene/check-secrets.sh	*/) if [	*) if [	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-an-entry-is-kept	scripts/quality/hygiene/check-secrets.sh	allow_paths+=("$entry")	:	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-a-wildcard-or-expression-is-refused	scripts/quality/hygiene/check-secrets.sh	*'*'* | *'?'* | *'['* | *'^'* | *'$'* | *'|'* | *'('* | *\\*)	*'NOWILDCARD'*)	tests/quality/hygiene/check-secrets.test.sh
-check-secrets-an-absolute-path-is-refused	scripts/quality/hygiene/check-secrets.sh	/* | ./*)	NOSUCHNAME)	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-an-absolute-path-is-refused	scripts/quality/hygiene/check-secrets.sh	/* | ./*)	./*)	tests/quality/hygiene/check-secrets.test.sh
 check-secrets-a-path-with-dot-dot-is-refused	scripts/quality/hygiene/check-secrets.sh	*..*)	NOSUCHNAME)	tests/quality/hygiene/check-secrets.test.sh
 commit-hygiene-identity	.github/workflows/commit-hygiene.yml	bash "$identity" "$BASE" "$HEAD"	true	tests/ci/policy/workflow-calls-are-exact.test.sh,tests/ci/policy/commit-hygiene-base-rule.test.sh
 commit-hygiene-identity-reads-the-base-copy	.github/workflows/commit-hygiene.yml	git show "$BASE:scripts/quality/hygiene/check-commit-identity.sh" > "$identity"	cp scripts/quality/hygiene/check-commit-identity.sh "$identity"	tests/ci/policy/commit-hygiene-base-rule.test.sh
 commit-hygiene-secrets	.github/workflows/commit-hygiene.yml	bash "$scan" "$BASE" "$HEAD"	true	tests/ci/policy/workflow-calls-are-exact.test.sh,tests/ci/policy/commit-hygiene-base-rule.test.sh
 commit-hygiene-scan-reads-the-base-copy	.github/workflows/commit-hygiene.yml	git show "$BASE:scripts/quality/hygiene/check-secrets.sh" > "$scan"	cp scripts/quality/hygiene/check-secrets.sh "$scan"	tests/ci/policy/commit-hygiene-base-rule.test.sh
 permissions-write-all	.github/workflows/commit-hygiene.yml	permissions: {}	permissions: write-all	tests/ci/policy/permissions-declared.test.sh
+check-secrets-a-comment-is-not-an-entry	scripts/quality/hygiene/check-secrets.sh	grep -nvE '^[[:space:]]*(#|$)'	grep -nvE '^$'	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-star-is-refused	scripts/quality/hygiene/check-secrets.sh	*'*'* | 	*'NOSTAR'* | 	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-question-mark-is-refused	scripts/quality/hygiene/check-secrets.sh	*'?'* | 	*'NOQUESTION'* | 	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-bracket-is-refused	scripts/quality/hygiene/check-secrets.sh	*'['* | 	*'NOBRACKET'* | 	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-caret-is-refused	scripts/quality/hygiene/check-secrets.sh	*'^'* | 	*'NOCARET'* | 	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-dollar-is-refused	scripts/quality/hygiene/check-secrets.sh	*'$'* | 	*'NODOLLAR'* | 	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-bar-is-refused	scripts/quality/hygiene/check-secrets.sh	*'|'* | 	*'NOBAR'* | 	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-parenthesis-is-refused	scripts/quality/hygiene/check-secrets.sh	*'('* | 	*'NOPARENTHESIS'* | 	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-backslash-is-refused	scripts/quality/hygiene/check-secrets.sh	*'('* | *\\*)	*'('*)	tests/quality/hygiene/check-secrets.test.sh
+check-secrets-a-dot-slash-path-is-refused	scripts/quality/hygiene/check-secrets.sh	/* | ./*)	/*)	tests/quality/hygiene/check-secrets.test.sh
