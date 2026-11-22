@@ -450,8 +450,8 @@ publish-checkout-keeps-no-token	.github/workflows/publish.yml	persist-credential
 freshness-reads-tests	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" tests.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 freshness-reads-line-limit	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" line-limit.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 freshness-reads-workflow-lint	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" workflow-lint.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
-commit-hygiene-identity	.github/workflows/commit-hygiene.yml	scripts/quality/hygiene/check-commit-identity.sh "$BASE" "$HEAD"	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
-commit-hygiene-secrets	.github/workflows/commit-hygiene.yml	scripts/quality/hygiene/check-secrets.sh "$BASE" "$HEAD"	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
+commit-hygiene-identity	.github/workflows/commit-hygiene.yml	bash ./scripts/quality/hygiene/check-commit-identity.sh "$BASE" "$HEAD"	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
+commit-hygiene-secrets	.github/workflows/commit-hygiene.yml	bash ./scripts/quality/hygiene/check-secrets.sh "$BASE" "$HEAD"	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 verify-debs-private-dir	scripts/verify/verify-debs.sh	|| { echo "::error::cannot create a private directory to hold the verified packages" >&2; exit 1; }	|| true	tests/verify/verify-debs-same-bytes.test.sh
 verify-debs-copy-not-kept	scripts/verify/verify-debs.sh	sys.exit(4)	sys.exit(1)	tests/verify/verify-debs-same-bytes.test.sh
 verify-debs-copy-not-kept-message	scripts/verify/verify-debs.sh	elif [ "$python_rc" -eq 4 ]; then	elif false; then	tests/verify/verify-debs-same-bytes.test.sh

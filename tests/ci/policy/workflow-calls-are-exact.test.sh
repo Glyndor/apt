@@ -30,9 +30,12 @@ PINNED = {
         f'{SUITE_ON_MAIN} "$REPO" line-limit.yml main',
         f'{SUITE_ON_MAIN} "$REPO" workflow-lint.yml main',
     ],
+    # Written with `./`: the shell job lists the scripts a workflow runs by path from the
+    # `./path` it finds, and checks each is executable in git. A bare `scripts/...` call was
+    # run by nobody's check, so its mode could change and the job would die with exit 126.
     "commit-hygiene.yml": [
-        'scripts/quality/hygiene/check-commit-identity.sh "$BASE" "$HEAD"',
-        'scripts/quality/hygiene/check-secrets.sh "$BASE" "$HEAD"',
+        'bash ./scripts/quality/hygiene/check-commit-identity.sh "$BASE" "$HEAD"',
+        'bash ./scripts/quality/hygiene/check-secrets.sh "$BASE" "$HEAD"',
     ],
 }
 passed = failed = 0
