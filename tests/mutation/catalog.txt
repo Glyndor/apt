@@ -487,3 +487,7 @@ sort-pinned-dependabot-freshness-5	.github/workflows/reusable-dependabot-freshne
 sort-pinned-dependabot-freshness-6	.github/workflows/reusable-dependabot-freshness.yml	LC_ALL=C sort -u | wc -l | tr -d ' ')"	sort -u | wc -l | tr -d ' ')"	tests/ci/policy/locale-pinned.test.sh
 pins-enumerated-as-keys	.github/workflows/reusable-dependabot-freshness.yml	grep -rhE '^[[:space:]]*(-[[:space:]]+)?uses:	grep -rhE 'uses:	tests/ci/reusable/reusable-dependabot-freshness.test.sh
 pins-counted-as-keys	.github/workflows/reusable-dependabot-freshness.yml	grep -rhoE '^[[:space:]]*(-[[:space:]]+)?uses:	grep -rhoE 'uses:	tests/ci/reusable/reusable-dependabot-freshness.test.sh
+coverage-an-exit-in-shell-is-a-refusal	scripts/quality/coverage/check-mutation-coverage.sh	hit = EXIT.search(code) or (n not in python and EXIT_HANDED.search(code_of(line, STRING))) \	hit = (n not in python and EXIT_HANDED.search(code_of(line, STRING))) \	tests/quality/coverage/check-mutation-coverage.test.sh
+coverage-an-exit-that-hands-on-a-status-is-a-refusal	scripts/quality/coverage/check-mutation-coverage.sh	hit = EXIT.search(code) or (n not in python and EXIT_HANDED.search(code_of(line, STRING))) \	hit = EXIT.search(code) \	tests/quality/coverage/check-mutation-coverage.test.sh
+upgrade-hands-on-the-status-of-the-upgrade	keyring/upgrade/glyndor-upgrade	exit "$rc"	exit 0	tests/keyring/glyndor-upgrade-errors.test.sh
+shell-ci-a-script-that-is-not-executable-fails-the-job	.github/workflows/reusable-shell-ci.yml	exit "$rc"	exit 0	tests/ci/reusable/reusable-shell-ci.test.sh
