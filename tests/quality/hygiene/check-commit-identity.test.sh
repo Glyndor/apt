@@ -77,6 +77,19 @@ commit "$noreply" "$(printf 'x\n\nSigned-off-by: t <%s>' "$noreply")"
 commit "$personal" "second, personal"
 run >/dev/null; check "one bad commit among good ones fails" 1 "$?"
 
+# A range git cannot list is a failure, not a range with no commits to refuse. An
+# empty range, which git can list, is accepted.
+git -C "$repo" reset -q --hard "$base"
+commit "$personal" "personal author"
+out="$(cd "$repo" && "$SCRIPT" 0000000000000000000000000000000000000000 HEAD 2>&1)"; rc=$?
+check "a base that does not exist fails" 1 "$rc"
+check "and says the commits could not be listed" 1 "$(printf '%s' "$out" | grep -c 'could not list the commits')"
+check "and does not say every commit is fine" 0 "$(printf '%s' "$out" | grep -c 'every commit uses')"
+head_now="$(git -C "$repo" rev-parse HEAD)"
+out="$(cd "$repo" && "$SCRIPT" "$head_now" HEAD 2>&1)"; rc=$?
+check "a range with no commits is accepted" 0 "$rc"
+check "and says every commit is fine" 1 "$(printf '%s' "$out" | grep -c 'every commit uses')"
+
 "$SCRIPT" >/dev/null 2>&1; check "no arguments fails" 1 "$?"
 
 echo "$pass passed, $fail failed"

@@ -23,6 +23,12 @@ base="${1:?base}"; head="${2:?head}"
 
 allowed='^([0-9]+\+)?[A-Za-z0-9][A-Za-z0-9-]*(\[bot\])?@users\.noreply\.github\.com$|^(noreply|support)@github\.com$'
 
+# The commits first, on their own: read inside the loop's process substitution, a
+# range git cannot list would end the loop before it started and the script would
+# say every commit was fine.
+commits="$(git rev-list --no-merges "$base..$head")" \
+	|| { echo "::error::could not list the commits of $base..$head" >&2; exit 1; }
+
 bad=0
 flag() { # <sha> <what>
 	echo "::error::commit $1: $2 is not a GitHub noreply address"
@@ -47,7 +53,7 @@ while IFS= read -r sha; do
 			done <<< "$addrs"
 		done < <(git show -s --format="%(trailers:key=$key,valueonly)" "$sha")
 	done
-done < <(git rev-list --no-merges "$base..$head")
+done <<< "$commits"
 
 [ "$bad" -eq 0 ] || { echo "Use your GitHub noreply address (git config user.email)." >&2; exit 1; }
 echo "every commit uses a GitHub noreply address"
