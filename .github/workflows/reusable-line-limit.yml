@@ -93,7 +93,25 @@ jobs:
           EXCLUDE: ${{ inputs.exclude-pattern }}
         run: |
           set -euo pipefail
-          ext_re="$(echo "$EXTS" | tr ' ' '|')"
+          # The list becomes the alternatives of a regular expression, so each
+          # extension has to be plain letters and digits first: a `|`, a `.*`,
+          # a bracket or a newline in the list would select other files than the
+          # ones it names. Split on any whitespace, refuse anything else, and
+          # refuse an empty list, which would measure nothing.
+          read -r -d '' -a words <<< "$EXTS" || true
+          if [ "${#words[@]}" -eq 0 ]; then
+            echo "::error::extensions names no extension, so no file would be measured"
+            exit 1
+          fi
+          for ext in "${words[@]}"; do
+            case "$ext" in
+              *[!A-Za-z0-9]*)
+                printf '::error::the extension %q is not made of letters and digits only\n' "$ext"
+                exit 1
+                ;;
+            esac
+          done
+          ext_re="$(IFS='|'; echo "${words[*]}")"
           ext_pattern="\.(${ext_re})\$"
           fail=0
           while IFS= read -r -d '' f; do

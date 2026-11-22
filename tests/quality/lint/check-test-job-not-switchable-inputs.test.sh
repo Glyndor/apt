@@ -236,6 +236,34 @@ floor "the list kept by a caller under another job and file is accepted" 0 renam
 floor "the list cut by a caller under another job and file is refused" 1 renamed.yml other "sh"
 rm -f "$G/.github/workflows/renamed.yml"
 
+# --- the list is one space between lowercase words, and nothing else --------------
+#
+# The reusable turns the list into a regular expression. A `|`, a `.*` or a
+# bracket in it, and a new line, a tab or two spaces where the rule would see one
+# separator, mean something else to the reusable than to the rule that compares
+# the words, so the shape is refused whatever the base says. The YAML below is
+# double quoted, so `\n` and `\t` reach the rule as a real new line and tab.
+for bad in 'sh yml txt|.*' '.*' 'sh|yml txt' 'sh  yml txt' 'sh\nyml txt' 'sh\tyml txt' \
+	'SH yml txt' ' sh yml txt' 'sh yml txt ' 'sh( yml txt' 'sh [yml] txt' 'sh. yml txt' 'sh*'; do
+	floor "the list '$bad' is refused" 1 line-limit.yml line-limit "$bad"
+	check "and it is refused for its shape, naming the job, the file and the input" "1" \
+		"$(said "$out" 'job `line-limit` in .github/workflows/line-limit.yml passes the input `extensions` to `reusable-line-limit.yml` as something other than lowercase words')"
+	check "and not for the words it lacks" "0" "$(said "$out" 'without `')"
+done
+floor "the list of the base, one space between lowercase words, is accepted" 0 line-limit.yml line-limit "sh yml txt"
+floor "words with digits are accepted" 0 line-limit.yml line-limit "sh yml txt mp4 7z"
+job_with "$G" line-limit.yml line-limit reusable-line-limit.yml $'      extensions: 5\n'
+out="$(run_base "$G" "$BASE")"; rc=$?
+check "a list that YAML reads as a number is refused" "1" "$rc"
+check "and for its shape" "1" "$(said "$out" 'as something other than lowercase words')"
+pr_caller line-limit.yml line-limit "sh|.*"
+out="$(run_in "$G")"; rc=$?
+check "a list with a | is refused with no base commit named too" "1" "$rc"
+check "and for its shape" "1" "$(said "$out" 'as something other than lowercase words')"
+pr_caller line-limit.yml line-limit "sh yml"
+out="$(run_in "$G")"; rc=$?
+check "a well-formed list is accepted with no base commit named" "0" "$rc"
+
 pr_caller line-limit.yml line-limit "sh"
 out="$(run_in "$G")"; rc=$?
 check "with no base commit named the floor is not applied" "0" "$rc"

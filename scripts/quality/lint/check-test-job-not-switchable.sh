@@ -36,7 +36,11 @@
 #     callers may pass. `extensions` of reusable-line-limit.yml may grow but may
 #     not shrink: a caller keeps every extension the callers of the base commit
 #     (BASE_SHA, the commit the pull request event names) pass, since dropping
-#     `sh` from the list is a way not to measure the scripts.
+#     `sh` from the list is a way not to measure the scripts. The list is
+#     lowercase words of letters and digits with one space between two of them
+#     and nothing else: the reusable turns it into a regular expression, so a
+#     new line, a tab, a `|` or a bracket would mean to it something the rule
+#     does not read.
 #   - for a caller of reusable-shell-ci.yml, a test-command whose first
 #     non-blank token is not a suite invocation.
 #     The accepted grammar is a list of `./tests/<name>.test.sh` or
@@ -173,6 +177,12 @@ ALLOWED_INPUTS = {
 # as (reusable, input). What it keeps is what the callers of the base commit
 # pass: see base_words().
 KEEP_BASE_WORDS = (("reusable-line-limit.yml", "extensions"),)
+
+# The shape of such a list: lowercase words of letters and digits, one space
+# between two of them. The reusable turns the list into a regular expression
+# (`\.(a|b|c)$`), so a newline, a tab, two spaces in a row or a `|`, `.*`, `(`
+# or `[` would mean something else to it than to the rule that compares words.
+WORD_LIST_RE = re.compile(r"[a-z0-9]+( [a-z0-9]+)*")
 
 # A single suite invocation, as the grammar accepts it: the path
 # alone, or `bash` in front of it. Names are constrained to what
@@ -352,10 +362,23 @@ def refused_inputs(job, reusable, path, job_id):
     for kept_reusable, name in KEEP_BASE_WORDS:
         if kept_reusable != reusable:
             continue
+        value = given.get(name, "")
+        if name in given and not (
+            isinstance(value, str) and WORD_LIST_RE.fullmatch(value)
+        ):
+            found.append(
+                f"job `{job_id}` in {path} passes the input `{name}` to "
+                f"`{reusable}` as something other than lowercase words of "
+                "letters and digits with one space between them. The reusable "
+                "turns the list into a regular expression, and any other "
+                "shape (a new line, a tab, a `|`, a `.*`, a bracket) can mean "
+                "something else to it than to the rule that reads the words."
+            )
+            continue
         floor = base_words(reusable, name)
         if not floor:
             continue
-        missing = sorted(floor - set(str(given.get(name, "")).split()))
+        missing = sorted(floor - set(str(value).split(" ")))
         if missing:
             found.append(
                 f"job `{job_id}` in {path} passes the input `{name}` to "
