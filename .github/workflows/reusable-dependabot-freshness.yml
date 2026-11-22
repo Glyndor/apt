@@ -82,10 +82,13 @@ defaults:
     shell: bash
 
 concurrency:
-  group: dependabot-freshness-${{ github.workflow }}-${{ github.ref }}
+  group: dependabot-freshness-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   # Only a pull request supersedes its own earlier run. A push to main is a
   # distinct commit that has to be judged on its own, and the suite-on-main
   # watcher reads those verdicts; a cron run is never replaced by the next.
+  # Outside a pull request the group carries the run id: a group shared by
+  # pushes would still drop the older run that is waiting when a newer one
+  # queues, and two quick merges would lose the verdict of the first.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
@@ -120,12 +123,15 @@ jobs:
           # Prints one line per pin that is behind, whose upstream could not
           # be read, or carries no version comment; prints nothing when every
           # pin is annotated and at its newest upstream tag. The enumeration
-          # matches every `uses: ...@<40 hex>` pin, the same shape the count
-          # below uses, so an unannotated pin cannot slip past as silent
-          # current while the success line claims it was inspected.
+          # matches every `uses: ...@<40 hex>` pin that is a key (at the start
+          # of a line, after a list dash), the same shape the count below uses, so
+          # an unannotated pin cannot slip past as silent current while the
+          # success line claims it was inspected, and the text of a run: block
+          # that mentions `uses:` is not read as a pin.
           pins_behind_upstream() {
-            grep -rhoE 'uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}.*' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null \
-              | sort -u \
+            grep -rhE '^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null \
+              | sed -E 's/^[[:space:]]*(-[[:space:]]+)?//' \
+              | LC_ALL=C sort -u \
               | while read -r line; do
                   action="$(printf '%s' "$line" | sed -E 's|uses:[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@[0-9a-f]{40}.*|\1|')"
                   tag="$(printf '%s' "$line" | sed -nE 's|.*@[0-9a-f]{40}[[:space:]]*#[[:space:]]*(v[0-9][0-9A-Za-z.+-]*).*|\1|p')"
@@ -138,12 +144,12 @@ jobs:
                     continue
                   fi
                   newest="$(git ls-remote --tags --refs "https://github.com/$action" 'refs/tags/v*' 2>/dev/null \
-                    | sed 's#.*refs/tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+                    | sed 's#.*refs/tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | LC_ALL=C sort -V | tail -n 1 || true)"
                   if [ -z "$newest" ]; then
                     echo "$action pinned as $tag: could not read upstream tags"
                     continue
                   fi
-                  if [ "$(printf '%s\n%s\n' "$tag" "$newest" | sort -V | tail -n 1)" != "$tag" ]; then
+                  if [ "$(printf '%s\n%s\n' "$tag" "$newest" | LC_ALL=C sort -V | tail -n 1)" != "$tag" ]; then
                     echo "$action pinned as $tag, upstream has $newest"
                   fi
                 done
@@ -196,7 +202,7 @@ jobs:
                 echo "pip: $name pinned as $version: could not read the newest release from PyPI"
                 continue
               fi
-              if [ "$(printf '%s\n%s\n' "$version" "$newest" | sort -V | tail -n 1)" != "$version" ]; then
+              if [ "$(printf '%s\n%s\n' "$version" "$newest" | LC_ALL=C sort -V | tail -n 1)" != "$version" ]; then
                 echo "pip: $name pinned as $version, PyPI has $newest"
               fi
             done
@@ -247,7 +253,7 @@ jobs:
           if [ "$age_days" -gt "$MAX_AGE_DAYS" ]; then
             # Silence is only an alarm when there was something to say.
             behind="$(pins_behind_upstream; pip_pins_behind_upstream)"
-            pins="$(grep -rhoE 'uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+            pins="$(grep -rhoE '^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null | sed -E 's/^[[:space:]]*(-[[:space:]]+)?//' | LC_ALL=C sort -u | wc -l | tr -d ' ')"
             pip_count="$(pip_pins | grep -c '^pin ' || true)"
             pip_note=""
             if [ "$pip_count" -gt 0 ]; then

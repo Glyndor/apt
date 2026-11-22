@@ -526,6 +526,12 @@ tests/ci/policy/locale-pinned.test.sh
 tests/ci/policy/network-calls-are-bounded.test.sh
 	scripts/**
 
+# The curl calls the workflows run are read from the workflows.
+
+tests/ci/policy/workflow-network-calls-are-bounded.test.sh
+	.github/workflows/**
+	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
+
 # The kill is looked for wherever a cleanup can call it.
 tests/ci/policy/gpgconf-kill-is-bounded.test.sh
 	scripts/**

@@ -6,8 +6,10 @@
 # only to a workflow with no scheduled run of any conclusion on record, whose
 # file was added to the branch less than the limit ago, and it passes with a
 # notice that says when it ends. Past the limit it fails; a date that cannot be
-# read (a shallow history, a file never added) fails; and a workflow with old
-# runs and no recent one fails as it always did, because that is a dead cron.
+# read (a history that cannot be deepened, a file never added) fails; and a
+# workflow with old runs and no recent one fails as it always did, because that
+# is a dead cron. The checkout is one commit deep, and the step deepens it only
+# in the branch that needs the history.
 #
 # The step is read out of the workflow as it ships and run in a throwaway git
 # repository whose commit dates are set, with a stub `gh` that answers by URL.
@@ -39,7 +41,17 @@ import yaml
 steps = yaml.safe_load(open(sys.argv[1]))["jobs"]["freshness"]["steps"]
 print(next(s["run"] for s in steps if s.get("name") == "Check the newest successful scheduled run"))
 PY
-check "the step was read from the workflow" "1" "$(grep -c 'is-shallow-repository' "$WORK/step.sh")"
+check "the step was read from the workflow" "1" "$(grep -c 'git fetch --quiet --unshallow --no-tags origin' "$WORK/step.sh")"
+
+# The checkout is one commit deep: the history is read in one branch only, and the
+# step deepens it there, so every other run does not clone the repository's past.
+check "the checkout of the workflow is one commit deep" "1" "$(python3 -I - "$HERE/.github/workflows/reusable-schedule-freshness.yml" <<'PY'
+import sys
+import yaml
+steps = yaml.safe_load(open(sys.argv[1]))["jobs"]["freshness"]["steps"]
+print(next(s["with"]["fetch-depth"] for s in steps if str(s.get("uses", "")).startswith("actions/checkout@")))
+PY
+)"
 
 # The stub: the count of scheduled runs of any conclusion for the URL that asks
 # for it, and the newest run for the others; every call is recorded.
@@ -101,8 +113,17 @@ check "a workflow with old runs and no recent one fails as always" "1" "$rc"
 check "and is reported by the age of its newest run" "1" "$(said "$out" 'last succeeded on a schedule 30 days ago')"
 
 repo 3; git clone -q --depth 1 "file://$WORK/r" "$WORK/shallow"; run "$WORK/shallow" 0 ""
-check "a shallow history, which cannot date the file, fails" "1" "$rc"
+check "a one-commit checkout is deepened, so the file is dated and the grace applies" "0" "$rc"
+check "and the grace is the one the full history gives" "1" "$(said "$out" '::notice::new.yml has no scheduled run on record yet')"
+check "and the checkout is no longer shallow" "false" "$(git -C "$WORK/shallow" rev-parse --is-shallow-repository)"
+
+repo 3; git clone -q --depth 1 "file://$WORK/r" "$WORK/shallow"; git -C "$WORK/shallow" remote set-url origin "file://$WORK/nowhere"; run "$WORK/shallow" 0 ""
+check "a one-commit checkout that cannot be deepened, which cannot date the file, fails" "1" "$rc"
 check "and says the date could not be read" "1" "$(said "$out" 'could not be read, or lies in the future, so no grace period applies')"
+check "and the checkout is still shallow" "true" "$(git -C "$WORK/shallow" rev-parse --is-shallow-repository)"
+
+repo 3; git clone -q --depth 1 "file://$WORK/r" "$WORK/shallow"; run "$WORK/shallow" 4 "$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)"
+check "a workflow with a recent run never needs the history, and the checkout stays shallow" "true" "$(git -C "$WORK/shallow" rev-parse --is-shallow-repository)"
 
 repo -; run "$WORK/r" 0 ""
 check "a workflow whose file was never added fails" "1" "$rc"

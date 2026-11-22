@@ -49,10 +49,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: shell-ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.working-directory }}
+  group: shell-ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}-${{ inputs.working-directory }}
   # Only a pull request supersedes its own earlier run. A push to main is a
   # distinct commit that has to be judged on its own, and the suite-on-main
   # watcher reads those verdicts; a cron run is never replaced by the next.
+  # Outside a pull request the group carries the run id: a group shared by
+  # pushes would still drop the older run that is waiting when a newer one
+  # queues, and two quick merges would lose the verdict of the first.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -138,7 +141,7 @@ jobs:
           dir="$RUNNER_TEMP/shellcheck-bin"
           tarball="$RUNNER_TEMP/shellcheck.tar.xz"
           mkdir -p "$dir"
-          curl -sSfL -o "$tarball" \
+          curl -sSfL --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 --max-filesize 16777216 -o "$tarball" \
             "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
           printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -
           tar -xJ -f "$tarball" -C "$dir" --strip-components=1 "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
@@ -217,7 +220,7 @@ jobs:
           # workflows. Paths are relative to the repo root, which is where the
           # runner starts, so that is what the mode is checked against.
           refs="$(grep -rhoE '\./[A-Za-z0-9_./-]+\.(sh|bash)' .github/workflows/ 2>/dev/null \
-                  | sed 's|^\./||' | sort -u || true)"
+                  | sed 's|^\./||' | LC_ALL=C sort -u || true)"
           if [ -z "$refs" ]; then
             echo "No script is invoked as ./path by any workflow; nothing to check."
             exit 0
@@ -362,7 +365,7 @@ jobs:
             dir="$RUNNER_TEMP/shellcheck-bin"
             tarball="$RUNNER_TEMP/shellcheck.tar.xz"
             mkdir -p "$dir"
-            curl -sSfL -o "$tarball" \
+            curl -sSfL --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 --max-filesize 16777216 -o "$tarball" \
               "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
             printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -
             tar -xJ -f "$tarball" -C "$dir" --strip-components=1 "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
