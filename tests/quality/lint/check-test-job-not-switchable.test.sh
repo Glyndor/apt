@@ -350,6 +350,8 @@ fresh() { # $1=dir $2=workflow file $3=job $4=reusable $5=if value $6=needs valu
 	local lines
 	printf -v lines '    needs: %s\n    if: %s\n' "$6" "$5"
 	other_caller "$1" "$2" "$3" "$4" "$lines"
+	# The jobs the conditions read, with a step that writes the output.
+	printf '  %s:\n    runs-on: ubuntu-latest\n    steps:\n      - id: x\n        run: true\n' scope published-bytes-ready >> "$1/.github/workflows/$2"
 }
 
 d="$(new)"; caller "$d" './tests/one.test.sh'

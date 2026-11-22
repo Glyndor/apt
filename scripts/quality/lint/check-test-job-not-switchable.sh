@@ -53,15 +53,26 @@
 #     new line, a tab, a `|` or a bracket would mean to it something the rule
 #     does not read.
 #   - a condition that reads `steps.<id>.outputs` or `needs.<job>.outputs`
-#     when the step or job that writes them differs from the base commit's in
-#     what it runs or passes (`run:`, `env:`, `with:`, `uses:`, `outputs:`), is
-#     new in the pull request, or does not exist. A condition on an output is
-#     only as sound as what writes it: a scope step that always writes
-#     `needed=false` skips the check through a form the lists accept. Without a
-#     base commit (a push, a schedule) nothing is compared; a base that is named
-#     and cannot be read stops the rule. A producer is changed on purpose in two
-#     pull requests: the first lists it in PRODUCERS_MAY_CHANGE, the second
-#     changes it and removes the entry, since the base copy judges each.
+#     when what writes them is not what the base commit has. A condition on an
+#     output is only as sound as its producer: a scope step that always writes
+#     `needed=false` skips the check through a form the lists accept, and so
+#     does a step before it that writes `needed=false` into $GITHUB_ENV, or an
+#     `env:` of the job that changes what its `run:` sees. For a producer that
+#     is a step, the context is every step of the job up to it, whole, the
+#     `env`, `defaults`, `runs-on`, `container`, `services` and `permissions` of
+#     the job and the `env` and `defaults` of the workflow; for a job, the whole
+#     job, the `env` and `defaults` of the workflow and, when it calls a local
+#     reusable, that file. A step's `name` and the pin of the action it uses are
+#     left out: neither changes what runs. A producer that is new, missing or
+#     different is refused, and so is one that runs a script of the repository
+#     from the checkout of a pull request, which the pull request writes, in a
+#     workflow a pull request can run (read it with `git show HEAD^1:<path>`,
+#     as the scope steps do; PRODUCER_RUNS_CHECKOUT lists the ones that do not
+#     yet). Without a base commit (a push, a schedule) nothing is compared; a
+#     base that is named and cannot be read stops the rule. A producer is
+#     changed on purpose in two pull requests: the first lists it in
+#     PRODUCERS_MAY_CHANGE, the second changes it and removes the entry, since
+#     the base copy judges each.
 #   - `skip-suite-paths` of reusable-shell-ci.yml, which decides what counts as
 #     documentation only and so when `shell / test` is skipped, with the same
 #     care as `extensions`: words of paths or globs that name a file, not
@@ -157,11 +168,8 @@ CONDITIONAL_JOBS = {
     (_W + "reusable-shell-ci.yml", "test", None): {"if": "inputs.test-command != ''"},
     # scoop-bucket: the published-bytes watcher waits for the job that says
     # whether the manifests are published yet.
-    (_W + "freshness.yml", "freshness-published-bytes",
-     "reusable-schedule-freshness.yml"): {
-        "if": "needs.published-bytes-ready.outputs.ready == 'true'",
-        "needs": "published-bytes-ready",
-    },
+    (_W + "freshness.yml", "freshness-published-bytes", "reusable-schedule-freshness.yml"): {
+        "if": "needs.published-bytes-ready.outputs.ready == 'true'", "needs": "published-bytes-ready"},
     # apt: each watcher waits for the `scope` job, which decides from the
     # changed paths whether the watcher applies to this run, and `scope` itself
     # has nothing to decide outside a pull request. None of them is a required
@@ -186,25 +194,16 @@ CONDITIONAL_JOBS = {
     # apt: the sweep runs for the entries the change can affect, and the gate
     # tells a sweep skipped by that decision from one that did not run. The
     # gate carries `always()` so that a skipped sweep does not skip it.
-    (_W + "mutation.yml", "mutations", None): {
-        "if": "needs.decide.outputs.run == 'true'", "needs": "decide",
-    },
-    (_W + "mutation.yml", "gate", None): {
-        "if": "always()", "needs": ["decide", "mutations"],
-    },
+    (_W + "mutation.yml", "mutations", None): {"if": "needs.decide.outputs.run == 'true'", "needs": "decide"},
+    (_W + "mutation.yml", "gate", None): {"if": "always()", "needs": ["decide", "mutations"]},
     # homebrew-tap: `brew audit` waits for the job that says whether the change
     # can affect it, and runs when that job could not say.
-    (_W + "audit.yml", "audit", None): {
-        "if": "${{ !cancelled() && (needs.scope.result != 'success' || "
-              "needs.scope.outputs.run_audit == 'true') }}",
-        "needs": "scope",
-    },
+    (_W + "audit.yml", "audit", None): {"needs": "scope", "if": "${{ !cancelled() && "
+        "(needs.scope.result != 'success' || needs.scope.outputs.run_audit == 'true') }}"},
     # The scheduled update: what is rendered is validated, and then committed.
     # These jobs run on a schedule and are no check a merge waits for.
     (_W + "update.yml", "validate", None): {"needs": "render"},
-    (_W + "update.yml", "commit", None): [
-        {"needs": "render"}, {"needs": ["render", "validate"]},
-    ],
+    (_W + "update.yml", "commit", None): [{"needs": "render"}, {"needs": ["render", "validate"]}],
 }
 
 # The step-level conditions a job may carry, as (workflow file, job) -> the
@@ -218,13 +217,9 @@ _NEEDED = "steps.scope.outputs.needed != 'false'"
 _CHANGED = "needs.render.outputs.changed == '1'"
 STEP_CONDITIONS = {
     (_W + "reusable-line-limit.yml", "line-limit"): (_NEEDED,),
-    (_W + "reusable-shell-ci.yml", "shellcheck"): (
-        _NEEDED, "${{ inputs.check-exec-bit && " + _NEEDED + " }}",
-    ),
+    (_W + "reusable-shell-ci.yml", "shellcheck"): (_NEEDED, "${{ inputs.check-exec-bit && " + _NEEDED + " }}"),
     (_W + "reusable-shell-ci.yml", "test"): ("steps.scope.outputs.docs_only != 'true'",),
-    (_W + "reusable-workflow-lint.yml", "workflow-lint"): (
-        _NEEDED, "${{ inputs.tooling-isolation && " + _NEEDED + " }}",
-    ),
+    (_W + "reusable-workflow-lint.yml", "workflow-lint"): (_NEEDED, "${{ inputs.tooling-isolation && " + _NEEDED + " }}"),
     (_W + "tests.yml", "mldsa"): (_NEEDED,),
     (_W + "tests.yml", "formulae"): ("steps.scope.outputs.run_style == 'true'",),
     (_W + "tests.yml", "products"): ("github.event_name == 'pull_request'",),
@@ -286,6 +281,19 @@ PATH_WORD_RE = re.compile(r"[A-Za-z0-9_./*-]*[A-Za-z0-9_][A-Za-z0-9_./*-]*")
 # (workflow file, step id or job id) pairs; see the header.
 PRODUCER_REF = re.compile(r"\b(steps|needs)\.([A-Za-z0-9_-]+)\.outputs\b")
 PRODUCERS_MAY_CHANGE = ()
+
+# The producers in a workflow a pull request can run that execute a script of
+# the repository from the checkout, as (workflow file, job): the pull request
+# writes what that script prints. scoop-bucket: the job that says whether the
+# published bytes have a history yet runs scripts/monitoring/check-schedule-history-ready.sh.
+PRODUCER_RUNS_CHECKOUT = ((".github/workflows/freshness.yml", "published-bytes-ready"),)
+# A script run from the checkout, at the start of a command: a path under one of
+# these folders, alone or after an interpreter. `git show <rev>:<path>` is not one.
+RUN_FROM_CHECKOUT = re.compile(
+    r"(?:^|[;&|(`]|\$\(|\b(?:if|then|do|else|while|until)\b)\s*(?:(?:bash|sh|python3?|source|\.)\s+(?:-\S+\s+)*)?"
+    r"[\"']?(?:\./)?((?:scripts|tests|keyring|\.github)/[^\s\"';)|&]+)", re.M)
+JOB_CONTEXT = ("env", "defaults", "runs-on", "container", "services", "permissions")
+PULL_REQUEST_EVENTS = {"pull_request", "pull_request_target", "workflow_call"}
 
 # A single suite invocation, as the grammar accepts it: the path
 # alone, or `bash` in front of it. Names are constrained to what
@@ -452,65 +460,97 @@ def steps_of(job):
     return [s for s in steps if isinstance(s, dict)] if isinstance(steps, list) else []
 
 
-def pin_step(step):
-    pin = {k: step.get(k) for k in ("run", "env", "shell", "working-directory", "with")}
-    pin["uses"] = str(step.get("uses") or "").split("@")[0]  # a bump of the pin is not a change
-    return pin
+# What a step runs, as the pin sees it: its `name` changes nothing and the pin of
+# the action is a version bump.
+def norm_step(step):
+    out = {k: v for k, v in step.items() if k != "name"}
+    if isinstance(out.get("uses"), str):
+        out["uses"] = out["uses"].split("@")[0]
+    return out
 
 
-def pin_job(job):
-    pin = {k: job.get(k) for k in ("outputs", "uses", "with")}
-    pin["steps"] = [pin_step(s) for s in steps_of(job)]
-    return pin
+def norm_spec(spec):
+    jobs = (spec.get("jobs") or {}).items()
+    return {**spec, "jobs": {j: {**v, "steps": [norm_step(s) for s in steps_of(v)]} for j, v in jobs if isinstance(v, dict)}}
 
 
-# The jobs of the workflow as the base commit has it; none when the file is
-# not there or does not parse.
-def base_jobs(base, path):
-    if not base_git(base, "ls-tree", "--name-only", base, "--", path).strip():
-        return {}
+# The workflow `path` as the working tree has it (current) or the base commit has
+# it, {} when it is not there or does not parse.
+def spec_at(base, path, current):
     try:
-        spec = yaml.safe_load(base_git(base, "show", f"{base}:{path}"))
-    except yaml.YAMLError:
+        if current:
+            spec = yaml.safe_load(open(path))
+        elif base_git(base, "ls-tree", "--name-only", base, "--", path).strip():
+            spec = yaml.safe_load(base_git(base, "show", f"{base}:{path}"))
+        else:
+            spec = None
+    except (OSError, yaml.YAMLError):
         spec = None
-    jobs = spec.get("jobs") if isinstance(spec, dict) else None
-    return jobs if isinstance(jobs, dict) else {}
+    return spec if isinstance(spec, dict) else {}
+
+
+# Everything the producer of an output can see, by name, or None when it is not
+# there: for a step the steps up to it and the job and workflow settings around
+# them, for a job the whole job, the workflow settings and the reusable it calls.
+def producer_parts(spec, kind, job_id, ident, base, current):
+    jobs = spec.get("jobs") if isinstance(spec.get("jobs"), dict) else {}
+    job = jobs.get(job_id if kind == "steps" else ident)
+    if not isinstance(job, dict):
+        return None
+    steps = steps_of(job)
+    parts = {f"{k} of the workflow": spec.get(k) for k in ("env", "defaults")}
+    if kind == "steps":
+        mine = [n for n, s in enumerate(steps) if s.get("id") == ident]
+        if not mine:
+            return None
+        steps = steps[:mine[0] + 1]
+        parts.update({f"{k} of the job": job.get(k) for k in JOB_CONTEXT})
+    else:
+        parts.update({f"{k} of the job": v for k, v in job.items() if k != "steps"})
+        local = LOCAL_REUSABLE_RE.match(str(job.get("uses")))
+        if local:
+            parts["the reusable file"] = norm_spec(spec_at(base, ".github/workflows/" + local.group(1), current))
+    parts.update({f"step {n}": norm_step(s) for n, s in enumerate(steps, 1)})
+    return parts
 
 
 # The refusals of the producers that a condition of the file reads.
-def producer_refusals(base, path, jobs):
-    old_jobs = base_jobs(base, path)
+def producer_refusals(base, path, spec):
+    old = spec_at(base, path, False) if base else None
+    events = spec.get("on", spec.get(True))
+    runs_pr = bool(PULL_REQUEST_EVENTS & set(events if isinstance(events, (dict, list)) else [events]))
     found = []
-    for job_id, job in jobs.items():
+    for job_id, job in spec["jobs"].items():
         if not isinstance(job, dict):
             continue
-        steps = steps_of(job)
-        reads = {
-            ref for cond in [job.get("if")] + [s.get("if") for s in steps]
-            for ref in PRODUCER_REF.findall(str(cond))
-        }
-        for kind, ident in sorted(reads):
-            if kind == "steps":
-                what, now, before, pin = f"step `{ident}` of job `{job_id}`", [s for s in steps if s.get("id") == ident], [s for s in steps_of(old_jobs.get(job_id)) if s.get("id") == ident], pin_step
-            else:
-                what, now, before, pin = f"job `{ident}`", [jobs.get(ident)], [old_jobs.get(ident)], pin_job
-            now, before = (x[0] if x and isinstance(x[0], dict) else None for x in (now, before))
+        conds = [job.get("if")] + [s.get("if") for s in steps_of(job)]
+        for kind, ident in sorted({ref for cond in conds for ref in PRODUCER_REF.findall(str(cond))}):
+            what = f"step `{ident}` of job `{job_id}`" if kind == "steps" else f"job `{ident}`"
+            now = producer_parts(spec, kind, job_id, ident, base, True)
             if now is None:
                 found.append(f"job `{job_id}` in {path} reads `{kind}.{ident}.outputs`, which nothing in the file writes.")
-            elif before is None:
-                found.append(f"{what} in {path} writes outputs a condition reads and is new in this pull request, so the base commit cannot vouch for it.")
-            elif pin(now) != pin(before) and (path, ident) not in PRODUCERS_MAY_CHANGE:
-                found.append(
-                    f"{what} in {path} writes outputs a condition reads, and what it runs or passes "
-                    "differs from the base commit's. A condition on an output is only as sound as "
-                    "what writes it, so a pull request cannot change both. To change it on purpose, "
-                    f"list (`{path}`, `{ident}`) in PRODUCERS_MAY_CHANGE of this script in a pull "
-                    "request of its own, then change it in the next and delete the entry."
-                )
+                continue
+            runs = [re.sub(r"(?m)^\s*[^\s()]+\)", "", str(v.get("run") or "")) for n, v in now.items() if n.startswith("step ")]
+            if runs_pr and any(RUN_FROM_CHECKOUT.search(r) for r in runs) and (path, ident if kind == "needs" else job_id) not in PRODUCER_RUNS_CHECKOUT:
+                found.append(f"{what} in {path} writes outputs a condition reads and runs a script of the repository from the "
+                             "checkout of the pull request, which the pull request writes. Read it from the base commit "
+                             "with `git show HEAD^1:<path>`, as the scope steps do.")
+            if base == "":
+                continue
+            before = producer_parts(old, kind, job_id, ident, base, False)
+            if before is None:
+                found.append(f"{what} in {path} writes outputs a condition reads and is new in this pull request, "
+                             "so the base commit cannot vouch for it.")
+                continue
+            diff = list(dict.fromkeys(n for n in [*now, *before] if now.get(n) != before.get(n)))
+            if diff and (path, ident) not in PRODUCERS_MAY_CHANGE:
+                found.append(f"{what} in {path} writes outputs a condition reads, and what it can see differs from the base "
+                             f"commit's in: {', '.join(diff)}. A condition on an output is only as sound as what writes it, "
+                             f"so a pull request cannot change both. To change it on purpose, list (`{path}`, `{ident}`) in "
+                             "PRODUCERS_MAY_CHANGE of this script in a pull request of its own, then change it in the next.")
     return found
 
 
-# The refusals of what the job passes to the reusable: one per input.
 def refused_inputs(job, reusable, path, job_id):
     given = job.get("with")
     if given is None:
@@ -538,24 +578,18 @@ def refused_inputs(job, reusable, path, job_id):
         words = value.split() if isinstance(value, str) else None
         odd = [repr(value)] if words is None else [w for w in words if not PATH_WORD_RE.fullmatch(w)]
         if odd:
-            found.append(
-                f"job `{job_id}` in {path} passes the input `{name}` to `{reusable}` "
-                f"with {', '.join(f'`{w}`' for w in odd)}, which is not a path or a glob "
-                "that names a file: it is words of letters, digits and `_./-*`, and a "
-                "word holds at least one letter or digit, since `*`, `**` and `*.*` "
-                "match every file and the suite would be skipped for all of them."
-            )
+            found.append(f"job `{job_id}` in {path} passes the input `{name}` to `{reusable}` with "
+                         f"{', '.join(f'`{w}`' for w in odd)}, which is not a path or a glob that names a file: it is words "
+                         "of letters, digits and `_./-*`, and a word holds a letter or a digit, since `*`, `**` and `*.*` "
+                         "match every file and the suite would be skipped for all of them.")
             continue
         ceiling = base_words(reusable, name)
         extra = [] if ceiling is None else sorted(set(words) - ceiling)
         if extra:
-            found.append(
-                f"job `{job_id}` in {path} passes the input `{name}` to `{reusable}` "
-                f"with {', '.join(f'`{w}`' for w in extra)}, which the callers of the "
-                "base commit do not pass. A caller may take from the list and may not "
-                "add to it: a path listed is a path whose change skips the suite. To "
-                "widen it on purpose, take the check apart in a pull request of its own first."
-            )
+            found.append(f"job `{job_id}` in {path} passes the input `{name}` to `{reusable}` with "
+                         f"{', '.join(f'`{w}`' for w in extra)}, which the callers of the base commit do not pass. A caller "
+                         "may take from the list and may not add to it: a path listed is a path whose change skips the "
+                         "suite. To widen it on purpose, take the check apart in a pull request of its own first.")
     for kept_reusable, name in KEEP_BASE_WORDS:
         if kept_reusable != reusable:
             continue
@@ -685,8 +719,7 @@ def main():
         jobs = spec.get("jobs") or {}
         if not isinstance(jobs, dict):
             continue
-        if base:
-            violations.extend((path, "", msg) for msg in producer_refusals(base, path, jobs))
+        violations.extend((path, "", msg) for msg in producer_refusals(base, path, spec))
         for job_id, job in jobs.items():
             if not isinstance(job, dict):
                 continue

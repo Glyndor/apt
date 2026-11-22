@@ -387,6 +387,117 @@ change freshness.yml "del doc['jobs']['scope']"
 verdict "a reader whose producer was deleted is refused" 1
 check "and the refusal says nothing writes the output" "1" "$(said "$out" 'reads `needs.scope.outputs`, which nothing in the file writes')"
 
+# --- the context of the producer, not only the producer ----------------------
+#
+# A step before the producer can write to $GITHUB_ENV or $GITHUB_PATH, and an
+# `env:` of the job or of the workflow changes what the producer's run sees, so
+# the producer is held with everything it can see: the steps up to it, whole,
+# and the settings of the job and of the workflow around them.
+SEE='the refusal names the file, the job and the step'
+base_repo
+change "$SHELL_CI" "doc['jobs']['test']['steps'].insert(0, {'run': 'echo needed=false >> \"\$GITHUB_ENV\"'})"
+verdict "a step added before the scope step that writes to GITHUB_ENV is refused" 1
+check "and $SEE" "1" \
+	"$(said "$out" 'step `scope` of job `test` in .github/workflows/reusable-shell-ci.yml writes outputs a condition reads')"
+check "and it says what differs, the first step" "1" "$(said "$out" "commit's in: step 1")"
+check "and that the change goes in two pull requests" "1" "$(said "$out" 'PRODUCERS_MAY_CHANGE of this script in a pull request of its own')"
+
+base_repo
+change "$SHELL_CI" "doc['jobs']['test']['env'] = {'X': '1'}"
+verdict "a new env: on the job of the scope step is refused" 1
+check "and it names the env of the job" "1" "$(said "$out" "commit's in: env of the job")"
+base_repo
+change "$SHELL_CI" "doc['env'] = {'X': '1'}"
+verdict "a new env: on the workflow is refused" 1
+check "and it names the env of the workflow" "1" "$(said "$out" 'env of the workflow')"
+base_repo
+change "$SHELL_CI" "doc['jobs']['test']['defaults'] = {'run': {'shell': 'sh'}}"
+verdict "new defaults: on the job of the scope step are refused" 1
+check "and it names the defaults of the job" "1" "$(said "$out" 'defaults of the job')"
+base_repo
+change "$SHELL_CI" "doc['jobs']['test']['runs-on'] = 'ubuntu-latest'"
+verdict "another runs-on: on the job of the scope step is refused" 1
+check "and it names the runs-on of the job" "1" "$(said "$out" 'runs-on of the job')"
+base_repo
+change "$SHELL_CI" "s = $SCOPE_STEP; s['new-key'] = 'x'"
+verdict "a key the scope step did not have is refused" 1
+check "and it names the step" "1" "$(said "$out" 'step `scope` of job `test`')"
+
+base_repo
+change "$SHELL_CI" "doc['jobs']['test']['steps'].append({'run': 'true'}); doc['jobs']['test']['steps'][-2]['name'] = 'Run the tests again'"
+verdict "a step after the scope step, and a renamed one, are accepted" 0
+base_repo
+change "$SHELL_CI" "s = $SCOPE_STEP; s['name'] = 'Decide in another way'"
+verdict "a scope step with another name is accepted" 0
+base_repo
+change "$SHELL_CI" "del doc['jobs']['test']['defaults']"
+verdict "a setting of the job that the pull request takes away is refused" 1
+check "and it names the defaults of the job" "1" "$(said "$out" 'defaults of the job')"
+
+for key in container services permissions; do
+	base_repo
+	change "$SHELL_CI" "doc['jobs']['test']['$key'] = {'x': 'y'}"
+	verdict "a new $key: on the job of the scope step is refused" 1
+	check "and it names the $key of the job" "1" "$(said "$out" "$key of the job")"
+done
+base_repo
+change "$SHELL_CI" "doc['defaults'] = {'run': {'shell': 'sh'}}"
+verdict "new defaults: on the workflow are refused" 1
+check "and it names the defaults of the workflow" "1" "$(said "$out" 'defaults of the workflow')"
+
+# The producer is a job: all of it, the workflow settings and the reusable it calls.
+base_repo
+change freshness.yml "doc['jobs']['scope']['env'] = {'X': '1'}"
+verdict "a new env: on the job that produces what another job needs is refused" 1
+check "and the refusal names the job and the env of the job" "1" \
+	"$(said "$out" 'job `scope` in .github/workflows/freshness.yml writes outputs a condition reads, and what it can see differs from the base commit'"'"'s in: env of the job')"
+base_repo
+change freshness.yml "del doc['jobs']['scope']['outputs']"
+verdict "a job that stops declaring the outputs another job reads is refused" 1
+check "and it names the outputs of the job" "1" "$(said "$out" 'in: outputs of the job')"
+base_repo
+change freshness.yml "doc['jobs']['scope']['steps'].append({'run': 'true'})"
+verdict "a step added after the one that writes the output, in a job that produces it, is refused" 1
+check "and it names the step" "1" "$(said "$out" 'in: step 3')"
+base_repo
+change freshness.yml "doc['env'] = {'X': '1'}"
+verdict "a new env: on the workflow of a producer job is refused" 1
+
+# A producer job that calls a reusable: the reusable is part of it.
+CALLS=$'name: Freshness\non: pull_request\njobs:\n  scope:\n    uses: ./.github/workflows/reusable-dco.yml\n  suite-on-main:\n    needs: scope\n    if: ${{ !cancelled() && needs.scope.outputs.suite != \'false\' }}\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n'
+base_repo
+printf '%s' "$CALLS" > "$G/.github/workflows/freshness.yml"; gitg add -A; gitg commit -qm calls; BASE="$(gitg rev-parse HEAD)"
+verdict "a producer job that calls a reusable, as the base has it, is accepted" 0
+change reusable-dco.yml "doc['jobs']['dco']['steps'].append({'run': 'true'})"
+verdict "the same job with its reusable changed is refused" 1
+check "and the refusal names the reusable file" "1" "$(said "$out" 'the reusable file')"
+
+# --- the producer decides with code of the base commit -----------------------
+nobase() { out="$(cd "$G" && env -u BASE_SHA bash "$SCRIPT" 2>&1)"; rc=$?; check "$1" "$2" "$rc"; }
+base_repo
+nobase "the scope step that reads its script from the base commit is accepted with no base named" 0
+change freshness.yml "doc['jobs']['scope']['steps'][1]['run'] = 'git show HEAD^1:scripts/s.sh > \"\$RUNNER_TEMP/s\"; bash \"\$RUNNER_TEMP/s\" >> \"\$GITHUB_OUTPUT\"'"
+nobase "and so is one that runs what it took from the base with git show" 0
+change freshness.yml "doc['jobs']['scope']['steps'][1]['run'] = 'bash ./scripts/scope.sh >> \"\$GITHUB_OUTPUT\"'"
+nobase "a scope step that runs a script of the repository from the checkout is refused with no base named" 1
+check "and the refusal says the pull request writes it, naming the job and the file" "1" \
+	"$(said "$out" 'job `scope` in .github/workflows/freshness.yml writes outputs a condition reads and runs a script of the repository from the checkout')"
+change freshness.yml "doc['jobs']['scope']['steps'][1]['run'] = './scripts/scope.sh >> \"\$GITHUB_OUTPUT\"'"
+nobase "the same script run by its path is refused" 1
+change freshness.yml "doc['jobs']['scope']['steps'][1]['run'] = 'case \"\$p\" in\n  scripts/scope.sh) echo suite=true >> \"\$GITHUB_OUTPUT\" ;;\nesac'"
+nobase "a path that is only a pattern of a case is not a script it runs" 0
+for event in pull_request_target workflow_call; do
+	change freshness.yml "doc.pop(True, None); doc['on'] = {'$event': None}; doc['jobs']['scope']['steps'][1]['run'] = 'bash ./scripts/scope.sh >> \"\$GITHUB_OUTPUT\"'"
+	nobase "a scope step that runs the checkout's script in a workflow run by $event is refused" 1
+done
+change freshness.yml "doc['on'] = {'schedule': [{'cron': '0 0 * * *'}]}; doc['jobs']['scope']['steps'][1]['run'] = 'bash ./scripts/scope.sh >> \"\$GITHUB_OUTPUT\"'; doc.pop(True, None)"
+nobase "a workflow no pull request can run may run the script of its own checkout" 0
+BYTES=$'name: Freshness\non: pull_request\njobs:\n  published-bytes-ready:\n    runs-on: ubuntu-latest\n    outputs:\n      ready: ${{ steps.check.outputs.ready }}\n    steps:\n      - id: check\n        run: bash ./scripts/monitoring/check-schedule-history-ready.sh >> "$GITHUB_OUTPUT"\n  freshness-published-bytes:\n    needs: published-bytes-ready\n    if: needs.published-bytes-ready.outputs.ready == \'true\'\n    uses: ./.github/workflows/reusable-schedule-freshness.yml\n'
+printf '%s' "$BYTES" > "$G/.github/workflows/freshness.yml"
+nobase "the producer the rule lists as running its checkout's script is accepted" 0
+sed -i 's/published-bytes-ready:$/ready-too:/; s/needs: published-bytes-ready/needs: ready-too/; s/needs\.published-bytes-ready/needs.ready-too/' "$G/.github/workflows/freshness.yml"
+nobase "the same producer under another job id is refused" 1
+
 out="$(run_base "$G" 0000000000000000000000000000000000000000)"; rc=$?
 check "a base that is named and cannot be read stops the rule" "1" "$rc"
 check "and says so" "1" "$(said "$out" 'cannot be read')"
