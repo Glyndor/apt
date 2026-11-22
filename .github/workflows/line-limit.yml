@@ -39,6 +39,6 @@ jobs:
       # no gate opened was scripts/quality/scope/suite-scope.txt, the map that
       # decides which suites a pull request runs, because no extension in the
       # list named it. The counter reads `#` as a comment in a `.txt`, as those
-      # files use it. Counted that way the longest one holds 426 code
-      # lines against the hard limit of 500, measured 21 November 2026.
+      # files use it. Counted that way every one of them is under the hard
+      # limit of 500, and the check says so on each run.
       extensions: "rs go ts tsx js jsx mjs cjs py sh astro vue svelte yml yaml txt"
