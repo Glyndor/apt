@@ -237,6 +237,50 @@ check "and includes two releases expected to refuse" "2" \
 check "and three expected to install" "3" \
 	"$(printf '%s\n' "$matrix" | grep -c ' install$')"
 
+# --- every product the archive serves, and the upgrade on the releases that install -----------------
+
+# The products of the matrix are the PRODUCTS of publish.yml, so a product that joins the archive is
+# measured with it, and the upgrade runs on the images that install and on no other.
+shape="$(python3 -I - "$WORKFLOW" "$HERE/.github/workflows/publish.yml" <<'PY'
+import re, sys, yaml
+wf = yaml.safe_load(open(sys.argv[1]))
+products = sorted(re.search(r'^\s*PRODUCTS:\s*"([^"]*)"', open(sys.argv[2]).read(), re.M).group(1).replace(":amd64", "").split())
+floor = wf["jobs"]["floor"]["strategy"]["matrix"]
+upgrade = wf["jobs"]["upgrade"]["strategy"]["matrix"]
+installs = sorted(i["image"] for i in floor["include"] if i["expect"] == "install")
+on = wf.get("on", wf.get(True))
+print("floor-products", sorted(floor["product"]) == products)
+print("upgrade-products", sorted(upgrade["product"]) == products)
+print("upgrade-images", sorted(upgrade["image"]) == installs)
+print("floor-images", sorted(floor["image"]) == sorted(i["image"] for i in floor["include"]))
+print("after-publish", on["workflow_run"] == {"workflows": ["Publish apt repository"], "types": ["completed"]})
+print("no-pr", not ({"push", "pull_request", "pull_request_target"} & set(on)))
+PY
+)"
+check "the floor job runs every product of publish.yml" "floor-products True" "$(printf '%s\n' "$shape" | grep '^floor-products')"
+check "and so does the upgrade job" "upgrade-products True" "$(printf '%s\n' "$shape" | grep '^upgrade-products')"
+check "the upgrade job runs on the images that install and on none that refuses" "upgrade-images True" "$(printf '%s\n' "$shape" | grep '^upgrade-images')"
+check "every image of the floor job has its expectation" "floor-images True" "$(printf '%s\n' "$shape" | grep '^floor-images')"
+check "the workflow also runs after each publication" "after-publish True" "$(printf '%s\n' "$shape" | grep '^after-publish')"
+check "and on no push or pull request" "no-pr True" "$(printf '%s\n' "$shape" | grep '^no-pr')"
+# The step that runs the upgrade refuses to start when the release before was not fetched, and never reaches docker.
+mkdir -p "$WORK/step/previous" "$WORK/step/bin"
+printf '#!/bin/sh\necho docker-was-called > "%s/docker.called"\n' "$WORK/step" > "$WORK/step/bin/docker"; chmod +x "$WORK/step/bin/docker"
+python3 -I - "$WORKFLOW" > "$WORK/step/run.sh" <<'PY'
+import sys, yaml
+steps = yaml.safe_load(open(sys.argv[1]))["jobs"]["upgrade"]["steps"]
+print([s for s in steps if s.get("name", "").startswith("Upgrade from it")][0]["run"])
+PY
+out="$(cd "$WORK/step" && RUNNER_TEMP="$WORK/step" PRODUCT=upg-probe IMAGE=x PATH="$WORK/step/bin:$PATH" bash run.sh 2>&1)"; rc=$?
+check "an upgrade step with no package of the release before refuses" "1" "$rc"
+check "and says so" "1" "$(printf '%s' "$out" | grep -c 'no package of the release before was fetched')"
+check "and never reaches docker" "no" "$(test -e "$WORK/step/docker.called" && echo yes || echo no)"
+printf 'x' > "$WORK/step/previous/upg-probe_1.0.0_amd64.deb"
+( cd "$WORK/step" && RUNNER_TEMP="$WORK/step" PRODUCT=upg-probe IMAGE=x PATH="$WORK/step/bin:$PATH" bash run.sh >/dev/null 2>&1 )
+check "and with a package it goes on to docker" "yes" "$(test -e "$WORK/step/docker.called" && echo yes || echo no)"
+check "the upgrade job fetches the release before the served one and says nothing passes without it" "1" \
+	"$(grep -c 'previous-release.sh' "$WORKFLOW")"
+
 echo
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

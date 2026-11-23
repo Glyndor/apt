@@ -86,7 +86,9 @@ tests/quality/scope/ci-job-scope-packages.test.sh -
 tests/quality/scope/ci-job-scope.test.sh -
 tests/quality/scope/suite-scope-map.test.sh -
 tests/verify/check-release-order.test.sh -
-tests/verify/distro-floor.test.sh -
+tests/verify/distro-floor.test.sh python3-yaml
+tests/verify/upgrade-floor.test.sh -
+tests/verify/previous-release.test.sh -
 tests/verify/reference-installers.test.sh -
 tests/verify/published-roster.test.sh -
 tests/verify/roster-has-releases.test.sh -

@@ -1,0 +1,43 @@
+# The guards of the scripts that try the archive live: the upgrade from the version before, and the package it starts from.
+# Same format as tests/mutation/catalog.txt, which says what every field means.
+upgrade-floor-could-not-download-base-url-install-product	scripts/verify/upgrade-floor.sh	|| fail "could not download $base_url/install/$product"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-the-published-installer-failed-so-there-is-nothi	scripts/verify/upgrade-floor.sh	|| { cat "$work/install.log"; fail "the published installer failed, so there is nothing to upgrade from"; }	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-the-installer-exited-0-but-product-is-not-instal	scripts/verify/upgrade-floor.sh	|| fail "the installer exited 0 but $product is not installed"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-the-previous-package-prev-deb-does-not-exist	scripts/verify/upgrade-floor.sh	|| fail "the previous package $prev_deb does not exist"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-prev-deb-is-not-a-package-of-product	scripts/verify/upgrade-floor.sh	|| fail "$prev_deb is not a package of $product"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-the-previous-package-is-previous-which-is-not-be	scripts/verify/upgrade-floor.sh	|| fail "the previous package is $previous, which is not below the served $served"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-could-not-remove-product-to-put-the-previous-ver	scripts/verify/upgrade-floor.sh	|| fail "could not remove $product to put the previous version in its place"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-could-not-install-product-previous-from-the-arch	scripts/verify/upgrade-floor.sh	|| fail "could not install $product $previous from the archive"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-could-not-install-prev-deb	scripts/verify/upgrade-floor.sh	|| fail "could not install $prev_deb"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-product-is-installed-not-the-previous-that-was-i	scripts/verify/upgrade-floor.sh	|| fail "$product is $(installed), not the $previous that was installed"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-product-previous-does-not-start-before-the-upgra	scripts/verify/upgrade-floor.sh	|| fail "$product $previous does not start before the upgrade, so the upgrade would prove nothing"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-apt-offers-product-candidate-not-the-served-serv	scripts/verify/upgrade-floor.sh	|| fail "apt offers $product $candidate, not the served $served the installer put in place"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-apt-get-install-only-upgrade-product-failed	scripts/verify/upgrade-floor.sh	|| { cat "$work/upgrade.log"; fail "apt-get install --only-upgrade $product failed"; }	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-after-the-upgrade-product-is-now-not-the-served	scripts/verify/upgrade-floor.sh	|| fail "after the upgrade $product is $now, not the served $served"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-product-now-does-not-start-after-the-upgrade	scripts/verify/upgrade-floor.sh	|| fail "$product $now does not start after the upgrade"	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-dpkg-reports-packages-that-are-not-fully-configu	scripts/verify/upgrade-floor.sh	|| { dpkg --audit; fail "dpkg reports packages that are not fully configured after the upgrade"; }	|| true	tests/verify/upgrade-floor.test.sh
+upgrade-floor-files-of-product-differ-from-what-the-package-sh	scripts/verify/upgrade-floor.sh	|| { echo "$verify"; fail "files of $product differ from what the package shipped after the upgrade"; }	|| true	tests/verify/upgrade-floor.test.sh
+previous-release-product-is-not-a-plain-product-name	scripts/verify/previous-release.sh	|| fail "'$product' is not a plain product name"	|| true	tests/verify/previous-release.test.sh
+previous-release-org-is-not-a-plain-organisation-name	scripts/verify/previous-release.sh	|| fail "'$org' is not a plain organisation name"	|| true	tests/verify/previous-release.test.sh
+previous-release-arch-is-not-an-architecture	scripts/verify/previous-release.sh	|| fail "'$arch' is not an architecture"	|| true	tests/verify/previous-release.test.sh
+previous-release-cannot-create-dir	scripts/verify/previous-release.sh	|| fail "cannot create $dir"	|| true	tests/verify/previous-release.test.sh
+previous-release-could-not-read-the-index-of-base-url-so-the-serv	scripts/verify/previous-release.sh	|| fail "could not read the index of $base_url, so the served version is not known"	|| true	tests/verify/previous-release.test.sh
+previous-release-product-is-not-in-the-index-so-there-is-no-serve	scripts/verify/previous-release.sh	|| fail "$product is not in the index, so there is no served version to go back from"	|| true	tests/verify/previous-release.test.sh
+previous-release-could-not-list-the-releases-of-org-product	scripts/verify/previous-release.sh	|| fail "could not list the releases of $org/$product"	|| true	tests/verify/previous-release.test.sh
+previous-release-the-releases-of-org-product-could-not-be-read	scripts/verify/previous-release.sh	|| fail "the releases of $org/$product could not be read"	|| true	tests/verify/previous-release.test.sh
+previous-release-could-not-download-best-name-from-org-product-be	scripts/verify/previous-release.sh	|| fail "could not download $best_name from $org/$product $best_tag"	|| true	tests/verify/previous-release.test.sh
+previous-release-the-download-of-best-name-left-no-file	scripts/verify/previous-release.sh	|| fail "the download of $best_name left no file"	|| true	tests/verify/previous-release.test.sh
+previous-release-best-name-is-sha256-got-not-the-best-digest-the	scripts/verify/previous-release.sh	|| fail "$best_name is sha256:$got, not the $best_digest the release reports"	|| true	tests/verify/previous-release.test.sh
+previous-release-best-name-does-not-declare-the-package-product	scripts/verify/previous-release.sh	|| fail "$best_name does not declare the package $product"	|| true	tests/verify/previous-release.test.sh
+previous-release-best-name-declares-version-dpkg-deb-f	scripts/verify/previous-release.sh	|| fail "$best_name declares version $(dpkg-deb -f "	|| true	tests/verify/previous-release.test.sh
+upgrade-floor-only-this-archive-counts	scripts/verify/upgrade-floor.sh	index($3, h)	1	tests/verify/upgrade-floor.test.sh
+upgrade-floor-earlier-means-lower	scripts/verify/upgrade-floor.sh	if dpkg --compare-versions "$v" lt "$served"; then previous="$v"	if dpkg --compare-versions "$v" gt "$served"; then previous="$v"	tests/verify/upgrade-floor.test.sh
+upgrade-floor-image-paths-are-not-differences	scripts/verify/upgrade-floor.sh	| grep -vE ' /usr/share/(man|doc|info|locale|lintian)/'	| cat	tests/verify/upgrade-floor.test.sh
+previous-release-strictly-below-the-served	scripts/verify/previous-release.sh	dpkg --compare-versions "$version" lt "$served" || continue	dpkg --compare-versions "$version" le "$served" || continue	tests/verify/previous-release.test.sh
+previous-release-newest-of-those-below	scripts/verify/previous-release.sh	dpkg --compare-versions "$version" gt "$best_version"	dpkg --compare-versions "$version" lt "$best_version"	tests/verify/previous-release.test.sh
+previous-release-no-drafts	scripts/verify/previous-release.sh	select(.draft == false and .prerelease == false)	select(.prerelease == false)	tests/verify/previous-release.test.sh
+previous-release-no-prereleases	scripts/verify/previous-release.sh	select(.draft == false and .prerelease == false)	select(.draft == false)	tests/verify/previous-release.test.sh
+upgrade-floor-exit-3-when-nothing-earlier	scripts/verify/upgrade-floor.sh	exit 3	exit 0	tests/verify/upgrade-floor.test.sh
+previous-release-exit-3-when-nothing-below	scripts/verify/previous-release.sh	exit 3	exit 0	tests/verify/previous-release.test.sh
+previous-release-digest-shape	scripts/verify/previous-release.sh	sha256:????????????????????????????????????????????????????????????????) ;;	?*) ;;	tests/verify/previous-release.test.sh
+distro-floor-upgrade-needs-the-package-before	.github/workflows/distro-floor.yml	[ -n "$deb" ] || { echo "::error::no package of the release before was fetched"; exit 1; }	[ -n "$deb" ] || true	tests/verify/distro-floor.test.sh

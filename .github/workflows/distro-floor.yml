@@ -12,10 +12,26 @@ name: Distribution floor
 # supported install, and the ones listed as unsupported are refused with a
 # message that names the floor.
 #
-# Weekly and on demand, no push or pull_request: the question is about the
-# distributions and the served archive, not about a change in this tree. The
-# images are pulled by tag on purpose, since "what the release serves today"
-# is the thing being measured, and a digest would freeze the answer.
+# It runs for each product the archive serves (podup, epistle and podman), because
+# a package can fail where its siblings do not: each has its own dependencies and its
+# own maintainer scripts.
+#
+# The second question is the upgrade. A machine that already has the version of a
+# product before the served one has to end up on the served one, with the product
+# still answering, when apt upgrades it. The `upgrade` job asks it on the three
+# releases that install. The archive keeps the latest version only, so the version
+# before is the one of the product's previous release, downloaded on the runner and
+# installed in the container; when the archive keeps an older one the container uses
+# that one, and the job says which it used. A product with no earlier release fails
+# the job rather than passing it, because an upgrade nobody tried is not a pass.
+#
+# Weekly, after each publication and on demand, no push or pull_request: the
+# question is about the distributions and the served archive, not about a change in
+# this tree. The run after a publication reads the archive that publication just
+# served, which is where a revision that breaks an upgrade shows first; it runs
+# whether the publication succeeded or not, since the archive it serves is what is
+# measured. The images are pulled by tag on purpose, since "what the release serves
+# today" is the thing being measured, and a digest would freeze the answer.
 #
 # freshness.yml watches this cron (`freshness-distro-floor`, which holds the
 # number of days): a weekly schedule that stops firing would otherwise read as
@@ -24,24 +40,41 @@ name: Distribution floor
 on:
   schedule:
     - cron: "15 7 * * 1"
+  # The workflow that publishes runs with the credentials of the archive; this one runs the
+  # served install line in containers and holds none, so it reads nothing the publish wrote.
+  workflow_run:
+    workflows: [Publish apt repository]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# The jobs carry no name of their own: GitHub names a matrix job after its job id and the values of
+# its combination (`floor (podup, debian:trixie, install)`), which says all that is needed, and a name
+# that holds an expression is one the rule on switches cannot tell from a check somebody requires.
 jobs:
   floor:
-    name: ${{ matrix.image }} should ${{ matrix.expect }}
     # ubuntu-latest on purpose: the verdict comes from the container image the
     # matrix names, and the runner only hosts docker.
     runs-on: ubuntu-latest
-    # Measured locally on 2026-09-12: 24 to 40 seconds per image, pull and
-    # apt-get update included. Fifteen minutes leaves room for a slow mirror
-    # without sitting for six hours on a hang.
+    # Measured locally on 2026-11-23 with podman: 33 to 70 seconds per product and
+    # image, pull and apt-get update included. Fifteen minutes leaves room for a
+    # slow mirror without sitting for six hours on a hang.
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
+        # Every product the archive serves, on every image: PRODUCTS of publish.yml.
+        product: [podup, epistle, podman]
+        image:
+          - debian:trixie
+          - ubuntu:24.04
+          - ubuntu:26.04
+          - ubuntu:22.04
+          - debian:12
+        # What each image is expected to do: the combinations that name an image
+        # add its expectation to every product on it.
         include:
           - image: debian:trixie
             expect: install
@@ -63,8 +96,56 @@ jobs:
         env:
           IMAGE: ${{ matrix.image }}
           EXPECT: ${{ matrix.expect }}
+          PRODUCT: ${{ matrix.product }}
         run: |
           set -euo pipefail
           docker run --rm --pull=always \
             -v "$PWD/scripts/verify/distro-floor.sh:/distro-floor.sh:ro" \
-            "$IMAGE" sh /distro-floor.sh "$EXPECT" podup
+            "$IMAGE" sh /distro-floor.sh "$EXPECT" "$PRODUCT"
+
+  upgrade:
+    # ubuntu-latest on purpose, as above: the verdict comes from the image.
+    runs-on: ubuntu-latest
+    # Measured locally on 2026-11-23 with podman: 35 to 70 seconds per product and
+    # image, which includes installing the served version, removing it and installing the
+    # one before. The download of the previous package is 30 MB for podman. Twenty minutes
+    # is the bound of a slow mirror and a slow download, not of an honest run.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # The releases that install; a release that refuses has nothing to upgrade.
+        product: [podup, epistle, podman]
+        image: [debian:trixie, ubuntu:24.04, ubuntu:26.04]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The archive serves the latest version only, so the version before it comes from
+      # the release of the product before the served one. Exit 3 means there is none, and
+      # that fails the job: an upgrade nobody tried is not a pass.
+      - name: Fetch the package of the release before the served one
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCT: ${{ matrix.product }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/previous"
+          bash ./scripts/verify/previous-release.sh "$PRODUCT" "$RUNNER_TEMP/previous"
+
+      - name: Upgrade from it in a fresh container
+        env:
+          IMAGE: ${{ matrix.image }}
+          PRODUCT: ${{ matrix.product }}
+        run: |
+          set -euo pipefail
+          deb="$(find "$RUNNER_TEMP/previous" -maxdepth 1 -name "${PRODUCT}_*_amd64.deb" | head -n 1)"
+          [ -n "$deb" ] || { echo "::error::no package of the release before was fetched"; exit 1; }
+          docker run --rm --pull=always \
+            -v "$PWD/scripts/verify/upgrade-floor.sh:/upgrade-floor.sh:ro" \
+            -v "$deb:/previous.deb:ro" \
+            "$IMAGE" sh /upgrade-floor.sh "$PRODUCT" /previous.deb

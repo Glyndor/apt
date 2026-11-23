@@ -126,6 +126,8 @@ jobs:
         ./tests/publish/purge-cache/purge-cache-pruned.test.sh
         ./tests/publication/health-check/health-check-workflow.test.sh
         ./tests/verify/distro-floor.test.sh
+        ./tests/verify/upgrade-floor.test.sh
+        ./tests/verify/previous-release.test.sh
         ./tests/ci/policy/locale-pinned.test.sh
         ./tests/ci/policy/freshness-job-scope.test.sh
         ./tests/ci/policy/freshness-poll-concurrency.test.sh
