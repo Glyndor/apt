@@ -99,7 +99,12 @@ jobs:
   mutations:
     name: the guards still die under their mutations
     needs: decide
-    if: needs.decide.outputs.run == 'true'
+    # Skipped only when the decision answered `false`. A decision that failed or
+    # answered nothing leaves the output empty, and an empty output is not a
+    # `false`: the sweep runs every entry, and the gate below is what fails.
+    # !cancelled() so that it starts when the decision failed, and not in a run
+    # that was cancelled.
+    if: ${{ !cancelled() && needs.decide.outputs.run != 'false' }}
     # ubuntu-latest resolved to ubuntu-26.04 in apt's publish runs on
     # 2026-11-20. The image is named because this job's verdict depends on the
     # tools it ships, so a new image arrives as a commit and not overnight.
