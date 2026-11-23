@@ -31,13 +31,24 @@ on:
   pull_request:
   schedule:
     - cron: "23 4 * * 1" # Monday, 04:23 UTC: a minute nobody else takes
+    # A single run, on 24 November at 10:23 UTC, to try the sweep by fragments on a runner and give the
+    # freshness watcher the scheduled run it has not had: the one of 23 November was cut at its bound,
+    # and a manual run is not a scheduled one. The pull request that replaces the estimated durations
+    # in tests/mutation/sweep-durations.txt by the measured ones removes this line; left in, it would
+    # fire every 24 November.
+    - cron: "23 10 24 11 *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: mutation-${{ github.workflow }}-${{ github.ref }}
+  # The group is per run outside a pull request. A group shared by the schedule and a
+  # manual run lets GitHub drop the run that is still waiting when a newer one queues, even
+  # with `cancel-in-progress: false`, and a scheduled run that never ends is one the
+  # freshness watcher can never count. tests/ci/policy/rules/cancel-policy.test.sh holds
+  # this for every workflow that has a schedule.
+  group: mutation-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   # A newer push replaces a pull request's run; a scheduled run is never
   # replaced by the next one (see cancel-policy.test.sh).
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -109,16 +120,31 @@ jobs:
     # 2026-11-20. The image is named because this job's verdict depends on the
     # tools it ships, so a new image arrives as a commit and not overnight.
     runs-on: ubuntu-26.04
-    # Bound, measured on 2026-11-21: every entry (242 then) took 31 minutes 35
-    # seconds on a loaded workstation, and 30 minutes 38 seconds on the first
-    # run of a GitHub runner, where the next one took about 15. Each entry is a
-    # copy of the tree and the suite it names. A pull request runs a fraction:
-    # 2.5 seconds for the 7 entries a README change selects, about 10 minutes
-    # for the 43 a change to build-repo.sh selects. Ninety is nearly three
-    # times the longest full sweep and still bounds a hang; the six-hour
-    # default is what a hang would otherwise cost. The catalogue grows with
-    # every refusal, so the sweep does too: raise this when a full sweep passes 45 minutes.
-    timeout-minutes: 90
+    # One job for each file of the catalogue, so a full sweep takes as long as its largest file and
+    # not as long as all of them. The whole sweep in one job took 60 minutes on 2026-11-23 against a
+    # bound of 90, and the catalogue grows with every refusal. A job that exceeds its bound is
+    # reported by GitHub as `cancelled`: not a success, so the freshness watcher cannot count it.
+    # The bound of each fragment is its measured time, in tests/mutation/sweep-durations.txt, scaled
+    # to the entries it has and with a half on top; the policy suite named below fails the pull
+    # request that makes a fragment outgrow it, and the one that adds a file of the catalogue that is
+    # not listed here. A pull request runs a fraction: each fragment runs only the selected entries
+    # that it holds, and ends at once when it holds none. A fragment that fails does not stop the rest.
+    # tests/ci/policy/mutation-sweep-is-split-and-bounded.test.sh holds all of it.
+    timeout-minutes: ${{ matrix.minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - fragment: tests/mutation/catalog.txt
+            minutes: 55
+          - fragment: tests/mutation/catalog.d/callers.txt
+            minutes: 10
+          - fragment: tests/mutation/catalog.d/hygiene.txt
+            minutes: 10
+          - fragment: tests/mutation/catalog.d/instrument.txt
+            minutes: 10
+          - fragment: tests/mutation/catalog.d/switch-rule.txt
+            minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -127,13 +153,21 @@ jobs:
       - name: Every mutation is killed by a test
         env:
           IDS: ${{ needs.decide.outputs.ids }}
+          FRAGMENT: ${{ matrix.fragment }}
         run: |
           set -euo pipefail
           selected=()
           if [ "$IDS" != all ]; then
-            read -r -a selected <<< "$IDS"
+            held="$(./tests/mutation/run-mutations.sh --catalog "$FRAGMENT" --list)"
+            for id in $IDS; do
+              if grep -qxF -- "$id" <<< "$held"; then selected+=("$id"); fi
+            done
+            if [ "${#selected[@]}" -eq 0 ]; then
+              echo "None of the selected entries is in $FRAGMENT."
+              exit 0
+            fi
           fi
-          ./tests/mutation/run-mutations.sh "${selected[@]}"
+          ./tests/mutation/run-mutations.sh --catalog "$FRAGMENT" "${selected[@]}"
 
   gate:
     name: gate

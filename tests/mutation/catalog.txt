@@ -411,8 +411,9 @@ upgrade-names-collation	keyring/upgrade/glyndor-upgrade	names="$(printf '%s\n' "
 upgrade-plan-collation	keyring/upgrade/glyndor-upgrade	plan="$(printf '%s\n' "$plan_raw" | grep -v '^$' | LC_ALL=C sort -u || true)"	plan="$(printf '%s\n' "$plan_raw" | grep -v '^$' | sort -u || true)"	tests/ci/policy/locale-pinned.test.sh
 distro-floor-refusal-is-the-readme-floor	scripts/verify/distro-floor.sh	grep -qF "libc6 (>= $floor_libc)" "$work/log"	grep -qE 'podman \(>= 5\.0\)|libc6 \(>= [0-9]+\.[0-9]+\)' "$work/log"	tests/verify/distro-floor.test.sh
 distro-floor-libc-number	scripts/verify/distro-floor.sh	floor_libc="2.39"	floor_libc="2.35"	tests/verify/distro-floor.test.sh
-group-rule-push	tests/ci/policy/cancel-policy.test.sh	grep -qE '^  (push|workflow_call):' "$f" || continue	grep -qE '^  (workflow_call):' "$f" || continue	tests/ci/policy/cancel-policy.test.sh
-group-rule-reusable	tests/ci/policy/cancel-policy.test.sh	grep -qE '^  (push|workflow_call):' "$f" || continue	grep -qE '^  (push):' "$f" || continue	tests/ci/policy/cancel-policy.test.sh
+group-rule-push	tests/ci/policy/cancel-policy.test.sh	grep -qE '^  (push|workflow_call|schedule):' "$f" || continue	grep -qE '^  (workflow_call|schedule):' "$f" || continue	tests/ci/policy/cancel-policy.test.sh
+group-rule-reusable	tests/ci/policy/cancel-policy.test.sh	grep -qE '^  (push|workflow_call|schedule):' "$f" || continue	grep -qE '^  (push|schedule):' "$f" || continue	tests/ci/policy/cancel-policy.test.sh
+group-rule-schedule	tests/ci/policy/cancel-policy.test.sh	grep -qE '^  (push|workflow_call|schedule):' "$f" || continue	grep -qE '^  (push|workflow_call):' "$f" || continue	tests/ci/policy/cancel-policy.test.sh
 group-rule-form	tests/ci/policy/cancel-policy.test.sh	*"$PER_RUN"*) continue ;;	*"github.run_id"*) continue ;;	tests/ci/policy/cancel-policy.test.sh
 netflags-proto	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	(?:^|\s)--proto\s+=https(?:\s|$)	(?:^|\s)--proto\s+(?:\s|$)	tests/ci/policy/workflow-network-calls-are-bounded.test.sh
 netflags-proto-redir	tests/ci/policy/workflow-network-calls-are-bounded.test.sh	(?:^|\s)--proto-redir\s+=https(?:\s|$)	(?:^|\s)--proto-redir\s+(?:\s|$)	tests/ci/policy/workflow-network-calls-are-bounded.test.sh

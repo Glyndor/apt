@@ -719,7 +719,6 @@ tests/ci/suites/lint-job-scope.test.sh
 # of the suite it decides for, the requirements file and that suite.
 
 tests/ci/suites/mldsa-job-scope.test.sh
-	scripts/quality/scope/ci-job-scope.sh
 	scripts/quality/scope/suite-scope.txt
 	scripts/verify/**
 	.github/workflows/tests.yml
@@ -791,7 +790,6 @@ tests/quality/scope/ci-job-scope.test.sh
 	tests/quality/**
 
 tests/quality/scope/ci-job-scope-suites.test.sh
-	scripts/quality/scope/ci-job-scope.sh
 	scripts/quality/scope/suite-scope.txt
 	tests/quality/**
 
@@ -862,6 +860,7 @@ tests/quality/scope/mutation-scope.test.sh
 
 tests/ci/policy/mutation-workflow.test.sh
 	.github/workflows/mutation.yml
+	tests/mutation/**
 
 # The suite reads the workflows whose calls it pins.
 
