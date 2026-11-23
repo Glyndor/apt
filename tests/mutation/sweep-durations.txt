@@ -8,3 +8,4 @@ tests/mutation/catalog.d/callers.txt	72	382	estimated from the scheduled sweep o
 tests/mutation/catalog.d/hygiene.txt	54	286	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 54 entries
 tests/mutation/catalog.d/instrument.txt	16	85	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 16 entries
 tests/mutation/catalog.d/switch-rule.txt	164	869	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 164 entries
+tests/mutation/catalog.d/scope.txt	3	16	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 3 entries

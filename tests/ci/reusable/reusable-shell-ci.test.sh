@@ -259,6 +259,7 @@ package_repo() {
 		> "$R/scripts/quality/scope/suite-dependencies.txt"
 	if [ "${1:-}" = real ]; then
 		cp "$HERE/scripts/quality/scope/suite-scope.txt" "$R/scripts/quality/scope/"
+		cp -r "$HERE/scripts/quality/scope/suite-scope.d" "$R/scripts/quality/scope/"
 		cp "$HERE/scripts/quality/scope/suite-dependencies.txt" "$R/scripts/quality/scope/"
 	fi
 	printf 'base\n' > "$R/docs.md"; printf 'archive\n' > "$R/archive.txt"; printf 'other\n' > "$R/other.txt"

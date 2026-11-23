@@ -59,7 +59,11 @@ alone = re.findall(r"check-suite-completeness\.test\.sh((?:[ \t]+\./tests/[A-Za-
 for chunk in alone:
     suites += [token[2:] for token in chunk.split() if token[2:] not in suites]
 scope, current = {}, None
-for raw in open(os.path.join(root, "scripts/quality/scope/suite-scope.txt")):
+# The map is the file and the `.txt` files of the folder beside it, as the resolver reads them.
+lines = open(os.path.join(root, "scripts/quality/scope/suite-scope.txt")).read().splitlines()
+for extra in sorted(glob.glob(os.path.join(root, "scripts/quality/scope/suite-scope.d/*.txt"))):
+    lines += open(extra).read().splitlines()
+for raw in lines:
     line = raw.rstrip()
     if not line.strip() or line.lstrip().startswith("#"):
         continue
@@ -123,6 +127,20 @@ tree() {
 }
 
 D="$(tree sound)"; check "control: a sound map reports nothing" "" "$(problems "$D")"
+
+# The map in a folder beside the file: a suite listed in either is listed, and in both is listed twice.
+D="$(tree folder)"; mkdir -p "$D/scripts/quality/scope/suite-scope.d"
+sed -i '/^tests\/a\/two.test.sh$/,$d' "$D/scripts/quality/scope/suite-scope.txt"
+printf 'tests/a/two.test.sh\n\ttests/a/two.test.sh\n' > "$D/scripts/quality/scope/suite-scope.d/zone.txt"
+check "a suite listed in a file of the folder has its entry" "" "$(problems "$D")"
+printf 'tests/a/one.test.sh\n\tscripts/a/**\n' >> "$D/scripts/quality/scope/suite-scope.d/zone.txt"
+check "a suite listed in the map file and in the folder is reported" "listed twice: tests/a/one.test.sh" "$(problems "$D")"
+D="$(tree folder2)"; mkdir -p "$D/scripts/quality/scope/suite-scope.d"
+printf 'tests/a/three.test.sh\n\tscripts/a/**\n' > "$D/scripts/quality/scope/suite-scope.d/zone.txt"
+check "an entry for a suite the workflow does not run, in the folder, is reported" "not run by the workflow: tests/a/three.test.sh" "$(problems "$D")"
+D="$(tree folder3)"; mkdir -p "$D/scripts/quality/scope/suite-scope.d"
+printf 'tests/a/three.test.sh\n\tscripts/a/**\n' > "$D/scripts/quality/scope/suite-scope.d/zone.md"
+check "a file of the folder that is not .txt is not part of the map" "" "$(problems "$D")"
 
 D="$(tree missing)"; printf '\ntests/a/three.test.sh\n\tscripts/a/**\n' >> "$D/scripts/quality/scope/suite-scope.txt"
 check "an entry for a suite the workflow does not run is reported" "not run by the workflow: tests/a/three.test.sh" "$(problems "$D")"

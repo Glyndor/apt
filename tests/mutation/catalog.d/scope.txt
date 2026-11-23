@@ -1,0 +1,5 @@
+# The guards of the resolver of the suite map that reads it from a folder.
+# Same format as tests/mutation/catalog.txt, which says what every field means.
+ci-job-scope-map-folder-only-txt	scripts/quality/scope/ci-job-scope.sh	n.endswith(".txt")	n.endswith("")	tests/quality/scope/ci-job-scope-suites.test.sh
+ci-job-scope-map-folder-is-global-input	scripts/quality/scope/ci-job-scope.sh	MAP_DIR + "**",	MAP_DIR + "nothing",	tests/quality/scope/ci-job-scope-suites.test.sh
+ci-job-scope-map-file-required	scripts/quality/scope/ci-job-scope.sh	text = git("show", commit + ":" + MAP).decode("utf-8", "replace")	text = ""	tests/quality/scope/ci-job-scope-suites.test.sh

@@ -96,52 +96,16 @@
 #
 # ---------------------------------------------------------------------------
 
-# --- the read-back of the published archive ----------------------------------
-tests/verify/check-release-order.test.sh
-	scripts/verify/**
-	keyring/**
-	tests/verify/**
-	tests/fixtures/**
 
 # These five read the same script and the same fixture. Their cost is in
 # building and signing an archive, not in what they read.
 
-tests/verify/verify-published.test.sh
-	tests/fixtures/verify/**
-	scripts/verify/**
-	tests/verify/**
 
-tests/verify/verify-published/verify-published-bootstrap.test.sh
-	tests/fixtures/verify/**
-	scripts/verify/**
-	tests/verify/**
 
-tests/verify/verify-published/verify-published-object-size.test.sh
-	scripts/verify/**
-	tests/verify/**
 
-tests/verify/verify-published/verify-published-budget.test.sh
-	tests/fixtures/verify/**
-	scripts/verify/**
-	tests/verify/**
 
-tests/verify/verify-published/verify-published-packages.test.sh
-	tests/fixtures/verify/**
-	scripts/verify/**
-	tests/verify/**
 
-tests/verify/verify-published/verify-published-collision.test.sh
-	tests/fixtures/verify/**
-	scripts/verify/**
-	tests/verify/**
 
-# The by-hash leg of the read-back, over an archive offered by hash with the
-# script the build uses.
-tests/verify/verify-published/verify-published-by-hash.test.sh
-	tests/fixtures/verify/**
-	scripts/verify/**
-	scripts/build/add-by-hash.sh
-	tests/verify/**
 
 # The by-hash step of the build, over a distribution of the shape reprepro
 # exports, and an apt client reading what it signs.
@@ -158,12 +122,6 @@ tests/build/add-by-hash/add-by-hash-apt.test.sh
 # depends on the keyring it verifies them against and on the workflow that
 # publishes them.
 
-tests/verify/verify-published/verify-published-build.test.sh
-	tests/fixtures/verify/**
-	scripts/verify/**
-	tests/verify/**
-	keyring/**
-	.github/workflows/publish.yml
 
 # It copies the whole scripts/ tree into its fixture so the workflow steps can
 # run from it, and the steps run scripts/build/build-installers.sh and
@@ -171,18 +129,7 @@ tests/verify/verify-published/verify-published-build.test.sh
 # The first of those reads the installer template, so scripts/installer/ is an
 # input of the verdict even though the tree copy is not.
 
-tests/verify/verify-installers.test.sh
-	scripts/build/**
-	scripts/installer/**
-	scripts/verify/**
-	tests/verify/**
-	.github/workflows/publish.yml
-	.github/workflows/health-check.yml
 
-# It renders nothing real: a stub generator in a throwaway repository, so only
-# the script and this suite can change its verdict.
-tests/verify/reference-installers.test.sh
-	scripts/verify/reference-installers.sh
 
 tests/ci/policy/roster-releases-workflow.test.sh
 	.github/workflows/roster-releases.yml
@@ -190,72 +137,26 @@ tests/ci/policy/roster-releases-workflow.test.sh
 tests/ci/policy/workflows-run-their-scripts.test.sh
 	.github/workflows/**
 
-tests/verify/roster-has-releases.test.sh
-	scripts/verify/roster-has-releases.sh
 
-tests/verify/new-product-end-to-end.test.sh
-	scripts/verify/**
 
 tests/build/new-product-archive.test.sh
 	scripts/build/**
 	scripts/installer/**
 
-tests/verify/published-roster.test.sh
-	scripts/verify/published-roster.sh
-	.github/workflows/health-check.yml
-	.github/workflows/publish.yml
 
-# Both run the verifier with its default ML-DSA-65 key and required files, the
-# committed ones under keyring/, so a change there can change either verdict.
-tests/verify/verify-debs.test.sh
-	scripts/verify/**
-	tests/verify/**
-	keyring/**
 
-tests/verify/verify-debs-hybrid.test.sh
-	scripts/verify/**
-	tests/verify/**
-	keyring/**
 
-tests/verify/verify-debs-anchor-bytes.test.sh
-	scripts/verify/**
-	tests/verify/**
-	keyring/**
 
-tests/verify/verify-debs-control-fields.test.sh
-	scripts/verify/**
-	tests/verify/**
 
-tests/verify/verify-debs-same-bytes.test.sh
-	scripts/verify/**
-	tests/verify/**
-	keyring/**
 
-# The same check with the ML-DSA-65 library, which only the `ML-DSA-65 verifier`
-# job of tests.yml runs, in a virtual environment built from
-# scripts/verify/verify-debs-requirements.txt. It has an entry so that job can
-# skip the wheel install and the suite when nothing here changed
-# (`ci-job-scope.sh suite-needed`, on a pull request and on a push to main). It
-# reads the verifier and everything beside it, the committed keys and the list of
-# products that require the second signature, the requirements file with its
-# hashes, the vector under tests/fixtures/verify-debs, and the job that runs it.
-# The suite and the runner are inputs of every decision by rule.
-tests/verify/verify-debs-mldsa.test.sh
-	scripts/verify/verify-debs.sh
-	scripts/verify/verify-debs-requirements.txt
-	tests/verify/verify-debs-mldsa.test.sh
-	tests/fixtures/verify-debs/**
-	keyring/**
-	.github/workflows/tests.yml
 
 # The distro floor reads the table README.md carries and the workflow that
 # enforces it.
 
-tests/verify/distro-floor.test.sh
-	scripts/verify/**
-	tests/verify/**
-	.github/workflows/distro-floor.yml
-	README.md
+
+# The upgrade scripts read the workflow that runs them and nothing else of the tree.
+
+
 
 # --- the package repository and the keyring -----------------------------------
 
