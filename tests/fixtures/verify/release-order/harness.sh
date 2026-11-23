@@ -115,7 +115,12 @@ check() { # expected status, distinguishing output, label
 		pass=$((pass + 1))
 		return 0
 	fi
-	echo "FAIL - $label (want $want / $needle; got $got)"
+	# The sabotaged copy of the script is meant to differ from the real one; its output is
+	# not a failure of this suite, so it is not printed as one.
+	case "$label" in
+	"CONTROL expected failure"*) echo "differs - $label (want $want / $needle; got $got), as the sabotage intends" ;;
+	*) echo "FAIL - $label (want $want / $needle; got $got)" ;;
+	esac
 	printf '%s\n' "$out"
 	fail=$((fail + 1))
 	return 1
