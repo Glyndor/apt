@@ -137,6 +137,7 @@ base_repo() { # the real callers and reusables, and the file above, as the base 
 	rm -rf "$G"; mkdir -p "$G/.github/workflows"; gitg init -q -b main
 	cp "$HERE"/.github/workflows/*.yml "$G/.github/workflows/"
 	printf '%s' "$SCOPE_FILE" > "$G/.github/workflows/freshness.yml"
+	mkdir -p "$G/scripts/quality/lint"; cp "$HERE/scripts/quality/lint/switch-rule-forms.json" "$G/scripts/quality/lint/"
 	gitg add -A; gitg commit -qm base; BASE="$(gitg rev-parse HEAD)"
 }
 # The pull request changes a step or a job of a workflow the way the expression says.

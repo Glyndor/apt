@@ -619,38 +619,52 @@ tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.
 tests/ci/reusable/reusable-workflow-lint.test.sh
 	.github/workflows/reusable-workflow-lint.yml
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	scripts/quality/lint/check-tooling-isolation.sh
 	scripts/quality/coverage/check-suites-wired.sh
 
 tests/quality/lint/check-test-job-not-switchable.test.sh
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	.github/workflows/**
 
 tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 
 tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	.github/workflows/**
 	tests/fixtures/ci/switchable-rule.sh
 
 tests/quality/lint/check-test-job-not-switchable-steps.test.sh
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	.github/workflows/**
 	tests/fixtures/ci/switchable-rule.sh
 
 tests/quality/lint/check-test-job-not-switchable-pins.test.sh
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
+	.github/workflows/**
+	tests/fixtures/ci/switchable-rule.sh
+
+tests/quality/lint/check-test-job-not-switchable-forms.test.sh
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	.github/workflows/**
 	tests/fixtures/ci/switchable-rule.sh
 
 tests/quality/lint/check-test-job-not-switchable-context.test.sh
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	.github/workflows/**
 	tests/fixtures/ci/switchable-rule.sh
 
 tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	.github/workflows/**
 	tests/fixtures/ci/switchable-rule.sh
 

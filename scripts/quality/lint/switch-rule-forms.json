@@ -1,0 +1,57 @@
+{
+ "notes": ["Each entry lists the exact forms (`if`, `needs`) a job may carry; a job is accepted only when both keys together are one of them.", "`continue-on-error` has no entry, so it is never accepted."],
+ "conditional_jobs": [
+  {"file": ".github/workflows/reusable-empty-diff.yml", "job": "empty-diff", "reusable": null, "forms": [{"if": "github.event_name == 'pull_request'"}], "why": "`empty diff` exists for a pull request, the only event its caller runs on."},
+  {"file": ".github/workflows/reusable-shell-ci.yml", "job": "test", "reusable": null, "forms": [{"if": "inputs.test-command != ''"}], "why": "`shell / test` has nothing to run without a test-command, and the rule refuses a caller that passes none."},
+  {"file": ".github/workflows/freshness.yml", "job": "freshness-published-bytes", "reusable": "reusable-schedule-freshness.yml", "forms": [{"if": "needs.published-bytes-ready.outputs.ready == 'true'", "needs": "published-bytes-ready"}], "why": "The published-bytes watcher waits for the job that says whether the manifests are published yet; it is no check a merge waits for."},
+  {"file": ".github/workflows/freshness.yml", "job": "scope", "reusable": null, "forms": [{"if": "github.event_name == 'pull_request'"}], "why": "`scope` has nothing to decide outside a pull request."},
+  {"file": ".github/workflows/freshness.yml", "job": "suite-on-main", "reusable": null, "forms": [{"if": "${{ !cancelled() && needs.scope.outputs.suite != 'false' }}", "needs": "scope"}], "why": "A watcher that waits for the `scope` job, which decides from the changed paths whether it applies; it is no required check."},
+  {"file": ".github/workflows/freshness.yml", "job": "tool-versions", "reusable": null, "forms": [{"if": "${{ !cancelled() && needs.scope.outputs.tools != 'false' }}", "needs": "scope"}], "why": "A watcher that waits for the `scope` job, which decides from the changed paths whether it applies; it is no required check."},
+  {"file": ".github/workflows/freshness.yml", "job": "dependabot-freshness", "reusable": "reusable-dependabot-freshness.yml", "forms": [{"if": "${{ !cancelled() && needs.scope.outputs.dependabot != 'false' }}", "needs": "scope"}], "why": "A watcher that waits for the `scope` job, which decides from the changed paths whether it applies; it is no required check."},
+  {"file": ".github/workflows/freshness.yml", "job": "freshness-publish", "reusable": "reusable-schedule-freshness.yml", "forms": [{"if": "${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}", "needs": "scope"}], "why": "A watcher that waits for the `scope` job, which decides from the changed paths whether it applies; it is no required check."},
+  {"file": ".github/workflows/freshness.yml", "job": "freshness-distro-floor", "reusable": "reusable-schedule-freshness.yml", "forms": [{"if": "${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}", "needs": "scope"}], "why": "A watcher that waits for the `scope` job, which decides from the changed paths whether it applies; it is no required check."},
+  {"file": ".github/workflows/freshness.yml", "job": "freshness-health-check", "reusable": "reusable-schedule-freshness.yml", "forms": [{"if": "${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}", "needs": "scope"}], "why": "A watcher that waits for the `scope` job, which decides from the changed paths whether it applies; it is no required check."},
+  {"file": ".github/workflows/freshness.yml", "job": "freshness-itself", "reusable": "reusable-schedule-freshness.yml", "forms": [{"if": "${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}", "needs": "scope"}], "why": "A watcher that waits for the `scope` job, which decides from the changed paths whether it applies; it is no required check."},
+  {"file": ".github/workflows/freshness.yml", "job": "freshness-drift", "reusable": "reusable-schedule-freshness.yml", "forms": [{"if": "${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}", "needs": "scope"}], "why": "A watcher that waits for the `scope` job, which decides from the changed paths whether it applies; it is no required check."},
+  {"file": ".github/workflows/freshness.yml", "job": "freshness-mutation", "reusable": "reusable-schedule-freshness.yml", "forms": [{"if": "${{ !cancelled() && needs.scope.outputs.schedule != 'false' }}", "needs": "scope"}], "why": "A watcher that waits for the `scope` job, which decides from the changed paths whether it applies; it is no required check."},
+  {"file": ".github/workflows/mutation.yml", "job": "mutations", "reusable": null, "forms": [{"if": "${{ !cancelled() && needs.decide.outputs.run != 'false' }}", "needs": "decide"}], "why": "The sweep runs for the entries the change can affect, and starts when the decision failed; the gate tells a sweep skipped by that decision from one that did not run."},
+  {"file": ".github/workflows/mutation.yml", "job": "gate", "reusable": null, "forms": [{"if": "always()", "needs": ["decide", "mutations"]}], "why": "The gate carries `always()` so that a skipped sweep does not skip it."},
+  {"file": ".github/workflows/tests.yml", "job": "shell", "reusable": "reusable-shell-ci.yml", "forms": [{"needs": ["dco", "empty-diff", "commit-identity", "secret-scan", "folder-limit", "line-limit", "workflow-lint"]}], "why": "The suite waits for the checks that finish in seconds, so a pull request that is already red does not install packages. The `needs` is a switch unless a gate answers for it, which the rule requires (needs_the_gate)."},
+  {"file": ".github/workflows/tests.yml", "job": "gate", "reusable": null, "forms": [{"if": "always()", "needs": ["dco", "empty-diff", "commit-identity", "secret-scan", "folder-limit", "line-limit", "workflow-lint", "shell"]}], "why": "The gate carries `always()` so that a failed dependency does not skip it: a skipped job reports Success."},
+  {"file": ".github/workflows/audit.yml", "job": "audit", "reusable": null, "forms": [{"if": "${{ !cancelled() && needs.scope.outputs.run_audit != 'false' }}", "needs": "scope"}], "why": "`brew audit` waits for the job that says whether the change can affect it, and runs unless that job answered `false`."},
+  {"file": ".github/workflows/audit.yml", "job": "gate", "reusable": null, "forms": [{"if": "always()", "needs": ["scope", "audit"]}], "why": "The gate carries `always()` so that a skipped audit does not skip it, and it is the check a ruleset requires."},
+  {"file": ".github/workflows/update.yml", "job": "validate", "reusable": null, "forms": [{"needs": "render"}], "why": "The scheduled update validates what it rendered; it is no check a merge waits for."},
+  {"file": ".github/workflows/update.yml", "job": "commit", "reusable": null, "forms": [{"needs": "render"}, {"needs": ["render", "validate"]}], "why": "The scheduled update commits what it rendered and validated; it is no check a merge waits for."}
+ ],
+ "step_conditions": [
+  {"file": ".github/workflows/reusable-line-limit.yml", "job": "line-limit", "ifs": ["steps.scope.outputs.needed != 'false'"]},
+  {"file": ".github/workflows/reusable-shell-ci.yml", "job": "shellcheck", "ifs": ["steps.scope.outputs.needed != 'false'", "${{ inputs.check-exec-bit && steps.scope.outputs.needed != 'false' }}"]},
+  {"file": ".github/workflows/reusable-shell-ci.yml", "job": "test", "ifs": ["steps.scope.outputs.docs_only != 'true'"]},
+  {"file": ".github/workflows/reusable-workflow-lint.yml", "job": "workflow-lint", "ifs": ["steps.scope.outputs.needed != 'false'", "${{ inputs.tooling-isolation && steps.scope.outputs.needed != 'false' }}"]},
+  {"file": ".github/workflows/tests.yml", "job": "mldsa", "ifs": ["steps.scope.outputs.needed != 'false'"]},
+  {"file": ".github/workflows/tests.yml", "job": "formulae", "ifs": ["steps.scope.outputs.run_style != 'false'"]},
+  {"file": ".github/workflows/tests.yml", "job": "products", "ifs": ["github.event_name == 'pull_request'"]},
+  {"file": ".github/workflows/tests.yml", "job": "manifests", "ifs": ["github.event_name == 'pull_request'"]},
+  {"file": ".github/workflows/freshness.yml", "job": "suite-on-main", "ifs": ["${{ !cancelled() }}"]},
+  {"file": ".github/workflows/drift.yml", "job": "drift", "ifs": ["${{ !cancelled() }}"]},
+  {"file": ".github/workflows/update.yml", "job": "render", "ifs": ["steps.render.outputs.changed == '1'"]},
+  {"file": ".github/workflows/update.yml", "job": "validate", "ifs": ["needs.render.outputs.changed == '1'"]},
+  {"file": ".github/workflows/update.yml", "job": "commit", "ifs": ["needs.render.outputs.changed == '1'", "needs.render.outputs.partial == '1'"]}
+ ],
+ "allowed_inputs": {
+  "reusable-dco.yml": [],
+  "reusable-dependabot-freshness.yml": ["max-age-days"],
+  "reusable-empty-diff.yml": [],
+  "reusable-line-limit.yml": ["extensions"],
+  "reusable-schedule-freshness.yml": ["count-any-conclusion", "max-age-days", "max-age-hours", "workflow"],
+  "reusable-shell-ci.yml": ["apt-packages", "skip-suite-paths", "test-command"],
+  "reusable-workflow-lint.yml": []
+ },
+ "keep_base_words": [["reusable-line-limit.yml", "extensions"]],
+ "cap_base_words": [["reusable-shell-ci.yml", "skip-suite-paths"]],
+ "producers_may_change": [[".github/workflows/reusable-workflow-lint.yml", "scope"]],
+ "expression_names": [{"file": ".github/workflows/distro-floor.yml", "job": "floor", "name": "${{ matrix.image }} should ${{ matrix.expect }}"}],
+ "needs_the_gate": [
+  {"file": ".github/workflows/tests.yml", "job": "shell", "gate": "gate"}
+ ]
+}

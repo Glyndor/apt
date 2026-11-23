@@ -200,6 +200,7 @@ base_with() {
 	while IFS='|' read -r file job exts; do
 		job_with "$G" "$file" "$job" reusable-line-limit.yml "      extensions: \"$exts\""$'\n'
 	done
+	mkdir -p "$G/scripts/quality/lint"; cp "$HERE/scripts/quality/lint/switch-rule-forms.json" "$G/scripts/quality/lint/"
 	gitg add -A
 	gitg commit -qm base
 	BASE="$(gitg rev-parse HEAD)"
@@ -345,6 +346,7 @@ refused_word() { # $1=the word the message names
 base_shell() { # $1=the value the base caller passes ("" for none)
 	rm -rf "$G"; mkdir -p "$G/.github/workflows"; gitg init -q -b main
 	shell_caller "$G" "$1"
+	mkdir -p "$G/scripts/quality/lint"; cp "$HERE/scripts/quality/lint/switch-rule-forms.json" "$G/scripts/quality/lint/"
 	gitg add -A; gitg commit -qm base; BASE="$(gitg rev-parse HEAD)"
 }
 

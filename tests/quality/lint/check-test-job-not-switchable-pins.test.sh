@@ -16,6 +16,8 @@
 # Requires: python3 with PyYAML.
 # The fixtures are printf templates and carry backticks the assertions read.
 # shellcheck disable=SC2016,SC2059
+# BASE is read by the helpers of the fixture, not by this file.
+# shellcheck disable=SC2034
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -35,9 +37,17 @@ check "and says how to change a producer on purpose" "1" "$(said "$out" 'PRODUCE
 out="$(cd "$G" && env -u BASE_SHA bash "$SCRIPT" 2>&1)"; rc=$?
 check "the same change with no base commit named is not compared" "0" "$rc"
 
-# The same change on a copy of the rule that lists the step: the two-step way.
-sed 's|^PRODUCERS_MAY_CHANGE = ()|PRODUCERS_MAY_CHANGE = ((".github/workflows/reusable-shell-ci.yml", "scope"),)|' "$SCRIPT" > "$WORK/listed.sh"
-out="$(run_base "$G" "$BASE" "$WORK/listed.sh")"; rc=$?
+# The same change when the forms of the base commit list the step: the two-step way.
+cp "$G/.github/workflows/reusable-shell-ci.yml" "$WORK/changed.yml"; git -C "$G" checkout -q -- .github/workflows/reusable-shell-ci.yml
+python3 -I - "$G/scripts/quality/lint/switch-rule-forms.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["producers_may_change"].append([".github/workflows/reusable-shell-ci.yml", "scope"])
+json.dump(d, open(sys.argv[1], "w"))
+PY
+gitg add -A; gitg commit -qm "forms list the step"; LISTED="$(gitg rev-parse HEAD)"
+cp "$WORK/changed.yml" "$G/.github/workflows/reusable-shell-ci.yml"
+out="$(run_base "$G" "$LISTED")"; rc=$?
 check "the change is accepted once a pull request of its own has listed the step" "0" "$rc"
 
 base_repo

@@ -233,6 +233,11 @@ syntax_ok() { # <file> -> 0 when it parses, 1 when it does not, 2 when no check 
 		# can shorten, and the tests that read it parse it as YAML.
 		python3 -I -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$1" >/dev/null 2>&1 || rc=1
 		;;
+	*.json)
+		# The forms of the switch rule are data, read as JSON; a mutation that
+		# leaves them unparsable is the rule failing to start, not a guard that died.
+		python3 -I -c 'import json, sys; json.load(open(sys.argv[1]))' "$1" >/dev/null 2>&1 || rc=1
+		;;
 	*.sh | *.bash)
 		bash -n "$1" >/dev/null 2>&1 || rc=1
 		# A shell script of this repository carries python in a heredoc, and

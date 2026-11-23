@@ -26,7 +26,7 @@ import sys
 # what decides. This is the rule for a gate script.
 MAP = "scripts/quality/scope/suite-scope.txt"
 
-# The map, this script and the runner are an input of every suite, by rule
+# The map, this script, the runner, the workflows and the actions are an input of every suite, by rule
 # rather than by an entry per suite: a change to any of the three changes
 # WHAT RUNS or WHO RUNS IT, so a change to any of the three runs everything.
 # Keeping the rule here means a suite added to the map later cannot forget
@@ -35,6 +35,10 @@ GLOBAL_INPUTS = (
     "scripts/quality/scope/ci-job-scope.sh",
     MAP,
     "tests/ci/suites/check-suite-completeness.test.sh",
+    # What a workflow or an action runs decides what a suite sees, so a change to
+    # either runs everything.
+    ".github/workflows/**",
+    ".github/actions/**",
 )
 
 
