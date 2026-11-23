@@ -49,7 +49,7 @@
  },
  "keep_base_words": [["reusable-line-limit.yml", "extensions"]],
  "cap_base_words": [["reusable-shell-ci.yml", "skip-suite-paths"]],
- "producers_may_change": [[".github/workflows/reusable-workflow-lint.yml", "scope"]],
+ "producers_may_change": [],
  "expression_names": [{"file": ".github/workflows/distro-floor.yml", "job": "floor", "name": "${{ matrix.image }} should ${{ matrix.expect }}"}],
  "needs_the_gate": [
   {"file": ".github/workflows/tests.yml", "job": "shell", "gate": "gate"}

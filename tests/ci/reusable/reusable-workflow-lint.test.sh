@@ -292,7 +292,7 @@ base_repo with; merge_pr
 pick pull_request
 check "after the move the picker reads the base's exemptions list as well" "1" \
 	"$([ -e "$WORK/rt/lint-rules/suite-exemptions.base" ] && echo 1 || echo 0)"
-check "after the move every script is read from the base commit, at its path there" "3" \
+check "after the move every script is read from the base commit, at its path there" "4" \
 	"$(printf '%s\n' "$out" | grep -c 'read from the base commit [0-9a-f]*\.$')"
 
 base_repo without; merge_pr

@@ -471,8 +471,8 @@ print("if" in take, sorted(take.get("env", {}).items()), "inputs." in take["run"
       steps.index(take) < steps.index(step))
 PY
 )"
-check "the steps have no condition, read the event and its base commit, and no caller input" \
-	"False [('BASE_SHA', '\${{ github.event.pull_request.base.sha }}'), ('EVENT', '\${{ github.event_name }}')] False False [] False True" "$wiring"
+check "the steps have no condition, read the event and its base commit, and no caller input, and the check is handed the base" \
+	"False [('BASE_SHA', '\${{ github.event.pull_request.base.sha }}'), ('EVENT', '\${{ github.event_name }}')] False False [('BASE_SHA', '\${{ github.event.pull_request.base.sha }}')] False True" "$wiring"
 
 repo="$(tree repo "$SUITES")"
 git() { command git -C "$repo" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "$@"; }
