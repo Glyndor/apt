@@ -2,13 +2,13 @@
 # workflow, of the reusables themselves, and of the checks around them. Same format
 # as tests/mutation/catalog.txt, which says what every field means.
 lint-caller-continue	scripts/quality/lint/check-test-job-not-switchable.sh	    if "continue-on-error" in job:	    if False:	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
-lint-caller-if	scripts/quality/lint/check-test-job-not-switchable.sh	    if "if" in job and not listed("if"):	    if False:	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
-lint-caller-needs	scripts/quality/lint/check-test-job-not-switchable.sh	    if "needs" in job and not listed("needs"):	    if False:	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
+lint-caller-if	scripts/quality/lint/check-test-job-not-switchable.sh	if "if" in unlisted:	if False:	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
+lint-caller-needs	scripts/quality/lint/check-test-job-not-switchable.sh	if "needs" in unlisted:	if False:	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
 lint-caller-all-reusables	scripts/quality/lint/check-test-job-not-switchable.sh	            if reusable is None:	            if reusable is None or reusable != REUSABLE:	tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
 lint-caller-grammar-only-shell	scripts/quality/lint/check-test-job-not-switchable.sh	            if reusable != REUSABLE:	            if False:	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 lint-caller-count-shell	scripts/quality/lint/check-test-job-not-switchable.sh	                callers += 1	                callers += 0	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
-lint-exempt-if-exact	scripts/quality/lint/check-test-job-not-switchable.sh	key in form and form[key] == job[key]	key in form and (key != "if" or form[key] == job[key])	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
-lint-exempt-needs-exact	scripts/quality/lint/check-test-job-not-switchable.sh	key in form and form[key] == job[key]	key in form and (key == "if" or form[key] == job[key])	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
+lint-exempt-if-exact	scripts/quality/lint/check-test-job-not-switchable.sh	k in form and form[k] == shape[k]	k in form and (k != "if" or form[k] == shape[k])	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
+lint-exempt-needs-exact	scripts/quality/lint/check-test-job-not-switchable.sh	k in form and form[k] == shape[k]	k in form and (k == "if" or form[k] == shape[k])	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
 lint-exempt-by-file	scripts/quality/lint/check-test-job-not-switchable.sh	CONDITIONAL_JOBS.get((path, job_id, reusable), [])	CONDITIONAL_JOBS.get((".github/workflows/freshness.yml", job_id, reusable), [])	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 lint-exempt-by-job	scripts/quality/lint/check-test-job-not-switchable.sh	CONDITIONAL_JOBS.get((path, job_id, reusable), [])	CONDITIONAL_JOBS.get((path, "freshness-itself", reusable), [])	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 lint-exempt-by-reusable	scripts/quality/lint/check-test-job-not-switchable.sh	(path, job_id, reusable), [])	(path, job_id, "reusable-schedule-freshness.yml"), [])	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
@@ -23,7 +23,7 @@ lint-exempt-freshness-drift	scripts/quality/lint/check-test-job-not-switchable.s
 lint-exempt-freshness-mutation	scripts/quality/lint/check-test-job-not-switchable.sh	            "freshness-mutation",	            "freshness-mutationx",	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
 lint-callers-none	scripts/quality/lint/check-test-job-not-switchable.sh	    if callers == 0:	    if False:	tests/quality/lint/check-test-job-not-switchable.test.sh
 lint-callers-verdict	scripts/quality/lint/check-test-job-not-switchable.sh	    if violations:	    if False:	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
-lint-caller-if-presence	scripts/quality/lint/check-test-job-not-switchable.sh	key in form and form[key] == job[key]	form.get(key) == job[key]	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
+lint-caller-if-presence	scripts/quality/lint/check-test-job-not-switchable.sh	k in form and form[k] == shape[k]	form.get(k) == shape[k]	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
 lint-inputs-closed	scripts/quality/lint/check-test-job-not-switchable.sh	        if name in allowed:	        if True:	tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
 lint-inputs-unknown-reusable	scripts/quality/lint/check-test-job-not-switchable.sh	            if reusable not in ALLOWED_INPUTS:	            if False:	tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
 lint-inputs-keep-listed	scripts/quality/lint/check-test-job-not-switchable.sh	KEEP_BASE_WORDS = (("reusable-line-limit.yml", "extensions"),)	KEEP_BASE_WORDS = ()	tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
@@ -165,7 +165,8 @@ lint-step-suite-on-main	scripts/quality/lint/check-test-job-not-switchable.sh	(_
 lint-listed-scope	scripts/quality/lint/check-test-job-not-switchable.sh	(_W + "freshness.yml", "scope", None): _ON_PULL_REQUEST,	(_W + "freshness.yml", "scopex", None): _ON_PULL_REQUEST,	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 lint-listed-suite-on-main	scripts/quality/lint/check-test-job-not-switchable.sh	_SCOPED("suite")	_SCOPED("suitex")	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 lint-listed-tool-versions	scripts/quality/lint/check-test-job-not-switchable.sh	_SCOPED("tools")	_SCOPED("toolsx")	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
-lint-listed-mutations	scripts/quality/lint/check-test-job-not-switchable.sh	"if": "needs.decide.outputs.run == 'true'", "needs": "decide"	"if": "needs.decide.outputs.run == 'false'", "needs": "decide"	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
+lint-listed-mutations	scripts/quality/lint/check-test-job-not-switchable.sh	needs.decide.outputs.run != 'false' }}", "needs": "decide"	needs.decide.outputs.run == 'false' }}", "needs": "decide"	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
+lint-listed-mutations-today	scripts/quality/lint/check-test-job-not-switchable.sh	{"if": "needs.decide.outputs.run == 'true'", "needs": "decide"}	{"if": "needs.decide.outputs.run == 'false'", "needs": "decide"}	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 lint-listed-gate	scripts/quality/lint/check-test-job-not-switchable.sh	"if": "always()", "needs": ["decide", "mutations"]	"if": "always()", "needs": ["decide"]	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 lint-pin-reads	scripts/quality/lint/check-test-job-not-switchable.sh	        for kind, ident in sorted({ref for cond in conds for ref in PRODUCER_REF.findall(str(cond))}):	        for kind, ident in []:	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 lint-pin-reads-steps	scripts/quality/lint/check-test-job-not-switchable.sh	conds = [job.get("if")] + [s.get("if") for s in steps_of(job)]	conds = [job.get("if")]	tests/quality/lint/check-test-job-not-switchable-context.test.sh
@@ -199,3 +200,5 @@ lint-run-case-arm	scripts/quality/lint/check-test-job-not-switchable.sh	re.sub(r
 lint-run-interpreter	scripts/quality/lint/check-test-job-not-switchable.sh	(?:(?:bash|sh|python3?|source|\.)\s+(?:-\S+\s+)*)?	(?:(?:sh|python3?|source|\.)\s+(?:-\S+\s+)*)?	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 lint-run-dot-slash	scripts/quality/lint/check-test-job-not-switchable.sh	[\"']?(?:\./)?((?:scripts|tests|keyring|\.github)/	[\"']?((?:scripts|tests|keyring|\.github)/	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 lint-run-verdict	scripts/quality/lint/check-test-job-not-switchable.sh	if runs_pr and any(RUN_FROM_CHECKOUT.search(r) for r in runs)	if runs_pr and False	tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
+lint-whole-form	scripts/quality/lint/check-test-job-not-switchable.sh	if shape and shape not in forms:	if False:	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
+lint-whole-form-shape	scripts/quality/lint/check-test-job-not-switchable.sh	shape = {k: job[k] for k in ("if", "needs") if k in job}	shape = {k: job[k] for k in ("needs",) if k in job}	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
