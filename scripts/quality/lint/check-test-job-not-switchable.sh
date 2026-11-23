@@ -131,6 +131,7 @@ import glob
 import json
 import os
 import re
+import hashlib
 import subprocess
 import sys
 
@@ -169,9 +170,7 @@ def load_forms():
         text = base_git(base, "show", f"{base}:{FORMS_FILE}")
     else:
         paths = [p for p in (FORMS_FILE, os.path.join(sys.argv[1], "switch-rule-forms.json")) if os.path.exists(p)]
-        if not paths:
-            stop(f"{FORMS_FILE} cannot be read, so the forms a job may carry are unknown")
-        text = open(paths[0]).read()
+        text = open(paths[0]).read() if paths else stop(f"{FORMS_FILE} cannot be read, so the forms a job may carry are unknown")
     try:
         data = json.loads(text)
         return (
@@ -179,12 +178,24 @@ def load_forms():
             {(e["file"], e["job"]): tuple(e["ifs"]) for e in data["step_conditions"]},
             {k: frozenset(v) for k, v in data["allowed_inputs"].items()},
             tuple(map(tuple, data["keep_base_words"])), tuple(map(tuple, data["cap_base_words"])),
-            tuple(map(tuple, data["producers_may_change"])),
+            exemptions(data["producers_may_change"]),
             {(e["file"], e["job"]): e["gate"] for e in data["needs_the_gate"]},
             tuple((e["file"], e["job"], e["name"]) for e in data["expression_names"]),
         )
     except (ValueError, KeyError, TypeError, AttributeError):
         stop(f"{FORMS_FILE} is not the data the rule reads")
+
+
+# The exemptions are bound to the exact content they allow: the digest of what the producer
+# becomes. An exemption allows that change and no other, and one the pull request's own copy
+# still lists once the producer is what it names has done its work and has to go.
+def exemptions(entries):
+    found = {(e["file"], e["ident"]): e["digest"] for e in entries}
+    return found if len(found) == len(entries) else stop(f"{FORMS_FILE} lists a producer twice in PRODUCERS_MAY_CHANGE")
+
+
+def digest(parts):
+    return hashlib.sha256(repr(parts).encode()).hexdigest()
 
 
 
@@ -316,8 +327,7 @@ def workflow_files():
 def base_sha():
     base = os.environ.get("BASE_SHA", "")
     if base and not re.fullmatch(r"[0-9a-f]{40}", base):
-        print(f"::error::BASE_SHA {base!r} is not a commit id")
-        sys.exit(1)
+        stop(f"BASE_SHA {base!r} is not a commit id")
     return base
 
 
@@ -327,13 +337,13 @@ def base_sha():
 def base_git(base, *args):
     done = subprocess.run(["git", *args], capture_output=True, text=True, check=False)
     if done.returncode != 0:
-        print(f"::error::BASE_SHA {base} cannot be read: {' '.join(args)} failed")
-        sys.exit(1)
+        stop(f"BASE_SHA {base} cannot be read: {' '.join(args)} failed")
     return done.stdout
 
 
 (CONDITIONAL_JOBS, STEP_CONDITIONS, ALLOWED_INPUTS, KEEP_BASE_WORDS, CAP_BASE_WORDS,
  PRODUCERS_MAY_CHANGE, NEEDS_THE_GATE, EXPRESSION_NAMES) = load_forms()
+EXEMPT_NOW = exemptions(json.load(open(FORMS_FILE))["producers_may_change"]) if os.path.exists(FORMS_FILE) else {}
 # Every listed job whose form carries `if: always()` is an aggregator, so a new one is tied without being remembered.
 AGGREGATORS = sorted({(f, j) for (f, j, r), forms in CONDITIONAL_JOBS.items() if r is None and any(x.get("if") == "always()" for x in forms)})
 WAITER = {(f, g): w for (f, w), g in NEEDS_THE_GATE.items()}
@@ -459,11 +469,13 @@ def producer_refusals(base, path, spec):
                              "so the base commit cannot vouch for it.")
                 continue
             diff = list(dict.fromkeys(n for n in [*now, *before] if now.get(n) != before.get(n)))
-            if diff and (path, ident) not in PRODUCERS_MAY_CHANGE:
+            if diff and PRODUCERS_MAY_CHANGE.get((path, ident)) != digest(now):
                 found.append(f"{what} in {path} writes outputs a condition reads, and what it can see differs from the base "
                              f"commit's in: {', '.join(diff)}. A condition on an output is only as sound as what writes it, "
-                             f"so a pull request cannot change both. To change it on purpose, list (`{path}`, `{ident}`) in "
-                             "PRODUCERS_MAY_CHANGE of this script in a pull request of its own, then change it in the next.")
+                             f"so a pull request cannot change both. To change it on purpose, list (`{path}`, `{ident}`, digest "
+                             f"`{digest(now)}`) in PRODUCERS_MAY_CHANGE of the forms in a pull request of its own, then change it in the next.")
+            if EXEMPT_NOW.get((path, ident)) == digest(now):
+                found.append(f"{what} in {path} is what its exemption names, so the exemption has done its work: take it off the forms.")
     return found
 
 
@@ -483,8 +495,12 @@ def aggregator_gaps(base, specs):
         waiter = WAITER.get((wpath, gate_id), "the jobs that wait")
         held = ((spec_at(base, wpath, False).get("jobs") or {}).get(gate_id)) if base else None
         here = (specs.get(wpath, {}).get("jobs") or {}).get(gate_id)
-        if isinstance(held, dict) and not isinstance(here, dict) and (wpath, gate_id) not in PRODUCERS_MAY_CHANGE:
-            found.append(f"`{gate_id}` of {wpath} answers for `{waiter}` in the base commit and is gone from this pull request, with the job or the whole file. Take it away in a pull request of its own, listed in PRODUCERS_MAY_CHANGE first.")
+        if isinstance(held, dict) and not isinstance(here, dict):
+            gone = digest(("removed", wpath, gate_id, held))
+            if PRODUCERS_MAY_CHANGE.get((wpath, gate_id)) != gone:
+                found.append(f"`{gate_id}` of {wpath} answers for `{waiter}` in the base commit and is gone from this pull request, with the job or the whole file. Take it away in a pull request of its own, listed in PRODUCERS_MAY_CHANGE first, with the digest `{gone}` of what is taken away, and take the entry off in the pull request that takes the job away.")
+            elif EXEMPT_NOW.get((wpath, gate_id)) == gone:
+                found.append(f"`{gate_id}` of {wpath} is taken away under an exemption that the forms of this pull request still list: it has done its work, take it off in the same pull request.")
         shown = (here if isinstance(here, dict) else held)
         shown = effective_name(gate_id, shown) if isinstance(shown, dict) else None
         for path, spec in specs.items():
@@ -596,12 +612,14 @@ def aggregator_refusals(base, path, spec):
         now = producer_parts(spec, "job", gate_id, gate_id, base, True)
         if from_checkout(now) and runs_pr:
             found.append(f"`{gate_id}` in {path} answers for `{waiter}` and runs a script of the repository from the checkout of the pull request, which the pull request writes.")
+        if EXEMPT_NOW.get((path, gate_id)) == digest(now):
+            found.append(f"`{gate_id}` in {path} is what its exemption names, so the exemption has done its work: take it off the forms in the same pull request.")
         before = producer_parts(old, "job", gate_id, gate_id, base, False) if base else {}
-        if base and before is None and (path, gate_id) not in PRODUCERS_MAY_CHANGE:
-            found.append(f"`{gate_id}` in {path} answers for `{waiter}` and is new in this pull request, so the base commit cannot vouch for it. List (`{path}`, `{gate_id}`) in PRODUCERS_MAY_CHANGE of the forms in a pull request of its own first.")
+        if base and before is None and PRODUCERS_MAY_CHANGE.get((path, gate_id)) != digest(now):
+            found.append(f"`{gate_id}` in {path} answers for `{waiter}` and is new in this pull request, so the base commit cannot vouch for it. List (`{path}`, `{gate_id}`, digest `{digest(now)}`) in PRODUCERS_MAY_CHANGE of the forms in a pull request of its own first.")
         diff = [] if not before else list(dict.fromkeys(n for n in [*now, *before] if now.get(n) != before.get(n)))
-        if diff and (path, gate_id) not in PRODUCERS_MAY_CHANGE:
-            found.append(f"`{gate_id}` in {path} answers for `{waiter}`, and what it can see differs from the base commit's in: {', '.join(diff)}. A pull request cannot change the job that answers for it: list (`{path}`, `{gate_id}`) in PRODUCERS_MAY_CHANGE of the forms in a pull request of its own, then change it in the next.")
+        if diff and PRODUCERS_MAY_CHANGE.get((path, gate_id)) != digest(now):
+            found.append(f"`{gate_id}` in {path} answers for `{waiter}`, and what it can see differs from the base commit's in: {', '.join(diff)}. A pull request cannot change the job that answers for it: list (`{path}`, `{gate_id}`, digest `{digest(now)}`) in PRODUCERS_MAY_CHANGE of the forms in a pull request of its own, then change it in the next.")
     return found
 
 
@@ -729,13 +747,7 @@ def main():
             # ALLOWED_INPUTS lists. A reusable with no entry is refused, so a
             # new one cannot be called with anything until it is declared.
             if reusable not in ALLOWED_INPUTS:
-                violations.append((
-                    path, job_id,
-                    f"job `{job_id}` in {path} calls `{reusable}`, which has "
-                    "no entry in ALLOWED_INPUTS of this script, so what a "
-                    "caller may pass to it is not declared. Add the entry, "
-                    "listing the inputs its callers pass today."
-                ))
+                violations.append((path, job_id, f"job `{job_id}` in {path} calls `{reusable}`, which has no entry in ALLOWED_INPUTS of this script, so what a caller may pass to it is not declared. Add the entry, listing the inputs its callers pass today."))
                 continue
             refused = refused_inputs(job, reusable, path, job_id)
             if refused:
@@ -745,10 +757,7 @@ def main():
                 continue
             # Rule: the test-command must invoke at least one suite.
             with_block = job.get("with")
-            tc = (
-                with_block.get("test-command")
-                if isinstance(with_block, dict) else None
-            )
+            tc = with_block.get("test-command") if isinstance(with_block, dict) else None
             if not isinstance(tc, str) or not tc.strip():
                 violations.append((
                     path, job_id,
@@ -765,15 +774,7 @@ def main():
             # checked against the RAW value, before `normalize()`
             # folds newlines to spaces.
             if "\n" in tc:
-                violations.append((
-                    path, job_id,
-                    f"job `{job_id}` in {path} has a literal "
-                    "block scalar (`|`) in its test-command, "
-                    "which splits the command into separate "
-                    "shell statements whose failures the job "
-                    "would not see. The folded form (`>-`) or "
-                    "`&&` is the accepted shape. " + GRAMMAR + "."
-                ))
+                violations.append((path, job_id, f"job `{job_id}` in {path} has a literal block scalar (`|`) in its test-command, which splits the command into separate shell statements whose failures the job would not see. The folded form (`>-`) or `&&` is the accepted shape. " + GRAMMAR + "."))
                 continue
             err = check_test_command(normalize(tc), path, job_id)
             if err is not None:

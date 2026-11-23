@@ -31,6 +31,11 @@ exec(sys.argv[3])
 json.dump(d, open(sys.argv[2], "w"))
 PY
 }
+digest_of() { printf '%s' "$1" | sed -n 's/.*digest `\([0-9a-f]\{64\}\)`.*/\1/p' | head -n 1; }
+unlist() { forms_with "$1" "d['producers_may_change'] = []"; }
+exempt() { # <dir> <file> <ident> <digest>
+	forms_with "$1" "d['producers_may_change'].append({'file': '$2', 'ident': '$3', 'digest': '$4'})"
+}
 LIST_LATER="d['conditional_jobs'].append({'file': '.github/workflows/extra.yml', 'job': 'later', 'reusable': None, 'forms': [{'if': \"github.event_name == 'push'\"}], 'why': 'x'})"
 
 # --- where the forms come from --------------------------------------------------
@@ -139,10 +144,20 @@ waiting - "$g" "$G"; out="$(run_base "$G" "$BASE")"; rc=$?
 check "a gate that the pull request brings and the base does not hold is refused" "1" "$rc"
 check "and the refusal says the base cannot vouch for it" "1" "$(said "$out" 'is new in this pull request, so the base commit cannot vouch for it')"
 cp "$G/.github/workflows/tests.yml" "$WORK/pr-tests.yml"; git -C "$G" checkout -q -- .github/workflows/tests.yml
-forms_with "$G" "d['producers_may_change'].append(['.github/workflows/tests.yml', 'gate'])"; gitg add -A; gitg commit -qm "forms list the gate"; BASE="$(gitg rev-parse HEAD)"
+GATE_DIGEST="$(digest_of "$out")"
+check "and the refusal names the digest of the content that would be allowed" "1" "$(printf '%s' "$GATE_DIGEST" | grep -cE '^[0-9a-f]{64}$')"
+exempt "$G" .github/workflows/tests.yml gate "0000000000000000000000000000000000000000000000000000000000000000"; gitg add -A; gitg commit -qm "forms list another content"; BASE="$(gitg rev-parse HEAD)"
 cp "$WORK/pr-tests.yml" "$G/.github/workflows/tests.yml"
 out="$(run_base "$G" "$BASE")"; rc=$?
-check "and is accepted once the forms of the base list it for adoption" "0" "$rc"
+check "a gate whose exemption names other content is refused" "1" "$rc"
+git -C "$G" checkout -q -- .github/workflows/tests.yml; git -C "$G" reset -q --hard HEAD~1
+exempt "$G" .github/workflows/tests.yml gate "$GATE_DIGEST"; gitg add -A; gitg commit -qm "forms list the gate"; BASE="$(gitg rev-parse HEAD)"
+cp "$WORK/pr-tests.yml" "$G/.github/workflows/tests.yml"
+out="$(run_base "$G" "$BASE")"; rc=$?
+check "an adopted gate is refused while the forms of the pull request still list its exemption" "1" "$rc"
+check "and the refusal says the exemption has done its work" "1" "$(said "$out" 'has done its work')"
+unlist "$G"; out="$(run_base "$G" "$BASE")"; rc=$?
+check "and is accepted once the forms of the base list it for adoption, with the digest of what it adopts, and the pull request takes the entry off" "0" "$rc"
 
 # Taking the aggregator away, or letting another job stand for it.
 aggregator_repo "$g"
@@ -154,11 +169,41 @@ aggregator_repo "$g"; rm "$G/.github/workflows/tests.yml"; printf 'name: Other\n
 out="$(run_base "$G" "$BASE")"; rc=$?
 check "a pull request that deletes the whole file of the gate is refused as well" "1" "$rc"
 check "and the refusal is the same" "1" "$(said "$out" 'is gone from this pull request')"
+audit_gate() { printf 'name: Audit\non: pull_request\njobs:\n  scope:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  audit:\n    needs: scope\n    if: ${{ !cancelled() && needs.scope.outputs.run_audit != '"'"'false'"'"' }}\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  gate:\n    name: audit gate\n    needs: [scope, audit]\n    if: always()\n    runs-on: ubuntu-latest\n    steps:\n      - run: %s\n' "$1" > "$G/.github/workflows/audit.yml"; }
+gone_other() { rm -f "$G/.github/workflows/$1"; printf 'name: Other\non: pull_request\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n' > "$G/.github/workflows/other.yml"; }
+aggregator_repo "$g"; gone_other tests.yml; out="$(run_base "$G" "$BASE")"
+REMOVED="$(digest_of "$out")"
+check "the refusal of a gate that is taken away names the digest of what is taken away" "1" "$(printf '%s' "$REMOVED" | grep -cE '^[0-9a-f]{64}$')"
+aggregator_repo "$g"; audit_gate verdict; gitg add -A; gitg commit -qm "base with two gates"; BASE="$(gitg rev-parse HEAD)"; rm -f "$G/.github/workflows/audit.yml"; printf 'name: Other\non: pull_request\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n' > "$G/.github/workflows/other.yml"
+out="$(run_base "$G" "$BASE")"; REMOVED_AUDIT="$(digest_of "$out")"
+check "the digest of another gate that is taken away is another one" "1" "$([ -n "$REMOVED_AUDIT" ] && [ "$REMOVED_AUDIT" != "$REMOVED" ] && echo 1 || echo 0)"
 aggregator_repo "$g"
-forms_with "$G" "d['producers_may_change'].append(['.github/workflows/tests.yml', 'gate'])"; gitg add -A; gitg commit -qm "forms list the gate"; BASE="$(gitg rev-parse HEAD)"
-rm -f "$G/.github/workflows/tests.yml"; printf 'name: Other\non: pull_request\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n' > "$G/.github/workflows/other.yml"
+exempt "$G" .github/workflows/tests.yml gate "$REMOVED_AUDIT"; gitg add -A; gitg commit -qm "forms list the removal of another gate"; BASE="$(gitg rev-parse HEAD)"
+gone_other tests.yml; out="$(run_base "$G" "$BASE")"; rc=$?
+check "an exemption of the removal of another job does not serve to take this gate away" "1" "$(said "$out" 'is gone from this pull request, with the job or the whole file')"
+aggregator_repo "$g"
+exempt "$G" .github/workflows/tests.yml gate "$REMOVED"; gitg add -A; gitg commit -qm "forms list the gate"; BASE="$(gitg rev-parse HEAD)"
+gone_other tests.yml; out="$(run_base "$G" "$BASE")"; rc=$?
+check "a gate that is taken away while the forms of the pull request still list its exemption is refused" "1" "$rc"
+check "and the refusal says the exemption has done its work" "1" "$(said "$out" 'has done its work')"
+unlist "$G"; out="$(run_base "$G" "$BASE")"; rc=$?
+check "and the gate may go in a pull request of its own that the forms of the base listed, taking the entry off" "0" "$(said "$out" 'is gone from this pull request')"
+aggregator_repo "$g"; forms_with "$G" "e = {'file': '.github/workflows/tests.yml', 'ident': 'gate', 'digest': '$REMOVED'}; d['producers_may_change'] += [e, e]"; gitg add -A; gitg commit -qm "forms list the gate twice"; BASE="$(gitg rev-parse HEAD)"
 out="$(run_base "$G" "$BASE")"; rc=$?
-check "and the gate may go in a pull request of its own that the forms of the base listed" "0" "$(said "$out" 'is gone from this pull request')"
+check "forms that list a producer twice are an error" "1" "$rc"
+check "and the error says so" "1" "$(said "$out" 'lists a producer twice')"
+# The base no longer has the gate: the exemption of its removal serves for nothing.
+base_repo; rm -f "$G/.github/workflows/mutation.yml"; waiting - - "$G"; exempt "$G" .github/workflows/tests.yml gate "$REMOVED"; gitg add -A; gitg commit -qm "base without the gate, forms list its removal"; BASE="$(gitg rev-parse HEAD)"
+waiting - "$g" "$G"; out="$(run_base "$G" "$BASE")"; rc=$?
+check "an exemption of the removal of a gate the base no longer has does not let the pull request bring a gate" "1" "$rc"
+# A gate that changes, with the entry kept in the forms of the pull request.
+aggregator_repo "$g"; waiting - "$g2" "$G"; out="$(run_base "$G" "$BASE")"; CHANGED_DIGEST="$(digest_of "$out")"
+aggregator_repo "$g"; exempt "$G" .github/workflows/tests.yml gate "$CHANGED_DIGEST"; gitg add -A; gitg commit -qm "forms list the changed gate"; BASE="$(gitg rev-parse HEAD)"
+waiting - "$g2" "$G"; out="$(run_base "$G" "$BASE")"; rc=$?
+check "a gate that is changed while the forms of the pull request still list its exemption is refused" "1" "$rc"
+check "and the refusal says the exemption has done its work" "1" "$(said "$out" 'has done its work')"
+unlist "$G"; out="$(run_base "$G" "$BASE")"; rc=$?
+check "and the same change with the entry taken off is accepted" "0" "$rc"
 aggregator_repo "$g"; printf -v body "$WAIT" 'env: {}' "$CHEAP" "$g"; printf '%s\n' "$body" > "$G/.github/workflows/tests.yml"
 printf 'name: Other\non: pull_request\njobs:\n  later:\n    name: gate\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n' > "$G/.github/workflows/other.yml"
 out="$(run_base "$G" "$BASE")"; rc=$?
@@ -207,7 +252,6 @@ check "a workflow that cannot be read is an error" "1" "$rc"
 check "and the refusal names the file" "1" "$(said "$out" 'other.yml cannot be read as YAML')"
 
 # Every listed form that carries `if: always()` is an aggregator, so the others are tied to the base as well.
-audit_gate() { printf 'name: Audit\non: pull_request\njobs:\n  scope:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  audit:\n    needs: scope\n    if: ${{ !cancelled() && needs.scope.outputs.run_audit != '"'"'false'"'"' }}\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  gate:\n    name: audit gate\n    needs: [scope, audit]\n    if: always()\n    runs-on: ubuntu-latest\n    steps:\n      - run: %s\n' "$1" > "$G/.github/workflows/audit.yml"; }
 base_repo; rm -f "$G/.github/workflows/mutation.yml"; audit_gate verdict; gitg add -A; gitg commit -qm "base with the audit gate"; BASE="$(gitg rev-parse HEAD)"
 out="$(run_base "$G" "$BASE")"; rc=$?
 check "the audit gate the base holds is accepted" "0" "$rc"
