@@ -70,6 +70,8 @@ jobs:
         ./tests/verify/reference-installers.test.sh
         ./tests/verify/published-roster.test.sh
         ./tests/verify/roster-has-releases.test.sh
+        ./tests/verify/new-product-end-to-end.test.sh
+        ./tests/build/new-product-archive.test.sh
         ./tests/ci/policy/roster-releases-workflow.test.sh
         ./tests/ci/policy/workflows-run-their-scripts.test.sh
         ./tests/ci/policy/workflow-calls-are-exact.test.sh
