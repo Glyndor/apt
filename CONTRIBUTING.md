@@ -35,7 +35,7 @@ squash-merge back. Releases are tagged directly off `main`.
 - **An issue first.** Labels are the tracking system here; there is no board.
   Apply `type:`, `prio:`, `effort:`, `status:` and `area:` where they fit.
 - **Sign every commit off** with `git commit -s`, using your GitHub noreply address
-  (`git config user.email`). The `dco` check is required and it is the only thing
+  (`git config user.email`). The `dco / Signed-off-by present on every commit` check is required and it is the only thing
   standing behind that attestation; `commit-hygiene.yml` rejects any other address
   in the author, `Signed-off-by` or `Co-authored-by`, and a line that looks like a credential.
 - **Commits are signed**, GPG or SSH. `required_signatures` is enforced on

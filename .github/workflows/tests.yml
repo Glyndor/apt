@@ -213,10 +213,9 @@ jobs:
   # named in scripts/quality/scope/suite-scope.txt. Any other event runs it,
   # and so does any doubt.
   #
-  # It is not a required check yet: adding it to the ruleset is the owner's
-  # decision, and nothing waits on it today. It is built so that it can be one
-  # the day it is added. A job skipped as a job reports success, which would
-  # read "did not apply" as "passed", so it is never skipped: no `paths:` on the
+  # It is a required check, named `ML-DSA-65 verifier` in the ruleset and in the list
+  # of tests/ci/policy/workflow-shape.test.sh. A job skipped as a job reports success,
+  # which would read "did not apply" as "passed", so it is never skipped: no `paths:` on the
   # workflow, no `if:` or `needs:` on the job. It always starts, decides in its
   # first step and reports under its own name, and only the wheel install and
   # the suite are conditional. Its own `concurrency` lets a newer push supersede
