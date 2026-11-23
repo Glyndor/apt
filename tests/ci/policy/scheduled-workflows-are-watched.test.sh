@@ -60,6 +60,10 @@ def cadence(cron):
     if len(fields) != 5:
         return None
     minute, hour, dom, month, dow = fields
+    # One run on one day of the year, to try a workflow on a runner once: it says nothing about how often
+    # the workflow fires, so it does not count towards its cadence.
+    if NUMBER.fullmatch(minute) and NUMBER.fullmatch(hour) and NUMBER.fullmatch(dom) and NUMBER.fullmatch(month) and dow == "*":
+        return "once"
     if not NUMBER.fullmatch(minute) or dom != "*" or month != "*":
         return None
     if not NUMBER.fullmatch(hour):
@@ -89,7 +93,9 @@ for path in sorted(glob.glob(os.path.join(root, "*.yml"))):
         bad.append(f"{name} has a schedule and no freshness job watches it")
         continue
     kinds = {cadence(c) for c in crons}
-    if None in kinds or len(kinds) != 1:
+    if kinds - {"once"}:
+        kinds.discard("once")
+    if None in kinds or len(kinds) != 1 or kinds == {"once"}:
         bad.append(f"{name}: cannot tell the cadence of {crons}")
         continue
     kind = kinds.pop()
@@ -126,6 +132,17 @@ check "a weekly cron watched at another limit is reported" \
 
 fresh; plant hourly.yml "30 * * * *"; watch hourly.yml 1
 check "a cron that fires more than once a day keeps its own limit" "ok" "$(audit "$WORK/w")"
+
+fresh; printf 'on:\n  schedule:\n    - cron: "23 5 * * 1"\n    - cron: "23 9 24 11 *"\njobs: {}\n' > "$WORK/w/weekly.yml"; watch weekly.yml 15
+check "a weekly cron with one extra run on one day of the year is still weekly" "ok" "$(audit "$WORK/w")"
+
+fresh; printf 'on:\n  schedule:\n    - cron: "23 5 * * 1"\n    - cron: "23 9 24 11 *"\njobs: {}\n' > "$WORK/w/weekly.yml"; watch weekly.yml 10
+check "and it is still held to the limit of a weekly cron" \
+	"weekly.yml is weekly and watch-weekly allows 10 days, not 15" "$(audit "$WORK/w")"
+
+fresh; plant onlyonce.yml "23 9 24 11 *"; watch onlyonce.yml 15
+check "a workflow whose only run is one day of the year has no cadence to watch and is reported" \
+	"onlyonce.yml: cannot tell the cadence of ['23 9 24 11 *']" "$(audit "$WORK/w")"
 
 fresh; plant odd.yml "0 6 1 * *"; watch odd.yml 40
 check "a cron whose cadence cannot be read is reported" \

@@ -64,10 +64,13 @@ fi
 #
 #   ${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
 #
-# The rule: in a workflow that can run on a push (it triggers on `push`, or it is a
-# reusable workflow and so cannot know what calls it), a `group:` that names
+# The rule: in a workflow that can run on a push, or on a schedule, or is a reusable
+# workflow and so cannot know what calls it, a `group:` that names
 # `github.ref` has to carry that exact form. A workflow that only runs for pull requests
-# or on a schedule is not in scope: no push can queue behind another there.
+# is not in scope: its runs share a ref only with newer runs of the same pull request.
+# A scheduled workflow is: its run is replaced by a manual run of the same ref that queues
+# behind it, or by the next scheduled one, and a scheduled run that does not end is one the
+# freshness watcher never counts.
 #
 # The checker is shown to refuse each way of getting it wrong before it is trusted with
 # the live workflows.
@@ -78,7 +81,7 @@ ref_groups_not_per_run() { # <workflows dir>
 	local f line
 	for f in "$1"/*.yml; do
 		[ -f "$f" ] || continue
-		grep -qE '^  (push|workflow_call):' "$f" || continue
+		grep -qE '^  (push|workflow_call|schedule):' "$f" || continue
 		while IFS= read -r line; do
 			case "$line" in *"$PER_RUN"*) continue ;; esac
 			printf '%s: %s\n' "$(basename "$f")" "${line#"${line%%[![:space:]]*}"}"
@@ -97,6 +100,8 @@ mkdir -p "$WORK/planted"
 	printf 'on:\n  workflow_call:\nconcurrency:\n  group: d-${{ github.event_name == '"'"'pull_request'"'"' && github.ref || github.run_id }}\n' > "$WORK/planted/reusable-per-run.yml"
 	printf 'on:\n  pull_request:\nconcurrency:\n  group: e-${{ github.ref }}\n' > "$WORK/planted/pull-request-only.yml"
 	printf 'on:\n  schedule:\n    - cron: "0 * * * *"\nconcurrency:\n  group: f-${{ github.ref }}\n' > "$WORK/planted/schedule-only.yml"
+	printf 'on:\n  schedule:\n    - cron: "0 * * * *"\n  workflow_dispatch:\nconcurrency:\n  group: g-${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: false\n' > "$WORK/planted/schedule-dispatch.yml"
+	printf 'on:\n  schedule:\n    - cron: "0 * * * *"\n  workflow_dispatch:\nconcurrency:\n  group: h-${{ github.workflow }}-${{ github.event_name == '"'"'pull_request'"'"' && github.ref || github.run_id }}\n  cancel-in-progress: false\n' > "$WORK/planted/schedule-per-run.yml"
 }
 planted="$(ref_groups_not_per_run "$WORK/planted")"
 planted_count() { printf '%s\n' "$planted" | grep -c "^$1: "; }
@@ -105,11 +110,13 @@ check "a group on a job of a workflow that triggers on push is reported" "1" "$(
 check "a group that falls back to the run id without the event test is reported" "1" "$(planted_count half-form.yml)"
 check "a reusable workflow whose group carries the per-run form is accepted" "0" "$(planted_count reusable-per-run.yml)"
 check "a workflow that only runs for pull requests is not in scope" "0" "$(planted_count pull-request-only.yml)"
-check "a workflow that only runs on a schedule is not in scope" "0" "$(planted_count schedule-only.yml)"
-check "the planted tree has exactly the three offences" "3" "$(printf '%s\n' "$planted" | grep -c .)"
+check "a workflow that only runs on a schedule and names the ref in its group is reported" "1" "$(planted_count schedule-only.yml)"
+check "a scheduled run does not share a group with a manual run of the same ref" "1" "$(planted_count schedule-dispatch.yml)"
+check "a scheduled workflow whose group carries the per-run form is accepted" "0" "$(planted_count schedule-per-run.yml)"
+check "the planted tree has exactly the five offences" "5" "$(printf '%s\n' "$planted" | grep -c .)"
 
 live="$(ref_groups_not_per_run "$HERE/.github/workflows")"
-check "no live workflow that can run on a push shares its group between pushes" "" "$live"
+check "no live workflow that can run on a push or a schedule shares its group between runs" "" "$live"
 
 # --- the security checks are only ever replaced by a newer run of the same pull request ---
 #

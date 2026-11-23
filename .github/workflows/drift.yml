@@ -52,7 +52,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: drift-${{ github.workflow }}-${{ github.ref }}
+  # The group is per run outside a pull request. A group shared by the schedule and a
+  # manual run lets GitHub drop the run that is still waiting when a newer one queues, even
+  # with `cancel-in-progress: false`, and a scheduled run that never ends is one the
+  # freshness watcher can never count. tests/ci/policy/rules/cancel-policy.test.sh holds
+  # this for every workflow that has a schedule.
+  group: drift-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   # A scheduled run is never replaced by the next one (see cancel-policy.test.sh).
   cancel-in-progress: false
 
