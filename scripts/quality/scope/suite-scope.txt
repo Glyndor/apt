@@ -193,6 +193,13 @@ tests/ci/policy/workflows-run-their-scripts.test.sh
 tests/verify/roster-has-releases.test.sh
 	scripts/verify/roster-has-releases.sh
 
+tests/verify/new-product-end-to-end.test.sh
+	scripts/verify/**
+
+tests/build/new-product-archive.test.sh
+	scripts/build/**
+	scripts/installer/**
+
 tests/verify/published-roster.test.sh
 	scripts/verify/published-roster.sh
 	.github/workflows/health-check.yml
