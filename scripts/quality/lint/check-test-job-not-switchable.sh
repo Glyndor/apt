@@ -198,12 +198,14 @@ CONDITIONAL_JOBS = {
     # apt: the sweep runs for the entries the change can affect, and the gate
     # tells a sweep skipped by that decision from one that did not run. The
     # gate carries `always()` so that a skipped sweep does not skip it.
-    (_W + "mutation.yml", "mutations", None): {"if": "needs.decide.outputs.run == 'true'", "needs": "decide"},
+    (_W + "mutation.yml", "mutations", None): [{"if": "needs.decide.outputs.run == 'true'", "needs": "decide"}, {"if": "${{ !cancelled() && needs.decide.outputs.run != 'false' }}", "needs": "decide"}],
     (_W + "mutation.yml", "gate", None): {"if": "always()", "needs": ["decide", "mutations"]},
     # homebrew-tap: `brew audit` waits for the job that says whether the change
-    # can affect it, and runs when that job could not say.
-    (_W + "audit.yml", "audit", None): {"needs": "scope", "if": "${{ !cancelled() && "
-        "(needs.scope.result != 'success' || needs.scope.outputs.run_audit == 'true') }}"},
+    # can affect it, and runs unless that job answered `false`. The gate carries
+    # `always()` so that a skipped audit does not skip it, and it is the check
+    # a ruleset requires: it fails unless the audit passed or was not needed.
+    (_W + "audit.yml", "audit", None): [{"needs": "scope", "if": "${{ !cancelled() && (needs.scope.result != 'success' || needs.scope.outputs.run_audit == 'true') }}"}, _SCOPED("run_audit")],
+    (_W + "audit.yml", "gate", None): {"if": "always()", "needs": ["scope", "audit"]},
     # The scheduled update: what is rendered is validated, and then committed.
     # These jobs run on a schedule and are no check a merge waits for.
     (_W + "update.yml", "validate", None): {"needs": "render"},
@@ -225,7 +227,7 @@ STEP_CONDITIONS = {
     (_W + "reusable-shell-ci.yml", "test"): ("steps.scope.outputs.docs_only != 'true'",),
     (_W + "reusable-workflow-lint.yml", "workflow-lint"): (_NEEDED, "${{ inputs.tooling-isolation && " + _NEEDED + " }}"),
     (_W + "tests.yml", "mldsa"): (_NEEDED,),
-    (_W + "tests.yml", "formulae"): ("steps.scope.outputs.run_style == 'true'",),
+    (_W + "tests.yml", "formulae"): ("steps.scope.outputs.run_style == 'true'", "steps.scope.outputs.run_style != 'false'"),
     (_W + "tests.yml", "products"): ("github.event_name == 'pull_request'",),
     (_W + "tests.yml", "manifests"): ("github.event_name == 'pull_request'",),
     (_W + "freshness.yml", "suite-on-main"): ("${{ !cancelled() }}",),
@@ -627,9 +629,11 @@ def job_switch(path, job_id, job, reusable):
     if isinstance(forms, dict):
         forms = [forms]
 
-    def listed(key):
-        return any(key in form and form[key] == job[key] for form in forms)
-
+    # The whole form is compared, not each key by itself: a listed job that
+    # keeps its `needs:` and loses its `if: always()` would be skipped, and so
+    # reported as passed, whenever a requirement of it fails.
+    shape = {k: job[k] for k in ("if", "needs") if k in job}
+    unlisted = [k for k in shape if not any(k in form and form[k] == shape[k] for form in forms)]
     who = f"job `{job_id}` in {path}" + (f" calls `{reusable}` and" if reusable else "")
     declare = (
         " To keep one on purpose, list its exact form in CONDITIONAL_JOBS of "
@@ -638,7 +642,7 @@ def job_switch(path, job_id, job, reusable):
     # Rule: a job-level `if:` is a switch. Any value: `false`, `inputs.foo`,
     # even `true` would skip the job when the expression is false, and a
     # skipped required check reports Success.
-    if "if" in job and not listed("if"):
+    if "if" in unlisted:
         return (
             f"{who} carries a job-level `if:` of any value. Any conditional on "
             "a job that defines a check is a switch: a skipped required check "
@@ -647,12 +651,15 @@ def job_switch(path, job_id, job, reusable):
         )
     # Rule: `needs:` is the same switch one job away. A job that needs a
     # skipped job is skipped too.
-    if "needs" in job and not listed("needs"):
+    if "needs" in unlisted:
         return (
             f"{who} carries `needs:`. A job whose dependency is skipped is "
             "skipped too, and a skipped required check reports Success. "
             "Delete it." + declare
         )
+    if shape and shape not in forms:
+        return (f"{who} lacks the whole form CONDITIONAL_JOBS lists for it and carries only {shape}: "
+                "without `if: always()` a gate is skipped when a requirement fails, and a skipped required check reports Success.")
     # Rule: `continue-on-error:` is a switch of another kind: the job may fail
     # and the run still succeed, so a red suite does not hold the merge back.
     # GitHub does not accept the key on a job that calls a reusable, and the
