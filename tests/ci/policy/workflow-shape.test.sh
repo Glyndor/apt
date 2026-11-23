@@ -107,12 +107,32 @@ required = [
     "dco / Signed-off-by present on every commit",
     "workflow-lint / workflow-lint",
     "empty-diff / empty diff",
+    # A job a workflow defines itself carries the name on its own, and the
+    # check is named by it: there is no caller and no `<id> / `.
+    "secret scan",
+    "commit identity",
+    "ML-DSA-65 verifier",
+    "gate",
 ]
 
 violations = []
 for check in required:
     job_id, _, job_name = check.partition(" / ")
     found = False
+    if not job_name:
+        # Direct shape: some job of a workflow that is not a reusable has this name.
+        for path in files:
+            if os.path.basename(path).startswith("reusable-"):
+                continue
+            try:
+                spec = yaml.safe_load(open(path)) or {}
+            except yaml.YAMLError:
+                continue
+            for job in (spec.get("jobs") or {}).values() if isinstance(spec, dict) else ():
+                found = found or (isinstance(job, dict) and job.get("name") == check)
+        if not found:
+            violations.append(f"{check}: no workflow defines a job with this name")
+        continue
     for path in files:
         base = os.path.basename(path)
         if base.startswith("reusable-"):
@@ -131,7 +151,7 @@ for check in required:
         if not isinstance(caller, dict):
             continue
         # Direct shape: the job carries the second half as its own name.
-        # (No current required check uses this shape; the branch is here so
+        # (Required checks of this shape are named below without a caller; the branch is here so
         # a future shape change does not need a new rule.)
         if caller.get("name") == job_name:
             found = True
@@ -278,6 +298,18 @@ check "A.1: and for the second half too" \
 check "A.1: and the message names the missing caller id" \
 	"1" "$(printf '%s' "$shape" | grep -q "job id 'shell'" && echo 1 || echo 0)"
 rm -f "$plant/.github/workflows/tests.yml.bak"
+
+# --- A.1b: a renamed job that is its own check -----------------------------
+#
+# The gate of the mutation sweep carries the name `gate` and no caller. Renamed,
+# the ruleset would wait for a check that is never emitted.
+cp "$plant/.github/workflows/mutation.yml" "$plant/.github/workflows/mutation.yml.bak"
+sed -i 's/^    name: gate$/    name: gatex/' "$plant/.github/workflows/mutation.yml"
+check "A.1b: the plant renamed the gate in mutation.yml" \
+	"1" "$(plant_changed "$plant/.github/workflows/mutation.yml" "$plant/.github/workflows/mutation.yml.bak")"
+check "A.1b: a renamed job that is its own required check is reported by its name" \
+	"1" "$(shape_violations "$plant/.github/workflows" | grep -c '^gate: no workflow defines a job with this name' || true)"
+mv "$plant/.github/workflows/mutation.yml.bak" "$plant/.github/workflows/mutation.yml"
 
 # Restore tests.yml for the next plant from the real tree.
 cp "$WORKFLOWS/tests.yml" "$plant/.github/workflows/tests.yml"

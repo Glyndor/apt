@@ -318,6 +318,7 @@ verify-published-verified-indices-declare-pool-bytes	scripts/verify/verify-publi
 publish-no-architectures	.github/workflows/publish.yml	|| { echo "::error::Glyndor/$p declares no architectures"; exit 1; }	|| true	tests/publication/publish/publish-workflow-assets.test.sh
 health-check-valid-until	.github/workflows/health-check.yml	if [ "$valid_epoch" -le "$now_epoch" ]; then	if false; then	tests/publication/health-check/health-check-workflow.test.sh
 mutation-gate-decide	.github/workflows/mutation.yml	if [ "$DECIDE" != success ]; then	if false; then	tests/ci/policy/mutation-workflow.test.sh
+mutation-sweep-unless-false	.github/workflows/mutation.yml	needs.decide.outputs.run != 'false' }}	needs.decide.outputs.run == 'true' }}	tests/ci/policy/mutation-workflow.test.sh
 mutation-scope-global-inputs	scripts/quality/scope/mutation-scope.sh	if paths & GLOBAL_INPUTS:	if False:	tests/quality/scope/mutation-scope.test.sh
 mutation-coverage-errors	scripts/quality/coverage/check-mutation-coverage.sh	if errors:	if False:	tests/quality/coverage/check-mutation-coverage.test.sh
 mutation-coverage-entry-applies	scripts/quality/coverage/check-mutation-coverage.sh	applies(catalogue, *fields[:4])	pass	tests/quality/coverage/check-mutation-coverage.test.sh

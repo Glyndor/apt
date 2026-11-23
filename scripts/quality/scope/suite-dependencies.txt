@@ -130,6 +130,7 @@ tests/ci/policy/mutation-workflow.test.sh python3-yaml
 tests/ci/policy/publish-workflow-triggers.test.sh python3-yaml
 tests/ci/policy/workflow-shape.test.sh python3-yaml
 tests/ci/policy/persist-credentials.test.sh python3-yaml
+tests/ci/policy/workflows/skip-only-on-an-explicit-false.test.sh python3-yaml
 tests/ci/policy/permissions-declared.test.sh python3-yaml
 tests/ci/policy/commit-hygiene-base-rule.test.sh python3-yaml
 tests/publication/publish/publish-workflow.test.sh python3-yaml

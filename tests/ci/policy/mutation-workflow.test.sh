@@ -60,7 +60,7 @@ PY
 on="$(python3 -I -c 'import sys,yaml; s=yaml.safe_load(open(sys.argv[1])); print(sorted((s.get("on") or s.get(True)).keys()))' "$WF")"
 check "the workflow runs on pull requests, the schedule and on demand" \
 	"['pull_request', 'schedule', 'workflow_dispatch']" "$on"
-check "the sweep runs only when the decision says so" "needs.decide.outputs.run == 'true'" "$(job mutations if)"
+check "the sweep is skipped only on an explicit false, and starts when the decision failed" "\${{ !cancelled() && needs.decide.outputs.run != 'false' }}" "$(job mutations if)"
 check "the gate runs whatever happened before it" "always()" "$(job gate if)"
 check "and it waits on the decision and the sweep" "['decide', 'mutations']" "$(job gate needs)"
 
