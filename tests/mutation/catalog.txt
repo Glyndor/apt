@@ -163,8 +163,6 @@ verify-published-index-cap	scripts/verify/verify-published.sh	if [ "$index_count
 verify-published-bootstrap-sig	scripts/verify/verify-published.sh	if [ "$bootstrap_sig_ok" -ne 1 ]; then	if false; then	tests/verify/verify-published/verify-published-bootstrap.test.sh
 quality-test-coverage	scripts/quality/coverage/check-test-coverage.sh	[ -f "$root/tests/$rel.test.sh" ] || missing+=("scripts/$rel.sh")	true || missing+=("scripts/$rel.sh")	tests/quality/coverage/check-test-coverage.test.sh
 suites-wired-watcher-dropped	.github/workflows/tests.yml	./tests/ci/suites/ci-runs-every-test.test.sh	./tests/quality/coverage/check-test-coverage.test.sh	tests/quality/coverage/check-suites-wired.test.sh
-suites-wired-unwired	scripts/quality/coverage/check-suites-wired.sh	for path in sorted(suites - wired - set(exempt)):	for path in []:	tests/quality/coverage/check-suites-wired.test.sh
-suites-wired-needs	scripts/quality/coverage/check-suites-wired.sh	                    if "needs" in job else "") \	                    if False else "") \	tests/quality/coverage/check-suites-wired.test.sh
 scope-lint-rule-scripts	scripts/quality/scope/ci-job-scope.sh	    "scripts/quality/lint/check-tooling-isolation.sh",	    "scripts/quality/unused.sh",	tests/quality/scope/ci-job-scope.test.sh
 tools-past-lag	scripts/monitoring/check-tool-versions.sh	    if days > lag_days:	    if False:	tests/monitoring/check-tool-versions.test.sh
 tools-first-newer	scripts/monitoring/check-tool-versions.sh	    days = (now - min(newer)).days	    days = (now - max(newer)).days	tests/monitoring/check-tool-versions.test.sh
@@ -175,11 +173,6 @@ tools-verdict	scripts/monitoring/check-tool-versions.sh	if problems or behind:	i
 tools-lag-constant	scripts/monitoring/check-tool-versions.sh	lag_days = LAG_DAYS	lag_days = int(os.environ.get("MAX_LAG_DAYS", LAG_DAYS))	tests/monitoring/check-tool-versions.test.sh
 tools-overrides	scripts/monitoring/check-tool-versions.sh	            if given:	            if False:	tests/monitoring/check-tool-versions.test.sh
 fresh-mutation-watched	.github/workflows/freshness.yml	      workflow: mutation.yml	      workflow: unwatched.yml	tests/ci/policy/scheduled-workflows-are-watched.test.sh
-suites-wired-base-exemptions	scripts/quality/coverage/check-suites-wired.sh	    return {path: why for path, why in exempt.items() if path in base}	    return exempt	tests/quality/coverage/check-suites-wired.test.sh
-suites-wired-operators	scripts/quality/coverage/check-suites-wired.sh	OPERATOR_RE = re.compile(r"[|&;<>`]|\$\(")	OPERATOR_RE = re.compile(r"(?!)")	tests/quality/coverage/check-suites-wired.test.sh
-suites-wired-heredoc	scripts/quality/coverage/check-suites-wired.sh	                        if "<<" in run else "") \	                        if False else "") \	tests/quality/coverage/check-suites-wired.test.sh
-suites-wired-skip-paths	scripts/quality/coverage/check-suites-wired.sh	                             skip_gate, where)	                             job_gate, where)	tests/quality/coverage/check-suites-wired.test.sh
-suites-wired-skip-literal	scripts/quality/coverage/check-suites-wired.sh	    if [[ "$f" == $pattern ]]; then	    if [[ "$f" == "$pattern" ]]; then	tests/quality/coverage/check-suites-wired.test.sh
 # The refusals below were catalogued when scripts/quality/coverage/check-mutation-coverage.sh
 # started requiring an entry or an exemption for every refusal. Each one was
 # measured on 2026-11-21 against a copy of the tree: its mutation applied, the
@@ -440,3 +433,41 @@ map-reads-folder	tests/quality/scope/suite-scope-map.test.sh	wanted = ref + "/*"
 map-covers-folder-pattern	tests/quality/scope/suite-scope-map.test.sh	return path.startswith(pattern[:-2])	return True	tests/quality/scope/suite-scope-map.test.sh
 map-covers-some-workflow	tests/quality/scope/suite-scope-map.test.sh	return pattern.startswith(".github/workflows/")  # the folder: some workflow	return True	tests/quality/scope/suite-scope-map.test.sh
 map-reads-root	tests/quality/scope/suite-scope-map.test.sh	reads = re.compile(r'\$\{?HERE	reads = re.compile(r'\$\{?HERX	tests/quality/scope/suite-scope-map.test.sh
+suites-wired-unwired	scripts/quality/coverage/check-suites-wired.sh	for path in sorted(suites - wired - set(exempt)):	for path in []:	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-base-exemptions	scripts/quality/coverage/check-suites-wired.sh	    return {path: why for path, why in exempt.items() if path in base}	    return exempt	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-operators	scripts/quality/coverage/check-suites-wired.sh	OPERATOR_RE = re.compile(r"[|&;<>`]|\$\(")	OPERATOR_RE = re.compile(r"(?!)")	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-heredoc	scripts/quality/coverage/check-suites-wired.sh	                        if "<<" in run else "") \	                        if False else "") \	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-skip-paths	scripts/quality/coverage/check-suites-wired.sh	                             skip_gate, where)	                             job_gate, where)	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-skip-literal	scripts/quality/coverage/check-suites-wired.sh	    if [[ "$f" == $pattern ]]; then	    if [[ "$f" == "$pattern" ]]; then	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-needs-gate	scripts/quality/coverage/check-suites-wired.sh	or needs_gate(job, jobs, (), job_id, name, pr_only(spec)) \	or False \	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-needs-unknown	scripts/quality/coverage/check-suites-wired.sh	        if not isinstance(other, dict):	        if False:	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-needs-cycle	scripts/quality/coverage/check-suites-wired.sh	        if name_ in seen:	        if False:	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-needs-condition	scripts/quality/coverage/check-suites-wired.sh	        if "if" in other or other.get("continue-on-error") or "defaults" in other:	        if False:	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-needs-deeper	scripts/quality/coverage/check-suites-wired.sh	        if deeper:	        if False:	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-gate-missing	scripts/quality/coverage/check-suites-wired.sh	if not isinstance(gate, dict) or gate.get("if") != "always()"	if False or gate.get("if") != "always()"	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-gate-if	scripts/quality/coverage/check-suites-wired.sh	or gate.get("if") != "always()" or gate.get("continue-on-error"):	or False or gate.get("continue-on-error"):	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-gate-coe	scripts/quality/coverage/check-suites-wired.sh	!= "always()" or gate.get("continue-on-error"):	!= "always()" or False:	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-gate-reads	scripts/quality/coverage/check-suites-wired.sh	    if not owed <= set(wait) or not reads or not fails:	    if not owed <= set(wait) or False or not fails:	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-gate-fails	scripts/quality/coverage/check-suites-wired.sh	    if not owed <= set(wait) or not reads or not fails:	    if not owed <= set(wait) or not reads or False:	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-gate-waits	scripts/quality/coverage/check-suites-wired.sh	    if not owed <= set(wait) or not reads or not fails:	    if False or not reads or not fails:	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-gate-base	scripts/quality/coverage/check-suites-wired.sh	json.dumps(before, sort_keys=True) != json.dumps(gate, sort_keys=True)	False	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-dep-external	scripts/quality/coverage/check-suites-wired.sh	        return f"it calls `{uses}`, which is not a local reusable workflow and is not read"	        return ""	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-dep-reusable-if	scripts/quality/coverage/check-suites-wired.sh	if not isinstance(inner_job, dict) or ("if" in inner_job and not only) or inner_job.get("continue-on-error"):	if not isinstance(inner_job, dict):	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-dep-reusable-read	scripts/quality/coverage/check-suites-wired.sh	        return f"it calls `{uses}`, which cannot be read"	        return ""	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-dep-uses	scripts/quality/coverage/check-suites-wired.sh	        if isinstance(other.get("uses"), str):	        if False:	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-dep-answer	scripts/quality/coverage/check-suites-wired.sh	        if answer:	        if False:	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-gate-owed	scripts/quality/coverage/check-suites-wired.sh	    owed = every_dependency(jobs[job_id], jobs) | {job_id}	    owed = {job_id}	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-gate-not-in-base	scripts/quality/coverage/check-suites-wired.sh	    if before is False:	    if False:	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-pr-only	scripts/quality/coverage/check-suites-wired.sh	inner_job.get("if") == "github.event_name == 'pull_request'"	inner_job.get("if") == "github.event_name == 'push'"	tests/quality/coverage/check-suites-wired.test.sh
+suites-wired-pr-only-events	scripts/quality/coverage/check-suites-wired.sh	    return (set(events) if isinstance(events, (dict, list)) else {events}) == {"pull_request"}	    return True	tests/quality/coverage/check-suites-wired.test.sh
+runner-json-syntax	tests/mutation/run-mutations.sh	*.json)	*.jsonx)	tests/mutation/run-mutations.test.sh
+wired-base-empty	scripts/quality/coverage/check-suites-wired.sh	if os.environ.get("GITHUB_EVENT_NAME") == "pull_request":	if False:	tests/quality/coverage/check-suites-wired.test.sh
+wired-base-format	scripts/quality/coverage/check-suites-wired.sh	if not re.fullmatch(r"[0-9a-f]{40}", base):	if False:	tests/quality/coverage/check-suites-wired.test.sh
+wired-base-exists	scripts/quality/coverage/check-suites-wired.sh	if subprocess.run([*git, "cat-file", "-e", f"{base}^{{commit}}"], capture_output=True, check=False).returncode:	if False:	tests/quality/coverage/check-suites-wired.test.sh
+wired-base-refused	scripts/quality/coverage/check-suites-wired.sh	    if isinstance(before, str):	    if False:	tests/quality/coverage/check-suites-wired.test.sh
+wired-gate-keys	scripts/quality/coverage/check-suites-wired.sh	GATE_JOB_KEYS = {"name", "needs", "if", "runs-on", "timeout-minutes", "permissions", "steps"}	GATE_JOB_KEYS = {"name", "needs", "if", "runs-on", "timeout-minutes", "permissions", "steps", "strategy", "defaults"}	tests/quality/coverage/check-suites-wired.test.sh
+wired-gate-step-keys	scripts/quality/coverage/check-suites-wired.sh	GATE_STEP_KEYS = {"name", "env", "run"}	GATE_STEP_KEYS = {"name", "env", "run", "shell", "continue-on-error"}	tests/quality/coverage/check-suites-wired.test.sh
+wired-waiter-keys	scripts/quality/coverage/check-suites-wired.sh	for k in waiter if k not in WAITER_KEYS]	for k in waiter if False]	tests/quality/coverage/check-suites-wired.test.sh
+wired-workflow-defaults	scripts/quality/coverage/check-suites-wired.sh	    if workflow_defaults:	    if False:	tests/quality/coverage/check-suites-wired.test.sh
+wired-workflow-defaults-read	scripts/quality/coverage/check-suites-wired.sh	workflow_defaults = bool(spec.get("defaults"))	workflow_defaults = False	tests/quality/coverage/check-suites-wired.test.sh
+wired-dependency-defaults	scripts/quality/coverage/check-suites-wired.sh	or other.get("continue-on-error") or "defaults" in other:	or other.get("continue-on-error"):	tests/quality/coverage/check-suites-wired.test.sh

@@ -45,10 +45,14 @@
 # second grammar (fnmatch reads `[^x]` and `@(a|b)` differently) would let a
 # pattern skip the suite while the check read it as matching nothing.
 #
-# In both places the job must carry no `needs:` either. A job whose
-# dependency is skipped is skipped too, so `needs:` on a job that GitHub skips
-# for an `if: false` switches the suites off one job away, and the skipped
-# job still reports Success.
+# In both places the job may carry `needs:` only on jobs GitHub never skips. A
+# job whose dependency is skipped is skipped too, so `needs:` on a job that GitHub
+# skips for an `if: false` switches the suites off one job away, and the skipped
+# job still reports Success. A dependency counts as one that is never skipped when
+# it is a job of the same workflow with no `if:` and no `continue-on-error:`, and
+# its own `needs:` pass this test in turn: it can then only fail or be cancelled,
+# and the pull request is red for that reason. A name that is not a job of the
+# workflow, or a cycle, does not count.
 #
 # Anything else is a place a pull request can skip, so a suite named only
 # there is reported, with the reason it did not count.
@@ -76,6 +80,7 @@
 set -euo pipefail
 root="${1:-$PWD}"
 python3 -I - "$root" <<'PY'
+import json
 import os
 import re
 import subprocess
@@ -177,7 +182,157 @@ def read_workflows():
     return specs
 
 
+def reusable_gate(uses, only_pr=False):
+    """Why a job that calls this workflow can be skipped, or "" when it cannot: the
+    workflow is a local reusable, it reads, and none of its jobs has an `if:` or may
+    fail. An external one is never read, so it is refused. `if: github.event_name ==
+    'pull_request'` is no condition in a workflow that runs on pull requests and nothing else."""
+    match = re.fullmatch(r"\./\.github/workflows/(reusable-[A-Za-z0-9_.-]+\.ya?ml)", uses.split("@")[0])
+    if not match:
+        return f"it calls `{uses}`, which is not a local reusable workflow and is not read"
+    try:
+        with open(os.path.join(root, ".github", "workflows", match.group(1))) as fh:
+            inner = (yaml.safe_load(fh) or {}).get("jobs") or {}
+    except (OSError, yaml.YAMLError, AttributeError):
+        return f"it calls `{uses}`, which cannot be read"
+    for inner_id, inner_job in inner.items():
+        only = only_pr and inner_job.get("if") == "github.event_name == 'pull_request'" if isinstance(inner_job, dict) else False
+        if not isinstance(inner_job, dict) or ("if" in inner_job and not only) or inner_job.get("continue-on-error"):
+            return f"it calls `{uses}`, whose job `{inner_id}` carries a condition and can be skipped"
+    return ""
+
+
+def base_gate(name):
+    """The `gate` job of the workflow in the base commit the event names (BASE_SHA); False when that
+    commit holds no gate (or no such workflow); None when no base is named and this is not a pull
+    request; a string, the reason, when a base is expected or named and cannot be read."""
+    base = os.environ.get("BASE_SHA", "")
+    if not base:
+        if os.environ.get("GITHUB_EVENT_NAME") == "pull_request":
+            return "BASE_SHA is empty in a pull request, so the `gate` job cannot be compared with the base commit's"
+        print("no BASE_SHA is named: the `gate` job is not compared with a base commit")
+        return None
+    if not re.fullmatch(r"[0-9a-f]{40}", base):
+        return f"BASE_SHA {base!r} is not a commit id, so the `gate` job cannot be compared with the base commit's"
+    git = ["git", "-C", root]
+    if subprocess.run([*git, "cat-file", "-e", f"{base}^{{commit}}"], capture_output=True, check=False).returncode:
+        return f"the base commit {base} cannot be read, so the `gate` job cannot be compared with its copy"
+    if subprocess.run([*git, "cat-file", "-e", f"{base}:.github/workflows/{name}"], capture_output=True, check=False).returncode:
+        return False
+    try:
+        text = subprocess.run([*git, "show", f"{base}:.github/workflows/{name}"], capture_output=True, check=True).stdout
+        gate = ((yaml.safe_load(text) or {}).get("jobs") or {}).get("gate")
+    except (OSError, subprocess.CalledProcessError, yaml.YAMLError, AttributeError):
+        return False
+    return gate if isinstance(gate, dict) else False
+
+
+def every_dependency(job, jobs, found=None):
+    """The names of every job this one waits for, directly or through others."""
+    found = set() if found is None else found
+    for name_ in job["needs"] if isinstance(job.get("needs"), list) else [job.get("needs")] if job.get("needs") else []:
+        if isinstance(name_, str) and name_ not in found:
+            found.add(name_)
+            if isinstance(jobs.get(name_), dict):
+                every_dependency(jobs[name_], jobs, found)
+    return found
+
+
+# What the `gate` job and the job that waits may carry. A property the contract does not know can change what
+# runs without changing the text the other checks read (`shell`, `defaults`, `continue-on-error`), so it is refused.
+GATE_JOB_KEYS = {"name", "needs", "if", "runs-on", "timeout-minutes", "permissions", "steps"}
+GATE_STEP_KEYS = {"name", "env", "run"}
+WAITER_KEYS = {"name", "needs", "uses", "with", "secrets", "permissions", "runs-on", "timeout-minutes", "steps"}
+workflow_defaults = False
+
+
+def unknown_properties(gate, waiter):
+    """The first property of the gate, its steps or the job that waits that the contract does not list, or ""."""
+    found = [("the `gate` job", k) for k in gate if k not in GATE_JOB_KEYS]
+    found += [("a step of the `gate` job", k) for st in gate.get("steps") or [] for k in (st if isinstance(st, dict) else {"": 0}) if k not in GATE_STEP_KEYS]
+    found += [("the job that waits", k) for k in waiter if k not in WAITER_KEYS]
+    if workflow_defaults:
+        found.append(("the workflow", "defaults"))
+    return f"{found[0][0]} carries `{found[0][1]}`, which the contract does not know" if found else ""
+
+
+def gate_answers(job_id, jobs, name):
+    """Why nothing answers for this job when a job it needs fails, or "" when a gate does.
+
+    A job whose dependency fails is skipped, and a skipped job reports Success, so
+    `needs:` is accepted only beside a `gate` job in the same workflow that runs whatever
+    happened (`if: always()`), may not fail without failing the run, needs this job and
+    every job it waits for (a job that carries no condition can still fail), reads each of
+    their results and fails on anything but success. The gate is the one the base commit
+    holds: a pull request that changes it, or brings it, is not judged by itself."""
+    gate = jobs.get("gate")
+    if not isinstance(gate, dict) or gate.get("if") != "always()" or gate.get("continue-on-error"):
+        return "no `gate` job with `if: always()` answers for it"
+    odd = unknown_properties(gate, jobs[job_id])
+    if odd:
+        return odd
+    wait = gate.get("needs") if isinstance(gate.get("needs"), list) else [gate.get("needs")]
+    steps = [x for x in gate.get("steps") or [] if isinstance(x, dict)]
+    owed = every_dependency(jobs[job_id], jobs) | {job_id}
+    seen = [str(v) for st in steps for v in (st.get("env") or {}).values()]
+    reads = all(any(f"needs.{x}.result" in v or "toJSON(needs)" in v for v in seen) for x in owed)
+    fails = any("success" in str(st.get("run", "")) and ("exit 1" in str(st.get("run", "")) or "sys.exit(" in str(st.get("run", ""))) for st in steps)
+    if not owed <= set(wait) or not reads or not fails:
+        return f"the `gate` job does not need `{job_id}` and every job it waits for, read their results and fail on anything but success"
+    before = base_gate(name)
+    if isinstance(before, str):
+        return before
+    if before is False:
+        return "the `gate` job is not in the base commit, which cannot vouch for it"
+    if before is not None and json.dumps(before, sort_keys=True) != json.dumps(gate, sort_keys=True):
+        return "the `gate` job differs from the base commit's, and it is what answers for the job"
+    return ""
+
+
+def needs_gate(job, jobs, seen=(), job_id="", name="", only_pr=False):
+    """Why `needs:` on this job can skip it, or "" when it cannot.
+
+    A job whose dependency is skipped is skipped too, and a skipped job reports
+    Success. So `needs:` is a way to switch the suites off one job away, unless
+    every job it names is one GitHub never skips (a job of the same workflow with
+    no `if:`, no `continue-on-error`, no `uses:` of a workflow that is not a local
+    reusable whose jobs are all unconditional, and `needs:` that pass this test in
+    turn) and a gate answers for it. A name that is not a job of the workflow, a
+    condition anywhere on the chain and a cycle are all refused."""
+    if "needs" not in job:
+        return ""
+    names = job["needs"] if isinstance(job["needs"], list) else [job["needs"]]
+    base = "the job has `needs:`, and is skipped when a job it needs is"
+    for name_ in names:
+        other = jobs.get(name_) if isinstance(name_, str) else None
+        if not isinstance(other, dict):
+            return f"{base}; `{name_}` is not a job of this workflow"
+        if name_ in seen:
+            return f"{base}; `{name_}` needs itself"
+        if "if" in other or other.get("continue-on-error") or "defaults" in other:
+            return f"{base}; `{name_}` carries a condition and can be skipped"
+        if isinstance(other.get("uses"), str):
+            why = reusable_gate(other["uses"], only_pr)
+            if why:
+                return f"{base}; `{name_}`: {why}"
+        deeper = needs_gate(other, jobs, seen + (name_,), job_id, name, only_pr)
+        if deeper:
+            return deeper
+    if not seen:
+        answer = gate_answers(job_id, jobs, name)
+        if answer:
+            return f"{base} and {answer}"
+    return ""
+
+
+def pr_only(spec):
+    """True when the workflow runs on pull requests and on nothing else."""
+    events = spec.get("on", spec.get(True))
+    return (set(events) if isinstance(events, (dict, list)) else {events}) == {"pull_request"}
+
+
 def wiring(specs):
+    global workflow_defaults
     wired, weak = set(), {}
     guarded = never_skipped()
 
@@ -193,13 +348,14 @@ def wiring(specs):
         gate = "" if every_pull_request(spec) else \
             "the workflow does not run on every pull request"
         workflow_shell = ((spec.get("defaults") or {}).get("run") or {}).get("shell")
-        for job_id, job in (spec.get("jobs") or {}).items():
+        workflow_defaults = bool(spec.get("defaults"))
+        jobs = spec.get("jobs") or {}
+        for job_id, job in jobs.items():
             if not isinstance(job, dict):
                 continue
             where = f"{name}#{job_id}"
             job_gate = gate or ("the job has an `if:`" if "if" in job else "") \
-                or ("the job has `needs:`, and is skipped when a job it needs is"
-                    if "needs" in job else "") \
+                or needs_gate(job, jobs, (), job_id, name, pr_only(spec)) \
                 or ("the job may fail" if job.get("continue-on-error") else "")
             uses = job.get("uses")
             if isinstance(uses, str) and os.path.basename(uses.split("@")[0]) == REUSABLE:

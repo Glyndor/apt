@@ -124,9 +124,11 @@
 # Usage: check-test-job-not-switchable.sh [repo-root]   (default: the current directory)
 # BASE_SHA, when set, names the commit the extensions of a caller are held to.
 set -euo pipefail
+beside="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${1:-$PWD}"
-python3 -I - <<'PY'
+python3 -I -W error::DeprecationWarning - "$beside" <<'PY'
 import glob
+import json
 import os
 import re
 import subprocess
@@ -149,123 +151,46 @@ LOCAL_REUSABLE_RE = re.compile(
     r"^\./\.github/workflows/(reusable-[A-Za-z0-9_.-]+\.ya?ml)$"
 )
 
-# The jobs that carry a condition on purpose, as
-# (workflow file, job, reusable the job calls or None) -> the forms it may
-# carry, each {key: exact value}, one dict or a list of them. A job is accepted
-# with a switch key only when the key and its whole value are the ones listed
-# here; `continue-on-error:` has no entry, so it is never accepted. The
-# comment above each says why the condition does not turn a check off: it
-# either follows the event the check exists for, or it belongs to a job no merge
-# waits for, or it makes a watcher wait for the job that decides whether it
-# applies.
-_W = ".github/workflows/"
-_SCOPE_IF = "${{ !cancelled() && needs.scope.outputs.%s != 'false' }}"
-_SCOPED = lambda key: {"if": _SCOPE_IF % key, "needs": "scope"}  # noqa: E731
-_ON_PULL_REQUEST = {"if": "github.event_name == 'pull_request'"}
-CONDITIONAL_JOBS = {
-    # The two jobs of the reusables that a required check names and that carry
-    # a condition. `empty diff` exists for a pull request, which is the only
-    # event its caller runs on; `shell / test` has nothing to run without a
-    # test-command, and the rule below refuses a caller of the reusable that
-    # passes none.
-    (_W + "reusable-empty-diff.yml", "empty-diff", None): _ON_PULL_REQUEST,
-    (_W + "reusable-shell-ci.yml", "test", None): {"if": "inputs.test-command != ''"},
-    # scoop-bucket: the published-bytes watcher waits for the job that says
-    # whether the manifests are published yet.
-    (_W + "freshness.yml", "freshness-published-bytes", "reusable-schedule-freshness.yml"): {
-        "if": "needs.published-bytes-ready.outputs.ready == 'true'", "needs": "published-bytes-ready"},
-    # apt: each watcher waits for the `scope` job, which decides from the
-    # changed paths whether the watcher applies to this run, and `scope` itself
-    # has nothing to decide outside a pull request. None of them is a required
-    # check: freshness.yml says its jobs may not become one.
-    (_W + "freshness.yml", "scope", None): _ON_PULL_REQUEST,
-    (_W + "freshness.yml", "suite-on-main", None): _SCOPED("suite"),
-    (_W + "freshness.yml", "tool-versions", None): _SCOPED("tools"),
-    (_W + "freshness.yml", "dependabot-freshness",
-     "reusable-dependabot-freshness.yml"): _SCOPED("dependabot"),
-    **{
-        (_W + "freshness.yml", job, "reusable-schedule-freshness.yml"):
-            _SCOPED("schedule")
-        for job in (
-            "freshness-publish",
-            "freshness-distro-floor",
-            "freshness-health-check",
-            "freshness-itself",
-            "freshness-drift",
-            "freshness-mutation",
+FORMS_FILE = "scripts/quality/lint/switch-rule-forms.json"
+
+
+def stop(message):
+    print(f"::error::{message}")
+    sys.exit(1)
+
+
+# The tables of what a job may carry, as data. With a base commit named, the copy of that
+# commit and nothing else: a pull request is judged by the forms its base holds, and a base
+# that does not hold them or does not parse is an error, never the copy of the pull request.
+# With no base named (a run by hand) the copy in the working tree, then the one beside this script.
+def load_forms():
+    base = base_sha()
+    if base:
+        text = base_git(base, "show", f"{base}:{FORMS_FILE}")
+    else:
+        paths = [p for p in (FORMS_FILE, os.path.join(sys.argv[1], "switch-rule-forms.json")) if os.path.exists(p)]
+        if not paths:
+            stop(f"{FORMS_FILE} cannot be read, so the forms a job may carry are unknown")
+        text = open(paths[0]).read()
+    try:
+        data = json.loads(text)
+        return (
+            {(e["file"], e["job"], e["reusable"]): list(e["forms"]) for e in data["conditional_jobs"]},
+            {(e["file"], e["job"]): tuple(e["ifs"]) for e in data["step_conditions"]},
+            {k: frozenset(v) for k, v in data["allowed_inputs"].items()},
+            tuple(map(tuple, data["keep_base_words"])), tuple(map(tuple, data["cap_base_words"])),
+            tuple(map(tuple, data["producers_may_change"])),
+            {(e["file"], e["job"]): e["gate"] for e in data["needs_the_gate"]},
+            tuple((e["file"], e["job"], e["name"]) for e in data["expression_names"]),
         )
-    },
-    # apt: the sweep runs for the entries the change can affect, and the gate
-    # tells a sweep skipped by that decision from one that did not run. The
-    # gate carries `always()` so that a skipped sweep does not skip it.
-    (_W + "mutation.yml", "mutations", None): {"if": "${{ !cancelled() && needs.decide.outputs.run != 'false' }}", "needs": "decide"},
-    (_W + "mutation.yml", "gate", None): {"if": "always()", "needs": ["decide", "mutations"]},
-    # homebrew-tap: `brew audit` waits for the job that says whether the change
-    # can affect it, and runs unless that job answered `false`. The gate carries
-    # `always()` so that a skipped audit does not skip it, and it is the check
-    # a ruleset requires: it fails unless the audit passed or was not needed.
-    (_W + "audit.yml", "audit", None): _SCOPED("run_audit"),
-    (_W + "audit.yml", "gate", None): {"if": "always()", "needs": ["scope", "audit"]},
-    # The scheduled update: what is rendered is validated, and then committed.
-    # These jobs run on a schedule and are no check a merge waits for.
-    (_W + "update.yml", "validate", None): {"needs": "render"},
-    (_W + "update.yml", "commit", None): [{"needs": "render"}, {"needs": ["render", "validate"]}],
-}
+    except (ValueError, KeyError, TypeError, AttributeError):
+        stop(f"{FORMS_FILE} is not the data the rule reads")
 
-# The step-level conditions a job may carry, as (workflow file, job) -> the
-# exact values of `if:` a step of that job may have. A step that is not listed
-# for its job, or whose value is not one of these, is refused: the step is the
-# one that runs the suite, the comparison or the script of the check. Each
-# value either reads a decision taken by a scope step from the base commit, or
-# follows the event the step exists for, or keeps a report running after an
-# earlier step failed. `continue-on-error:` on a step is never accepted.
-_NEEDED = "steps.scope.outputs.needed != 'false'"
-_CHANGED = "needs.render.outputs.changed == '1'"
-STEP_CONDITIONS = {
-    (_W + "reusable-line-limit.yml", "line-limit"): (_NEEDED,),
-    (_W + "reusable-shell-ci.yml", "shellcheck"): (_NEEDED, "${{ inputs.check-exec-bit && " + _NEEDED + " }}"),
-    (_W + "reusable-shell-ci.yml", "test"): ("steps.scope.outputs.docs_only != 'true'",),
-    (_W + "reusable-workflow-lint.yml", "workflow-lint"): (_NEEDED, "${{ inputs.tooling-isolation && " + _NEEDED + " }}"),
-    (_W + "tests.yml", "mldsa"): (_NEEDED,),
-    (_W + "tests.yml", "formulae"): ("steps.scope.outputs.run_style != 'false'",),
-    (_W + "tests.yml", "products"): ("github.event_name == 'pull_request'",),
-    (_W + "tests.yml", "manifests"): ("github.event_name == 'pull_request'",),
-    (_W + "freshness.yml", "suite-on-main"): ("${{ !cancelled() }}",),
-    (_W + "drift.yml", "drift"): ("${{ !cancelled() }}",),
-    (_W + "update.yml", "render"): ("steps.render.outputs.changed == '1'",),
-    (_W + "update.yml", "validate"): (_CHANGED,),
-    (_W + "update.yml", "commit"): (_CHANGED, "needs.render.outputs.partial == '1'"),
-}
 
-# The inputs a caller may pass to each local reusable, by reusable. The list is
-# closed. An input that is not here is refused, whatever its value, because the
-# ones a caller could use to weaken the check are the ones nothing else reads:
-# `tooling-isolation` (reusable-workflow-lint.yml) turns the secret rule off,
-# `severity` and `check-exec-bit` (reusable-shell-ci.yml) make the shell lint
-# report nothing and stop looking at file modes, `hard-limit`, `soft-limit` and
-# `exclude-pattern` (reusable-line-limit.yml) raise the ceiling or skip every
-# file, and `working-directory` moves what the shell job looks at. The pins of
-# shellcheck are read by scripts/monitoring/check-tool-versions.sh. A reusable
-# that has no entry fails the rule; add one, with the inputs its callers pass
-# today, in the change that adds the reusable.
-ALLOWED_INPUTS = {
-    "reusable-dco.yml": frozenset(),
-    "reusable-dependabot-freshness.yml": frozenset({"max-age-days"}),
-    "reusable-empty-diff.yml": frozenset(),
-    "reusable-line-limit.yml": frozenset({"extensions"}),
-    "reusable-schedule-freshness.yml": frozenset({
-        "workflow", "max-age-days", "max-age-hours", "count-any-conclusion",
-    }),
-    "reusable-shell-ci.yml": frozenset({
-        "test-command", "apt-packages", "skip-suite-paths",
-    }),
-    "reusable-workflow-lint.yml": frozenset(),
-}
 
 # The inputs that are a list of words a caller may add to and may not take from,
 # as (reusable, input). What it keeps is what the callers of the base commit
 # pass: see base_words().
-KEEP_BASE_WORDS = (("reusable-line-limit.yml", "extensions"),)
 
 # The shape of such a list: lowercase words of letters and digits, one space
 # between two of them. The reusable turns the list into a regular expression
@@ -279,14 +204,12 @@ WORD_LIST_RE = re.compile(r"[a-z0-9]+( [a-z0-9]+)*")
 # matches every changed file against each word with `[[ == ]]`, so a word is
 # made of the characters of a path and `*`, and one with no letter or digit
 # (`*`, `**`, `*.*`) matches every file.
-CAP_BASE_WORDS = (("reusable-shell-ci.yml", "skip-suite-paths"),)
 PATH_WORD_RE = re.compile(r"[A-Za-z0-9_./*-]*[A-Za-z0-9_][A-Za-z0-9_./*-]*")
 
 # What a condition may read: the output of a step of its job or of a job of its
 # file. The producers a pull request may change on purpose, as
 # (workflow file, step id or job id) pairs; see the header.
 PRODUCER_REF = re.compile(r"\b(steps|needs)\.([A-Za-z0-9_-]+)\.outputs\b")
-PRODUCERS_MAY_CHANGE = ()
 
 # A script run from the checkout, at the start of a command: a path under one of
 # these folders, alone or after an interpreter. `git show <rev>:<path>` is not one.
@@ -341,24 +264,11 @@ def normalize(value):
 # names the file and the job.
 def check_test_command(cmd, path, job_id):
     if OR_TRUE_RE.search(cmd):
-        return (
-            f"job `{job_id}` in {path} has `|| true` in its "
-            "test-command. That masks a suite failure: bash "
-            "short-circuits the suite, and the required check "
-            "reports Success regardless. " + GRAMMAR + "."
-        )
+        return (f"job `{job_id}` in {path} has `|| true` in its " "test-command. That masks a suite failure: bash " "short-circuits the suite, and the required check " "reports Success regardless. " + GRAMMAR + ".")
     if TRUE_OR_PREFIX_RE.match(cmd):
-        return (
-            f"job `{job_id}` in {path} has a test-command that "
-            "starts with `true ||`. Bash short-circuits the prefix "
-            "and skips every suite. " + GRAMMAR + "."
-        )
+        return (f"job `{job_id}` in {path} has a test-command that " "starts with `true ||`. Bash short-circuits the prefix " "and skips every suite. " + GRAMMAR + ".")
     if EXIT_0_PREFIX_RE.match(cmd):
-        return (
-            f"job `{job_id}` in {path} has a test-command that "
-            "starts with `exit 0`. The shell exits before any "
-            "suite runs. " + GRAMMAR + "."
-        )
+        return (f"job `{job_id}` in {path} has a test-command that " "starts with `exit 0`. The shell exits before any " "suite runs. " + GRAMMAR + ".")
     # Two shapes, and which one this is decided by the first token.
     # The runner takes its suites as arguments, so the command is
     # whitespace separated and every argument after the runner has to
@@ -369,36 +279,26 @@ def check_test_command(cmd, path, job_id):
     tokens = cmd.split()
     if tokens and RUNNER_RE.match(tokens[0]):
         if len(tokens) == 1:
-            return (
-                f"job `{job_id}` in {path} runs the suite runner with "
-                "no suites to run, so the required check would report "
-                "Success having tested nothing. " + GRAMMAR + "."
-            )
+            return (f"job `{job_id}` in {path} runs the suite runner with " "no suites to run, so the required check would report " "Success having tested nothing. " + GRAMMAR + ".")
         for arg in tokens[1:]:
             if not INVOCATION_RE.match(arg):
                 return (
-                    f"job `{job_id}` in {path} passes `{arg}` to the "
-                    "suite runner, which is not a suite invocation. "
+                    f"job `{job_id}` in {path} passes `{arg}` to the " "suite runner, which is not a suite invocation. "
                     + GRAMMAR + "."
                 )
         return None
     parts = [p.strip() for p in cmd.split("&&")]
     if not parts or not parts[0]:
-        return (
-            f"job `{job_id}` in {path} has a test-command that "
-            "names no suite. " + GRAMMAR + "."
-        )
+        return (f"job `{job_id}` in {path} has a test-command that " "names no suite. " + GRAMMAR + ".")
     if not INVOCATION_RE.match(parts[0]):
         return (
-            f"job `{job_id}` in {path} has a test-command whose "
-            "first non-blank token is not a suite invocation. "
+            f"job `{job_id}` in {path} has a test-command whose " "first non-blank token is not a suite invocation. "
             + GRAMMAR + "."
         )
     for part in parts[1:]:
         if not INVOCATION_RE.match(part):
             return (
-                f"job `{job_id}` in {path} has a test-command whose "
-                "later invocations do not match the grammar. "
+                f"job `{job_id}` in {path} has a test-command whose " "later invocations do not match the grammar. "
                 + GRAMMAR + "."
             )
     return None
@@ -430,6 +330,13 @@ def base_git(base, *args):
         print(f"::error::BASE_SHA {base} cannot be read: {' '.join(args)} failed")
         sys.exit(1)
     return done.stdout
+
+
+(CONDITIONAL_JOBS, STEP_CONDITIONS, ALLOWED_INPUTS, KEEP_BASE_WORDS, CAP_BASE_WORDS,
+ PRODUCERS_MAY_CHANGE, NEEDS_THE_GATE, EXPRESSION_NAMES) = load_forms()
+# Every listed job whose form carries `if: always()` is an aggregator, so a new one is tied without being remembered.
+AGGREGATORS = sorted({(f, j) for (f, j, r), forms in CONDITIONAL_JOBS.items() if r is None and any(x.get("if") == "always()" for x in forms)})
+WAITER = {(f, g): w for (f, w), g in NEEDS_THE_GATE.items()}
 
 
 # The words every caller of `reusable` in the base commit passes as
@@ -515,11 +422,20 @@ def producer_parts(spec, kind, job_id, ident, base, current):
     return parts
 
 
+def runs_on_pull_request(spec):
+    events = spec.get("on", spec.get(True))
+    return bool(PULL_REQUEST_EVENTS & set(events if isinstance(events, (dict, list)) else [events]))
+
+
+def from_checkout(parts):
+    runs = [re.sub(r"(?m)^\s*[^\s()]+\)", "", str(v.get("run") or "")) for n, v in parts.items() if n.startswith("step ")]
+    return any(RUN_FROM_CHECKOUT.search(r) for r in runs)
+
+
 # The refusals of the producers that a condition of the file reads.
 def producer_refusals(base, path, spec):
     old = spec_at(base, path, False) if base else None
-    events = spec.get("on", spec.get(True))
-    runs_pr = bool(PULL_REQUEST_EVENTS & set(events if isinstance(events, (dict, list)) else [events]))
+    runs_pr = runs_on_pull_request(spec)
     found = []
     for job_id, job in spec["jobs"].items():
         if not isinstance(job, dict):
@@ -531,8 +447,7 @@ def producer_refusals(base, path, spec):
             if now is None:
                 found.append(f"job `{job_id}` in {path} reads `{kind}.{ident}.outputs`, which nothing in the file writes.")
                 continue
-            runs = [re.sub(r"(?m)^\s*[^\s()]+\)", "", str(v.get("run") or "")) for n, v in now.items() if n.startswith("step ")]
-            if runs_pr and any(RUN_FROM_CHECKOUT.search(r) for r in runs):
+            if runs_pr and from_checkout(now):
                 found.append(f"{what} in {path} writes outputs a condition reads and runs a script of the repository from the "
                              "checkout of the pull request, which the pull request writes. Read it from the base commit "
                              "with `git show HEAD^1:<path>`, as the scope steps do.")
@@ -549,6 +464,39 @@ def producer_refusals(base, path, spec):
                              f"commit's in: {', '.join(diff)}. A condition on an output is only as sound as what writes it, "
                              f"so a pull request cannot change both. To change it on purpose, list (`{path}`, `{ident}`) in "
                              "PRODUCERS_MAY_CHANGE of this script in a pull request of its own, then change it in the next.")
+    return found
+
+
+# What the listed aggregators leave when the pull request takes them away or lets another job
+# stand for them. With a base named, the base's workflow is read for each entry, whatever the
+# working tree holds: an aggregator the base has and the pull request has not (the job, or its
+# whole file) is refused unless a pull request of its own listed it. And no other job carries
+# the name of the check an aggregator answers with, wherever the aggregator is.
+def effective_name(job_id, job):
+    name = job.get("name")
+    return (name if isinstance(name, str) and name.strip() else job_id).strip().casefold()
+
+
+def aggregator_gaps(base, specs):
+    found = []
+    for wpath, gate_id in AGGREGATORS:
+        waiter = WAITER.get((wpath, gate_id), "the jobs that wait")
+        held = ((spec_at(base, wpath, False).get("jobs") or {}).get(gate_id)) if base else None
+        here = (specs.get(wpath, {}).get("jobs") or {}).get(gate_id)
+        if isinstance(held, dict) and not isinstance(here, dict) and (wpath, gate_id) not in PRODUCERS_MAY_CHANGE:
+            found.append(f"`{gate_id}` of {wpath} answers for `{waiter}` in the base commit and is gone from this pull request, with the job or the whole file. Take it away in a pull request of its own, listed in PRODUCERS_MAY_CHANGE first.")
+        shown = (here if isinstance(here, dict) else held)
+        shown = effective_name(gate_id, shown) if isinstance(shown, dict) else None
+        for path, spec in specs.items():
+            for job_id, job in (spec.get("jobs") or {}).items():
+                if shown is None or not isinstance(job, dict) or (path, job_id) == (wpath, gate_id):
+                    continue
+                if effective_name(job_id, job) == shown:
+                    found.append(f"job `{job_id}` in {path} is named `{shown}`, the check `{gate_id}` of {wpath} answers with: another job cannot stand for it.")
+                raw = str(job.get("name", ""))
+                kept = ((spec_at(base, path, False).get("jobs") or {}).get(job_id) or {}).get("name") if base else raw
+                if "${{" in raw and not ((path, job_id, raw) in EXPRESSION_NAMES and kept == raw):
+                    found.append(f"job `{job_id}` in {path} has a name with an expression, which can resolve to `{shown}`. Only the exact name the forms list for it, and the base commit's job already has, is accepted.")
     return found
 
 
@@ -622,12 +570,45 @@ def refused_inputs(job, reusable, path, job_id):
     return found
 
 
+# The aggregators listed in NEEDS_THE_GATE answer for the job that waits for others: a job whose
+# dependency fails is skipped, and a skipped job reports Success. Each listed aggregator that the
+# file holds is tied to the base commit's copy like a producer, whether or not the job that
+# waits still has `needs:`, so taking the `needs:` away does not release it: what it can see
+# (the job, the `env` and `defaults` of the workflow, the reusable it calls) is the base's, a
+# script of the checkout is refused, and one the base does not hold is refused unless a pull
+# request of its own listed it in PRODUCERS_MAY_CHANGE. A job that waits needs its gate.
+def aggregator_refusals(base, path, spec):
+    found, jobs = [], spec["jobs"]
+    old = spec_at(base, path, False) if base else None
+    runs_pr = runs_on_pull_request(spec)
+    wait = lambda j: set(j["needs"] if isinstance(j.get("needs"), list) else [j["needs"]]) if isinstance(j, dict) and j.get("needs") else set()  # noqa: E731
+    for wpath, gate_id in AGGREGATORS:
+        waiter = WAITER.get((wpath, gate_id), "the jobs that wait")
+        job, gate = jobs.get(waiter), jobs.get(gate_id)
+        tail = "without it the job is skipped when a job it needs fails, and a skipped job reports Success."
+        if wpath != path or (not isinstance(gate, dict) and not wait(job)):
+            continue
+        if not isinstance(gate, dict):
+            found.append(f"job `{waiter}` in {path} waits for other jobs and no `{gate_id}` job answers for it: {tail}")
+            continue
+        if wait(job) and (gate.get("if") != "always()" or "continue-on-error" in gate or not (wait(job) | {waiter}) <= wait(gate)):
+            found.append(f"job `{waiter}` in {path} waits for other jobs, which is accepted only beside a `{gate_id}` job with `if: always()` that needs all of them and `{waiter}`: {tail}")
+        now = producer_parts(spec, "job", gate_id, gate_id, base, True)
+        if from_checkout(now) and runs_pr:
+            found.append(f"`{gate_id}` in {path} answers for `{waiter}` and runs a script of the repository from the checkout of the pull request, which the pull request writes.")
+        before = producer_parts(old, "job", gate_id, gate_id, base, False) if base else {}
+        if base and before is None and (path, gate_id) not in PRODUCERS_MAY_CHANGE:
+            found.append(f"`{gate_id}` in {path} answers for `{waiter}` and is new in this pull request, so the base commit cannot vouch for it. List (`{path}`, `{gate_id}`) in PRODUCERS_MAY_CHANGE of the forms in a pull request of its own first.")
+        diff = [] if not before else list(dict.fromkeys(n for n in [*now, *before] if now.get(n) != before.get(n)))
+        if diff and (path, gate_id) not in PRODUCERS_MAY_CHANGE:
+            found.append(f"`{gate_id}` in {path} answers for `{waiter}`, and what it can see differs from the base commit's in: {', '.join(diff)}. A pull request cannot change the job that answers for it: list (`{path}`, `{gate_id}`) in PRODUCERS_MAY_CHANGE of the forms in a pull request of its own, then change it in the next.")
+    return found
+
+
 # The refusal of the first switch the job carries, or None. `reusable` is
 # the local reusable the job calls, None for a job that runs steps.
 def job_switch(path, job_id, job, reusable):
     forms = CONDITIONAL_JOBS.get((path, job_id, reusable), [])
-    if isinstance(forms, dict):
-        forms = [forms]
 
     # The whole form is compared, not each key by itself: a listed job that
     # keeps its `needs:` and loses its `if: always()` would be skipped, and so
@@ -708,6 +689,7 @@ def main():
 
     callers = 0
     violations = []
+    specs = {}
     base = base_sha()
 
     for path in files:
@@ -715,10 +697,8 @@ def main():
             with open(path) as fh:
                 spec = yaml.load(fh, Loader=LOADER)
         except yaml.YAMLError as e:
-            # Silent skip would hide a misconfigured workflow that
-            # the caller is going to learn about elsewhere in CI
-            # for the wrong reason. Warning annotation instead.
-            print(f"::warning file={path}::skipped: YAML parse error: {e}")
+            # A workflow that cannot be read is one whose switches are unknown.
+            violations.append((path, "", f"{path} cannot be read as YAML ({e}), so what it runs is unknown"))
             continue
         if not isinstance(spec, dict):
             continue
@@ -726,6 +706,8 @@ def main():
         if not isinstance(jobs, dict):
             continue
         violations.extend((path, "", msg) for msg in producer_refusals(base, path, spec))
+        specs[path] = spec
+        violations.extend((path, "", msg) for msg in aggregator_refusals(base, path, spec))
         for job_id, job in jobs.items():
             if not isinstance(job, dict):
                 continue
@@ -797,6 +779,11 @@ def main():
             if err is not None:
                 violations.append((path, job_id, err))
 
+    violations.extend(("", "", msg) for msg in aggregator_gaps(base, specs))
+    if violations:
+        for path, job_id, msg in violations:
+            print(f"::error file={path}::{msg}")
+        sys.exit(1)
     if callers == 0:
         print(
             "::error::no workflow calls reusable-shell-ci, so the "
@@ -806,10 +793,6 @@ def main():
             "A required check that is never reported blocks a pull "
             "request, but nothing here would have said why."
         )
-        sys.exit(1)
-    if violations:
-        for path, job_id, msg in violations:
-            print(f"::error file={path}::{msg}")
         sys.exit(1)
     print(
         "every reusable-shell-ci caller passes a test-command that "

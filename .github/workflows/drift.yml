@@ -62,7 +62,7 @@ jobs:
     # ubuntu-latest on purpose: this job only asks GitHub or git for data and
     # compares strings, so a new image cannot change its verdict.
     runs-on: ubuntu-latest
-    # Bound: 9 to 10s measured, and it makes fourteen network fetches. Ten
+    # Bound: 9 to 10s measured, and it makes twenty-eight network fetches (seven files, four siblings). Ten
     # times that, rounded up, never under ten minutes; the six-hour default
     # is what a hang would otherwise cost.
     timeout-minutes: 10

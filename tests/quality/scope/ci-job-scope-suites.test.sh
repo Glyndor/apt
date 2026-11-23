@@ -119,6 +119,11 @@ check "a pull request that edits the resolver runs every suite" "$ALL" "$(decide
 repo runner; echo more >> "$R/tests/ci/suites/check-suite-completeness.test.sh"; merge
 check "a pull request that edits the runner runs every suite" "$ALL" "$(decide)"
 
+repo workflow; mkdir -p "$R/.github/workflows"; echo 'name: x' > "$R/.github/workflows/called.yml"; merge
+check "a pull request that adds a workflow runs every suite" "$ALL" "$(decide)"
+repo action; mkdir -p "$R/.github/actions/setup"; echo 'name: x' > "$R/.github/actions/setup/action.yml"; merge
+check "a pull request that adds an action runs every suite" "$ALL" "$(decide)"
+
 # --- the decision fails open -----------------------------------------------------
 
 repo rename; git -C "$R" mv scripts/b/y.sh scripts/b/renamed.sh; merge

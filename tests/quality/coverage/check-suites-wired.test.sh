@@ -11,6 +11,8 @@
 # it, so a fixture that fails for another reason cannot pass for this one.
 #
 # Requires: python3 with PyYAML, git.
+# The fixtures are YAML in single quotes; the expressions in them are GitHub's, not the shell's.
+# shellcheck disable=SC2016,SC2001
 set -u
 
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -50,7 +52,22 @@ gate() {
 		mkdir -p "$1/scripts/quality/coverage"; printf '%s\n' "$2" > "$1/scripts/quality/coverage/suite-exemptions.txt"
 	fi
 	if [ -n "${3+set}" ]; then base="$WORK/base-exemptions"; printf '%s\n' "$3" > "$base"; fi
-	out="$(SUITE_EXEMPTIONS_BASE="$base" bash "$GATE" "$1" 2>&1)"; rc=$?
+	local named="${GATE_BASE-}"
+	if [ -z "$named" ] && git -C "$1" rev-parse -q --verify HEAD^2 >/dev/null 2>&1; then named="$(git -C "$1" rev-parse HEAD^1)"; fi
+	out="$(BASE_SHA="$named" GITHUB_EVENT_NAME="${GATE_EVENT-}" SUITE_EXEMPTIONS_BASE="$base" bash "$GATE" "$1" 2>&1)"; rc=$?
+}
+
+
+# The gate that answers for a job that waits for others: it runs whatever happened, needs the job,
+# reads its result and fails on anything but success.
+GATE() { # <job> [needs...]: every job it needs has its result read, and anything but success fails
+	local all=("$@") name env="" run=""
+	for name in "${all[@]}"; do
+		env+="          RESULT_${name//-/_}: \${{ needs.${name}.result }}"$'\n'
+		run+="[ \"\$RESULT_${name//-/_}\" = success ] && "
+	done
+	printf '  gate:\n    if: always()\n    needs: [%s]\n    runs-on: x\n    steps:\n      - env:\n%s        run: '"'"'%s || exit 1'"'"'\n' \
+		"$(IFS=,; echo "${all[*]}" | sed 's/,/, /g')" "$env" "${run% && }"
 }
 
 # --- the green case, and a suite or the watcher dropped ---------------------
@@ -112,13 +129,188 @@ gate "$(tree needs "$SUITES" '    needs: noop
     steps: [{run: echo hi}]
 ')"
 # shellcheck disable=SC2016 # the backticks are the literal text of the message
-check "the suites of a caller with needs: do not count" "3" \
-	"$(said 'tests.yml#shell: the job has `needs:`, and is skipped when a job it needs is')"
+check "the suites of a caller that needs a conditional job do not count" "3" \
+	"$(said 'tests.yml#shell: the job has `needs:`, and is skipped when a job it needs is; `noop` carries a condition and can be skipped')"
 
-gate "$(tree step-needs "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.sh' '' '    needs: shell
+# A `needs:` on jobs that carry no condition is the way the cheap checks run before
+# the suite: those jobs can fail but GitHub never skips them, so the suites are
+# run whenever the pull request could be green.
+gate "$(tree needs-clean "$SUITES" '    needs: [cheap]
+  cheap:
+    runs-on: x
+    steps: [{run: echo hi}]
+'"$(GATE shell cheap)")"
+check "control: a caller that needs a job with no condition still counts" "0" "$rc"
+
+# What answers for a job that waits: a gate beside it. Each refusal is paired with the control above.
+CHEAP=$'  cheap:\n    runs-on: x\n    steps: [{run: echo hi}]\n'
+gate "$(tree needs-no-gate "$SUITES" $'    needs: [cheap]\n'"$CHEAP")"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a job that waits for others with no gate beside it does not count" "3" "$(said 'no `gate` job with `if: always()` answers for it')"
+gate "$(tree gate-no-if "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(GATE shell cheap | grep -v '    if: always()')")"
+check "a gate that does not run whatever happened does not count" "3" "$(said 'no `gate` job with `if: always()` answers for it')"
+gate "$(tree gate-coe "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(GATE shell cheap | sed 's/^    runs-on: x$/    continue-on-error: true\n&/')")"
+check "a gate that may fail without failing the run does not count" "3" "$(said 'no `gate` job with `if: always()` answers for it')"
+gate "$(tree gate-no-read "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(GATE shell cheap | sed 's/needs\.shell\.result/needs.cheap.result/')")"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a gate that does not read the result of the job does not count" "3" "$(said 'does not need `shell` and every job it waits for, read their results and fail on anything but success')"
+gate "$(tree gate-no-fail "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(GATE shell cheap | sed 's/exit 1/exit 0/')")"
+check "a gate that does not fail on anything but success does not count" "3" "$(said 'read their results and fail on anything but success')"
+gate "$(tree gate-no-needs "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(GATE shell cheap | sed 's/needs: \[shell, cheap\]/needs: [cheap]/')")"
+check "a gate that does not wait for the job does not count" "3" "$(said 'read their results and fail on anything but success')"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+gate "$(tree dep-external "$SUITES" $'    needs: [cheap]\n  cheap:\n    uses: Glyndor/elsewhere/.github/workflows/x.yml@v1\n'"$(GATE shell cheap)")"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a dependency that calls a workflow outside the repository does not count" "3" "$(said 'is not a local reusable workflow and is not read')"
+d="$(tree dep-reusable-if "$SUITES" $'    needs: [cheap]\n  cheap:\n    uses: ./.github/workflows/reusable-cond.yml\n'"$(GATE shell cheap)")"
+printf 'on:\n  workflow_call:\njobs:\n  inner:\n    if: github.actor == 1\n    runs-on: x\n    steps: [{run: echo hi}]\n' > "$d/.github/workflows/reusable-cond.yml"
+gate "$d"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a dependency that calls a local reusable with a conditional job does not count" "3" "$(said 'whose job `inner` carries a condition and can be skipped')"
+sed -i '/    if: github.actor == 1/d' "$d/.github/workflows/reusable-cond.yml"
+gate "$d"
+check "control: the same dependency with no condition in the reusable counts" "0" "$rc"
+d="$(tree dep-reusable-pr "$SUITES" $'    needs: [cheap]\n  cheap:\n    uses: ./.github/workflows/reusable-cond.yml\n'"$(GATE shell cheap)")"
+printf 'on:\n  workflow_call:\njobs:\n  inner:\n    if: github.event_name == '"'"'pull_request'"'"'\n    runs-on: x\n    steps: [{run: echo hi}]\n' > "$d/.github/workflows/reusable-cond.yml"
+gate "$d"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a dependency whose reusable job runs only on pull requests does not count while the workflow also runs on push" "3" "$(said 'whose job `inner` carries a condition and can be skipped')"
+sed -i '/^  push:$/d' "$d/.github/workflows/tests.yml"
+gate "$d"
+check "and counts in a workflow that runs on pull requests and nothing else" "0" "$rc"
+d="$(tree dep-reusable-gone "$SUITES" $'    needs: [cheap]\n  cheap:\n    uses: ./.github/workflows/reusable-gone.yml\n'"$(GATE shell cheap)")"
+gate "$d"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a dependency that calls a reusable that cannot be read does not count" "3" "$(said 'which cannot be read')"
+
+gate "$(tree gate-json "$SUITES" $'    needs: [cheap]\n'"$CHEAP"$'  gate:\n    if: always()\n    needs: [shell, cheap]\n    runs-on: x\n    steps:\n      - env:\n          NEEDS: ${{ toJSON(needs) }}\n        run: |\n          python3 -I - <<PY\n          import json, os, sys\n          bad = [j for j, i in json.loads(os.environ["NEEDS"]).items() if i.get("result") != "success"]\n          sys.exit(1) if bad else None\n          PY\n')"
+check "control: a gate that reads the whole of needs and exits on anything but success counts" "0" "$rc"
+# The contract fixes everything that changes what runs, and refuses a property it does not know.
+G_OK="$(GATE shell cheap)"
+plant() { printf '%s\n' "$G_OK" | sed "$1"; }
+gate "$(tree gate-shell "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(plant '/^        run:/i\        shell: sh -c exit {0}')")"
+check "a gate step that runs under a shell that ignores its script is refused" "3" "$(said 'a step of the `gate` job carries `shell`')"
+gate "$(tree gate-step-coe "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(plant '/^        run:/i\        continue-on-error: true')")"
+check "a gate step that may fail is refused" "3" "$(said 'a step of the `gate` job carries `continue-on-error`')"
+gate "$(tree gate-defaults "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(plant '/^    runs-on:/a\    defaults: {run: {shell: sh}}')")"
+check "a gate with defaults of its own is refused" "3" "$(said 'the `gate` job carries `defaults`')"
+gate "$(tree gate-strategy "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(plant '/^    runs-on:/a\    strategy: {matrix: {a: [1]}}')")"
+check "a gate with a property the contract does not know is refused" "3" "$(said 'the `gate` job carries `strategy`')"
+d="$(tree wf-defaults "$SUITES" $'    needs: [cheap]\n'"$CHEAP$G_OK")"; sed -i 's/^jobs:/defaults: {run: {shell: sh}}\njobs:/' "$d/.github/workflows/tests.yml"
+gate "$d"
+check "a workflow with defaults beside a gate is refused" "3" "$(said 'the workflow carries `defaults`')"
+gate "$(tree waiter-coe "$SUITES" $'    needs: [cheap]\n    continue-on-error: true\n'"$CHEAP$G_OK")"
+check "a job that waits and may fail is refused" "3" "$(said 'the job that waits carries `continue-on-error`')"
+gate "$(tree dep-defaults "$SUITES" $'    needs: [cheap]\n'"$(printf '%s\n' "$CHEAP" | sed '/^    runs-on:/a\    defaults: {run: {shell: sh}}')"$'\n'"$G_OK")"
+check "a job it waits for with defaults of its own is refused" "3" "$(said 'carries a condition and can be skipped')"
+gate "$(tree gate-no-dep "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(GATE shell)")"
+check "a gate that waits for the job but not for what the job waits for does not count" "3" "$(said 'does not need `shell` and every job it waits for')"
+gate "$(tree gate-no-dep-read "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(GATE shell cheap | sed 's/needs\.cheap\.result/needs.shell.result/')")"
+check "a gate that does not read the result of what the job waits for does not count" "3" "$(said 'does not need `shell` and every job it waits for')"
+
+# The gate answers for the job, so it is the base commit's gate unless the pull request is the one that changes it.
+d="$(tree gate-base "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(GATE shell cheap)")"
+git -C "$d" init -q -b main; git -C "$d" config user.name t; git -C "$d" config user.email t@example.invalid; git -C "$d" config commit.gpgsign false
+git -C "$d" add -A; git -C "$d" commit -qm base; git -C "$d" checkout -q -b pr
+sed -i "s/exit 1/exit 1 # same/" "$d/.github/workflows/tests.yml"; git -C "$d" commit -qam change; git -C "$d" checkout -q main; git -C "$d" merge -q --no-ff pr -m merge
+gate "$d"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a gate that differs from the base commit's does not count" "3" "$(said 'the `gate` job differs from the base commit')"
+git -C "$d" reset -q --hard HEAD^1; git -C "$d" checkout -q pr; git -C "$d" checkout -q main; git -C "$d" merge -q --no-ff pr -m merge2 2>/dev/null || true
+d2="$(tree gate-base-same "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(GATE shell cheap)")"
+git -C "$d2" init -q -b main; git -C "$d2" config user.name t; git -C "$d2" config user.email t@example.invalid; git -C "$d2" config commit.gpgsign false
+git -C "$d2" add -A; git -C "$d2" commit -qm base; git -C "$d2" checkout -q -b pr; echo x > "$d2/other.txt"; git -C "$d2" add -A; git -C "$d2" commit -qm change; git -C "$d2" checkout -q main; git -C "$d2" merge -q --no-ff pr -m merge
+gate "$d2"
+check "control: the gate of the base commit, unchanged, counts" "0" "$rc"
+d3="$(tree gate-base-new "$SUITES" $'    needs: [cheap]\n'"$CHEAP")"
+git -C "$d3" init -q -b main; git -C "$d3" config user.name t; git -C "$d3" config user.email t@example.invalid; git -C "$d3" config commit.gpgsign false
+git -C "$d3" add -A; git -C "$d3" commit -qm base; git -C "$d3" checkout -q -b pr
+printf '%s' "$(GATE shell cheap)" >> "$d3/.github/workflows/tests.yml"; git -C "$d3" commit -qam change; git -C "$d3" checkout -q main; git -C "$d3" merge -q --no-ff pr -m merge
+gate "$d3"
+check "a gate that the pull request brings, and the base does not hold, does not count" "3" "$(said 'the `gate` job is not in the base commit')"
+
+# The base is the one the event names, never one read off the shape of the checkout.
+GATE_EVENT=pull_request GATE_BASE="" gate "$(tree gate-no-base "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(GATE shell cheap)")"
+check "a pull request with no BASE_SHA is refused, not left uncompared" "1" "$rc"
+check "and the refusal says the base is empty" "3" "$(said 'BASE_SHA is empty in a pull request')"
+GATE_EVENT=pull_request GATE_BASE=not-a-commit gate "$d2"
+check "a BASE_SHA that is not a commit id is refused" "1" "$rc"
+check "and the refusal says it is not a commit id" "3" "$(said "is not a commit id")"
+GATE_EVENT=pull_request GATE_BASE=0123456789abcdef0123456789abcdef01234567 gate "$d2"
+check "a BASE_SHA that names a commit that does not exist is refused" "1" "$rc"
+check "and the refusal says the commit cannot be read" "3" "$(said 'cannot be read')"
+d4="$(tree gate-local "$SUITES" $'    needs: [cheap]\n'"$CHEAP$(GATE shell cheap)")"
+gate "$d4"
+check "with no base named outside a pull request the gate is not compared, and it counts" "0" "$rc"
+check "and the output says no base was compared" "1" "$(said 'the `gate` job is not compared with a base commit')"
+
+gate "$(tree needs-chain "$SUITES" '    needs: [second]
+  second:
+    needs: first
+    runs-on: x
+    steps: [{run: echo hi}]
+  first:
+    runs-on: x
+    steps: [{run: echo hi}]
+'"$(GATE shell first second)")"
+check "control: a chain of jobs with no condition counts" "0" "$rc"
+
+gate "$(tree needs-deep "$SUITES" '    needs: [second]
+  second:
+    needs: first
+    runs-on: x
+    steps: [{run: echo hi}]
+  first:
+    if: github.actor == 1
+    runs-on: x
+    steps: [{run: echo hi}]
+')"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a condition two jobs up the chain is found" "3" \
+	"$(said '`first` carries a condition and can be skipped')"
+
+gate "$(tree needs-coe "$SUITES" '    needs: [cheap]
+  cheap:
+    continue-on-error: true
+    runs-on: x
+    steps: [{run: echo hi}]
+')"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a dependency that may fail does not count" "3" "$(said '`cheap` carries a condition and can be skipped')"
+
+gate "$(tree needs-missing "$SUITES" '    needs: [nowhere]
+')"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a dependency that is not a job of the workflow does not count" "3" \
+	"$(said '`nowhere` is not a job of this workflow')"
+
+gate "$(tree needs-cycle "$SUITES" '    needs: [a]
+  a:
+    needs: [b]
+    runs-on: x
+    steps: [{run: echo hi}]
+  b:
+    needs: [a]
+    runs-on: x
+    steps: [{run: echo hi}]
+')"
+# shellcheck disable=SC2016 # the backticks are the literal text of the message
+check "a cycle of dependencies does not count" "3" "$(said 'needs itself')"
+
+gate "$(tree step-needs "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.sh' '  noop:
+    if: false
+    runs-on: x
+    steps: [{run: echo hi}]
+' '    needs: noop
 ')")"
 # shellcheck disable=SC2016 # the backticks are the literal text of the message
-check "a suite in a step of a job with needs: does not count" "1" "$(said 'tests.yml#other: the job has `needs:`')"
+check "a suite in a step of a job that needs a conditional job does not count" "1" "$(said 'tests.yml#other: the job has `needs:`')"
+gate "$(tree step-needs-clean "./tests/a.test.sh ./$WATCHER" "$(step './tests/area/b.test.sh' '  cheap:
+    runs-on: x
+    steps: [{run: echo hi}]
+' '    needs: cheap
+')"$'\n'"$(GATE other cheap)")"
+check "control: a suite in a step of a job that needs a job with no condition counts" "0" "$rc"
 
 # A line whose verdict a shell operator can throw away does not count, nor
 # does a block that may hold the path as data or runs without errexit.
@@ -305,6 +497,7 @@ git init -q -b main
 mkdir -p "$repo/scripts/quality/coverage" "$repo/scripts/quality/lint"; cp "$GATE" "$repo/scripts/quality/coverage/"
 # The other two scripts the first step takes; this suite exercises only the checker.
 printf '#!/usr/bin/env bash\n' > "$repo/scripts/quality/lint/check-test-job-not-switchable.sh"
+printf '{}\n' > "$repo/scripts/quality/lint/switch-rule-forms.json"
 printf '#!/usr/bin/env bash\n' > "$repo/scripts/quality/lint/check-tooling-isolation.sh"
 printf '# nothing exempt\n' > "$repo/scripts/quality/coverage/suite-exemptions.txt"
 git add -A; git commit -qm base; base="$(git rev-parse HEAD)"

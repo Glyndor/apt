@@ -176,6 +176,7 @@ jobs:
         ./tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
         ./tests/quality/lint/check-test-job-not-switchable-steps.test.sh
         ./tests/quality/lint/check-test-job-not-switchable-pins.test.sh
+        ./tests/quality/lint/check-test-job-not-switchable-forms.test.sh
         ./tests/quality/lint/check-test-job-not-switchable-context.test.sh
         ./tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
         ./tests/quality/lint/check-tooling-isolation.test.sh

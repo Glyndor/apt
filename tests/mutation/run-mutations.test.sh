@@ -150,6 +150,9 @@ printf '#!/usr/bin/env bash\ngrep -qF "[a, b]" "$(dirname "$0")/../.github/workf
 # leading tabs: the runner has to read it the way python will.
 printf '#!/usr/bin/env bash\npython3 - "$@" <<-'"'"'PY'"'"'\n\timport sys\n\tif len(sys.argv) > 1 and sys.argv[1] == "bad":\n\t    sys.exit(1)\n\tprint("ok")\n\tPY\n' > "$TOY/scripts/hdd.sh"
 printf '#!/usr/bin/env bash\nHERE="$(cd "$(dirname "$0")/.." && pwd)"\nrc=0\nbash "$HERE/scripts/hdd.sh" bad >/dev/null 2>&1 || rc=$?\n[ "$rc" -eq 1 ] || { echo "FAIL  the dashed python guard did not refuse"; exit 1; }\n' > "$TOY/tests/hdd.test.sh"
+# A data file and a suite that reads it, for the mutations that target JSON.
+printf '{"suites": "alpha"}\n' > "$TOY/.github/w.json"
+printf '#!/usr/bin/env bash\ngrep -qF alpha "$(dirname "$0")/../.github/w.json" || { echo "FAIL  the data names its suites"; exit 1; }\n' > "$TOY/tests/j.test.sh"; chmod +x "$TOY/tests/j.test.sh"
 git -C "$TOY" init -q .
 git -C "$TOY" add -A
 git -C "$TOY" -c user.name=t -c user.email=t@example.invalid commit -q -m base
@@ -221,6 +224,13 @@ check "a mutation of a workflow that its suite notices passes the runner" "0" "$
 printf '%s\t%s\t%s\t%s\t%s\n' yml-syntax .github/workflows/w.yml "[a, b]" "[a, b" tests/w.test.sh >"$CATALOG"
 check "a mutation that breaks a workflow's YAML fails the runner" "1" "$(run)"
 check "and says the workflow has a syntax error" "1" "$(has 'syntax error' "$WORK/out")"
+
+# A data file is mutated like a script, and its syntax is checked as JSON.
+printf '%s\t%s\t%s\t%s\t%s\n' json-dies .github/w.json alpha omega tests/j.test.sh >"$CATALOG"
+check "a mutation of a data file that its suite notices passes the runner" "0" "$(run)"
+printf '%s\t%s\t%s\t%s\t%s\n' json-syntax .github/w.json '"alpha"}' '"alpha' tests/j.test.sh >"$CATALOG"
+check "a mutation that breaks a data file's JSON fails the runner" "1" "$(run)"
+check "and says the file has a syntax error" "1" "$(has 'syntax error' "$WORK/out")"
 
 # The python of a heredoc is part of the file: `bash -n` cannot see it, and a
 # mutation that breaks it would read as a kill of a guard that was never removed.

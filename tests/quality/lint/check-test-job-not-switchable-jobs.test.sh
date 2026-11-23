@@ -166,7 +166,7 @@ check "and it is refused for the if:, naming the reusable and the job" "1" \
 # The gate of audit.yml keeps its whole form. Listing `needs:` and `if:` apart would
 # let a gate lose its `if: always()` and keep passing the rule: the gate is then
 # skipped when a requirement fails, and GitHub counts that as passed.
-GATE=$'name: Audit\non: pull_request\njobs:\n  scope:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  audit:\n    needs: scope\n    if: ${{ !cancelled() && needs.scope.outputs.run_audit != \'false\' }}\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  gate:\n%s    runs-on: ubuntu-latest\n    steps:\n      - run: true\n'
+GATE=$'name: Audit\non: pull_request\njobs:\n  scope:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  audit:\n    needs: scope\n    if: ${{ !cancelled() && needs.scope.outputs.run_audit != \'false\' }}\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  gate:\n    name: audit gate\n%s    runs-on: ubuntu-latest\n    steps:\n      - run: true\n'
 d="$(new)"; sound "$d"; printf -v body "$GATE" $'    if: always()\n    needs: [scope, audit]\n'; workflow "$d" audit.yml "$body"
 out="$(run_in "$d")"; rc=$?
 check "the gate of the audit with its whole form is accepted" "0" "$rc"
@@ -189,16 +189,21 @@ check "the gate of the audit with another condition is refused" "1" "$rc"
 check "and it is refused for the if:, naming the job" "1" \
 	"$(said "$out" 'job `gate` in .github/workflows/audit.yml carries a job-level `if:`')"
 
-# The sweep of mutations: the job that runs the entries and the gate that tells a skipped
-# sweep from one that did not run, with the condition the workflow will carry.
-SWEEP=$'name: Mutation\non: pull_request\njobs:\n  decide:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  mutations:\n    needs: decide\n%s    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  gate:\n    needs: [decide, mutations]\n    if: always()\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n'
-d="$(new)"; sound "$d"; printf -v body "$SWEEP" $'    if: ${{ !cancelled() && needs.decide.outputs.run != \'false\' }}\n'; workflow "$d" mutation.yml "$body"
+# The suite and the gate of a repository that waits for the cheap checks first: `needs:` on
+# jobs that GitHub never skips is not a switch, and the gate keeps its whole form.
+CHEAP='dco, empty-diff, commit-identity, secret-scan, folder-limit, line-limit, workflow-lint'
+WAIT=$'name: Tests\non: pull_request\njobs:\n  shell:\n    needs: [%s]\n    uses: ./.github/workflows/reusable-shell-ci.yml\n    with:\n      test-command: ./tests/ci/suites/check-suite-completeness.test.sh ./tests/a.test.sh\n  gate:\n    name: audit gate\n%s    runs-on: ubuntu-latest\n    steps:\n      - run: true\n'
+d="$(new)"; sound "$d"; cp "$HERE/.github/workflows/reusable-shell-ci.yml" "$d/.github/workflows/"
+printf -v body "$WAIT" "$CHEAP" $'    if: always()\n    needs: ['"$CHEAP, shell"$']\n'; workflow "$d" tests.yml "$body"
 out="$(run_in "$d")"; rc=$?
-check "the mutation sweep that skips only on an explicit false is accepted" "0" "$rc"
-d="$(new)"; sound "$d"; printf -v body "$SWEEP" $'    if: ${{ !cancelled() && needs.decide.outputs.run == \'false\' }}\n'; workflow "$d" mutation.yml "$body"
+check "the suite that waits for the cheap checks, and its gate, are accepted" "0" "$rc"
+printf -v body "$WAIT" "$CHEAP, folder-limit" $'    if: always()\n    needs: ['"$CHEAP, shell"$']\n'; workflow "$d" tests.yml "$body"
 out="$(run_in "$d")"; rc=$?
-check "the same sweep with the condition turned round is refused" "1" "$rc"
-check "and it is refused for the if:, naming the job" "1" \
-	"$(said "$out" 'job `mutations` in .github/workflows/mutation.yml carries a job-level `if:`')"
+check "the suite that waits for one more job is refused" "1" "$rc"
+printf -v body "$WAIT" "$CHEAP" $'    needs: ['"$CHEAP, shell"$']\n'; workflow "$d" tests.yml "$body"
+out="$(run_in "$d")"; rc=$?
+check "the gate of the suite without its if: always() is refused" "1" "$rc"
+check "and it is refused for the missing form, naming the job" "1" \
+	"$(said "$out" 'job `gate` in .github/workflows/tests.yml lacks the whole form')"
 
 finish

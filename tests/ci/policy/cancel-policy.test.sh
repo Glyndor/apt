@@ -8,6 +8,8 @@
 #
 # Workflows that only ever run for pull requests, and ones that serialise
 # publication with `cancel-in-progress: false`, are not in scope.
+# The planted workflows are written with printf in single quotes, and GitHub expressions stay literal.
+# shellcheck disable=SC2016
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -108,6 +110,36 @@ check "the planted tree has exactly the three offences" "3" "$(printf '%s\n' "$p
 
 live="$(ref_groups_not_per_run "$HERE/.github/workflows")"
 check "no live workflow that can run on a push shares its group between pushes" "" "$live"
+
+# --- the security checks are only ever replaced by a newer run of the same pull request ---
+#
+# The audit, the secret scan, the commit identity and the sign-off count for merging, and a
+# run that is cancelled is not a pass. They may be cancelled only by a newer run of the SAME
+# pull request, which runs them again on the newer commit: a workflow that holds one and
+# cancels unconditionally has to say, in its group, that outside a pull request every run
+# is its own.
+SECURITY_JOB='^  (dco|commit-identity|secret-scan|audit|brew-audit):|uses: .*reusable-dco'
+# One line per offence: a workflow with a security job that can run outside a pull request (or is
+# called by one that does), cancels, and whose group is not per run.
+security_cancels_across_runs() { # <workflows dir>
+	local f
+	for f in "$1"/*.yml; do
+		[ -f "$f" ] || continue
+		grep -qE "$SECURITY_JOB" "$f" || continue
+		grep -qE '^  (push|schedule|workflow_call|merge_group):' "$f" || continue
+		grep -qE '^[[:space:]]*cancel-in-progress:[[:space:]]*(true|\$\{\{ *github\.event_name)' "$f" || continue
+		grep -qF "$PER_RUN" "$f" && continue
+		grep -qE '^[[:space:]]*group:.*github\.run_id' "$f" && continue
+		printf '%s\n' "$(basename "$f")"
+	done
+}
+mkdir -p "$WORK/security"
+printf 'on:\n  pull_request:\n  push:\nconcurrency:\n  group: s-${{ github.workflow }}\n  cancel-in-progress: true\njobs:\n  secret-scan:\n    runs-on: x\n' > "$WORK/security/shared.yml"
+printf 'on:\n  pull_request:\nconcurrency:\n  group: s-${{ github.event_name == '"'"'pull_request'"'"' && github.ref || github.run_id }}\n  cancel-in-progress: true\njobs:\n  secret-scan:\n    runs-on: x\n' > "$WORK/security/per-run.yml"
+printf 'on:\n  pull_request:\nconcurrency:\n  group: s-${{ github.workflow }}\n  cancel-in-progress: true\njobs:\n  build:\n    runs-on: x\n' > "$WORK/security/no-security.yml"
+found="$(security_cancels_across_runs "$WORK/security")"
+check "a workflow that holds a security check and cancels in a shared group is reported" "shared.yml" "$found"
+check "no live workflow that holds a security check cancels it across runs" "" "$(security_cancels_across_runs "$HERE/.github/workflows")"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

@@ -122,6 +122,7 @@ tests/quality/lint/check-test-job-not-switchable-inputs.test.sh python3-yaml
 tests/quality/lint/check-test-job-not-switchable-jobs.test.sh python3-yaml
 tests/quality/lint/check-test-job-not-switchable-steps.test.sh python3-yaml
 tests/quality/lint/check-test-job-not-switchable-pins.test.sh python3-yaml
+tests/quality/lint/check-test-job-not-switchable-forms.test.sh python3-yaml
 tests/quality/lint/check-test-job-not-switchable-context.test.sh python3-yaml
 tests/quality/lint/check-test-job-not-switchable-checkout.test.sh python3-yaml
 tests/ci/policy/freshness-job-scope.test.sh python3-yaml

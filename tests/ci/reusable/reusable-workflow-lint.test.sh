@@ -77,6 +77,8 @@ src() { printf 'scripts/quality/%s/%s' "${DIR[$1]}" "$1"; }
 plant() { # <script> <tree>: the real script, at its folder
 	mkdir -p "$2/$(dirname "$(src "$1")")"
 	cp "$HERE/$(src "$1")" "$2/$(src "$1")"
+	# The switch rule reads its forms from the base commit, so the base holds them beside it.
+	mkdir -p "$2/scripts/quality/lint"; cp "$HERE/scripts/quality/lint/switch-rule-forms.json" "$2/scripts/quality/lint/"
 }
 gitt() { git -C "$WORK/t" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "$@"; }
 base_repo() { # $1=with|without the rule scripts in the base
@@ -230,6 +232,7 @@ legacy_base() { # the base carries every script and the list flat, as it was bef
 	mkdir -p "$WORK/t/scripts/quality"
 	for x in "${ALL_RULES[@]}"; do cp "$HERE/$(src "$x")" "$WORK/t/scripts/quality/$x"; done
 	printf '# nothing exempt\n' > "$WORK/t/scripts/quality/suite-exemptions.txt"
+	mkdir -p "$WORK/t/scripts/quality/lint"; cp "$HERE/scripts/quality/lint/switch-rule-forms.json" "$WORK/t/scripts/quality/lint/"
 	if [ -n "$extra" ]; then # a second file of that name somewhere else in the base
 		mkdir -p "$WORK/t/scripts/quality/old"
 		cp "$HERE/$(src "$extra")" "$WORK/t/scripts/quality/old/$extra"
