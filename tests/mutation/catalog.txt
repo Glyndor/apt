@@ -433,3 +433,9 @@ upgrade-hands-on-the-status-of-the-upgrade	keyring/upgrade/glyndor-upgrade	exit 
 reusable-drift-the-download-has-no-size-cap	scripts/monitoring/check-reusable-drift.sh	--max-time 60 --max-filesize 1048576 "$url"	--max-time 60 "$url"	tests/monitoring/check-reusable-drift.test.sh
 reusable-drift-a-redirect-may-leave-https	scripts/monitoring/check-reusable-drift.sh	--proto =https --proto-redir =https --connect-timeout 10	--proto =https --connect-timeout 10	tests/monitoring/check-reusable-drift.test.sh
 reusable-drift-any-protocol-is-fetched	scripts/monitoring/check-reusable-drift.sh	curl -fsSL --proto =https --proto-redir =https	curl -fsSL --proto-redir =https	tests/monitoring/check-reusable-drift.test.sh
+map-reads-suite	tests/quality/lint/check-test-job-not-switchable-inputs.test.sh	SCRIPT="$HERE/scripts/quality/lint/check-test-job-not-switchable.sh"	SCRIPT="$HERE/scripts/quality/lint/check-test-job-not-switchable.sh"; : "$HERE/.github/workflows/tests.yml"	tests/quality/scope/suite-scope-map.test.sh
+map-reads-rule	tests/quality/scope/suite-scope-map.test.sh	if glob.glob(os.path.join(root, wanted)) and not any(covers(p, wanted) for p in patterns):	if False:	tests/quality/scope/suite-scope-map.test.sh
+map-reads-folder	tests/quality/scope/suite-scope-map.test.sh	wanted = ref + "/*" if ref == ".github/workflows" else ref	wanted = ref	tests/quality/scope/suite-scope-map.test.sh
+map-covers-folder-pattern	tests/quality/scope/suite-scope-map.test.sh	return path.startswith(pattern[:-2])	return True	tests/quality/scope/suite-scope-map.test.sh
+map-covers-some-workflow	tests/quality/scope/suite-scope-map.test.sh	return pattern.startswith(".github/workflows/")  # the folder: some workflow	return True	tests/quality/scope/suite-scope-map.test.sh
+map-reads-root	tests/quality/scope/suite-scope-map.test.sh	reads = re.compile(r'\$\{?HERE	reads = re.compile(r'\$\{?HERX	tests/quality/scope/suite-scope-map.test.sh

@@ -10,7 +10,9 @@
 # empty or malformed test-command, a literal block scalar, the suppression
 # forms (`|| true`, `true ||`, `exit 0`) and the absence of any caller. The few
 # callers that carry a condition on purpose are accepted by their exact form
-# only.
+# only. The same switches on the jobs inside the reusables, on the jobs a
+# workflow defines itself and on their steps are held by the sibling suites
+# check-test-job-not-switchable-{jobs,steps,pins,context,checkout}.test.sh.
 #
 # Each case plants a workflow in a temporary tree shaped like a repository and
 # runs the script as it ships. Every refusal asserts which refusal, and every
@@ -348,6 +350,8 @@ fresh() { # $1=dir $2=workflow file $3=job $4=reusable $5=if value $6=needs valu
 	local lines
 	printf -v lines '    needs: %s\n    if: %s\n' "$6" "$5"
 	other_caller "$1" "$2" "$3" "$4" "$lines"
+	# The jobs the conditions read, with a step that writes the output.
+	printf '  %s:\n    runs-on: ubuntu-latest\n    steps:\n      - id: x\n        run: true\n' scope published-bytes-ready >> "$1/.github/workflows/$2"
 }
 
 d="$(new)"; caller "$d" './tests/one.test.sh'
