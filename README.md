@@ -56,10 +56,9 @@ apt list '?origin(Glyndor)'   # everything currently served
 The same software is also available through a
 [Homebrew tap](https://github.com/Glyndor/homebrew-tap) for macOS and Linux and a
 [Scoop bucket](https://github.com/Glyndor/scoop-bucket) for Windows, which carry
-podup only. Packages for Fedora and its relatives
-([`Glyndor/rpm`](https://github.com/Glyndor/rpm)) and for Arch Linux
-([`Glyndor/pacman`](https://github.com/Glyndor/pacman)) are in preparation and
-publish nothing yet.
+podup only. Fedora, RHEL and openSUSE are served from the
+[rpm repository](https://github.com/Glyndor/rpm), and Arch Linux from the
+[pacman repository](https://github.com/Glyndor/pacman).
 
 ## Supported releases
 
