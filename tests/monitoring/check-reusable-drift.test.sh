@@ -62,10 +62,11 @@ FILES=(
 mapfile -t SIBLINGS < <(
 	awk '/^SIBLINGS=\(/{inside=1;next} inside && /^\)/{exit} inside{gsub(/[[:space:]]/,"");sub(/^Glyndor\//,"");if($0!="")print}' "$SCRIPT"
 )
-[ "${#SIBLINGS[@]}" -eq 2 ] || {
+[ "${#SIBLINGS[@]}" -eq 4 ] || {
 	echo "FAIL - could not read SIBLINGS out of $SCRIPT (got ${#SIBLINGS[@]})" >&2
 	exit 1
 }
+EXPECTED=$((7 * ${#SIBLINGS[@]}))
 
 # Fake `curl`. Picks the URL out of its argv, records it, and serves
 # $STUB_DIR/<sibling>/<file> -- the same path shape the real URL carries, so a
@@ -173,20 +174,20 @@ out="$(run_check)"
 rc=$?
 check "seven identical files across two siblings pass" "0" "$rc"
 check "and the success line reports a comparison count" "1" \
-	"$(says "$out" 'compared 14 reusable workflow')"
+	"$(says "$out" "compared $EXPECTED reusable workflow")"
 compared="$(printf '%s' "$out" | sed -n 's/^compared \([0-9]*\) .*/\1/p')"
-check "and that count is 7 files x 2 siblings, not zero" "14" "$compared"
+check "and that count is 7 files x one per sibling, not zero" "$EXPECTED" "$compared"
 check "and the count it printed is greater than zero" "1" \
 	"$([ "${compared:-0}" -gt 0 ] && echo 1 || echo 0)"
-check "and it made one request per file per sibling" "14" \
+check "and it made one request per file per sibling" "$EXPECTED" \
 	"$(wc -l < "$WORK/curl.log" | tr -d ' ')"
-check "and asked raw.githubusercontent.com for main" "14" \
+check "and asked raw.githubusercontent.com for main" "$EXPECTED" \
 	"$(grep -c 'raw.githubusercontent.com/Glyndor/.*/main/.github/workflows/' "$WORK/curl.log")"
 
 # Every request is bounded, in the three ways the other downloads of this
 # repository are: https only (also across a redirect), a deadline, and a size cap.
 for flag in '--proto =https' '--proto-redir =https' '--connect-timeout 10' '--max-time 60' '--max-filesize 1048576'; do
-	check "every request carries $flag" "14" "$(grep -cF -- "$flag" "$WORK/curl.args")"
+	check "every request carries $flag" "$EXPECTED" "$(grep -cF -- "$flag" "$WORK/curl.args")"
 done
 
 # --- PLANTED: a sibling file over the size cap is a fetch failure ----------
@@ -215,7 +216,7 @@ out="$(run_check)"
 rc=$?
 check "a sibling file exactly at the size cap is compared and passes" "0" "$rc"
 check "and every file of both siblings was compared" "1" \
-	"$(says "$out" 'compared 14 reusable workflow')"
+	"$(says "$out" "compared $EXPECTED reusable workflow")"
 # One more byte on the copy that is already at the cap.
 printf 'x' >> "$WORK/remote/${SIBLINGS[1]}/reusable-shell-ci.yml"
 out="$(run_check)"
@@ -263,8 +264,8 @@ out="$(run_check)"
 rc=$?
 check "comments that differ per repository still pass" "0" "$rc"
 check "and nothing is reported as drift" "0" "$(counts "$out" 'has drifted')"
-check "and all 14 copies were still compared" "1" \
-	"$(says "$out" 'compared 14 reusable workflow')"
+check "and all $EXPECTED copies were still compared" "1" \
+	"$(says "$out" "compared $EXPECTED reusable workflow")"
 
 # --- PLANTED: an indented comment inside a run: body is still a comment ---
 

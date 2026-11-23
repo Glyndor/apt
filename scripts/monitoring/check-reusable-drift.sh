@@ -3,7 +3,7 @@
 # Fail when this repository's copy of a reusable workflow has drifted apart from
 # the copies carried by the sibling channel repositories.
 #
-# The three channel repositories each carry their own copy of the same seven
+# The channel repositories each carry their own copy of the same seven
 # reusable workflows. That duplication is deliberate: it keeps every repository
 # in the publication path self-contained, so no outside repository can change
 # what a release does. Nothing, however, noticed when the copies stopped
@@ -43,12 +43,14 @@
 
 set -euo pipefail
 
-# The other two channel repositories. A fourth channel is one line here, and
-# that line is the only edit needed. Each repository's own copy of this script
-# names the other two, never itself.
+# The other channel repositories: the two package archives, rpm and pacman, are
+# among them. A further channel is one line here, and that line is the only edit
+# needed. Each repository's own copy of this script names the others, never itself.
 SIBLINGS=(
 	Glyndor/homebrew-tap
 	Glyndor/scoop-bucket
+	Glyndor/rpm
+	Glyndor/pacman
 )
 
 # The reusable workflows that all three repositories are expected to carry
