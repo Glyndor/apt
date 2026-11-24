@@ -1,7 +1,7 @@
 name: Distribution floor
 
 # Which Debian and Ubuntu releases can install from this archive is a fact
-# about podman, not about this repository: podup depends on podman 5, and
+# about podman, not about this repository: podup depends on podman 6.2.0 or newer, and
 # epistle needs podup to run the mail stack. Since the archive serves its own
 # podman, the floor is no longer what a release ships: it is the glibc that
 # package needs (libc6 >= 2.39), and a release older than that is refused with

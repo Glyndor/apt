@@ -24,15 +24,18 @@ The script:
 - adds the Glyndor archive and installs its signing key after checking the
   fingerprint against the one published [below](#verify-the-signing-key);
 - installs the package and what it depends on, including a current Podman;
-- reports whether automatic security upgrades are on, without changing that
-  setting (it installs the `unattended-upgrades` package if it is missing).
+- reports whether the daily Glyndor upgrade timer is on (it installs the
+  `unattended-upgrades` package if it is missing, and the keyring package adds
+  `Glyndor:stable` to that tool's allowed origins; its schedule is not changed).
 
 If one of its checks fails before the keyring is installed, it exits without
 running anything from the download. An error after that point comes from `dpkg`
 or `apt-get`.
 
-To install another package, replace `podup` with a name from the next table.
-After installing podup, go on with its
+To install `epistle` or `podman` the same way, replace `podup` with its name.
+Only those three have an installer: `glyndor-archive-keyring` in the next table is
+installed by the script, and any other name gets a 404 that `curl -f` reports but
+that does not make the pipe exit non-zero, so read what it prints. After installing podup, go on with its
 [quick start](https://github.com/Glyndor/podup#quick-start).
 
 ## What is served
@@ -86,7 +89,9 @@ A release missing from that table has not been measured.
 The signing key ships as a package, so apt keeps it current. The same package
 installs `glyndor-upgrade.timer`, which runs daily and upgrades the packages from
 this archive, and leaves every other package alone. It does not change the
-machine's own `unattended-upgrades` schedule, and it needs systemd.
+machine's own `unattended-upgrades` schedule. It does install
+`/etc/apt/apt.conf.d/51glyndor-unattended-upgrades`, which adds `Glyndor:stable` to the
+origins that tool may upgrade from, and it needs systemd.
 
 To opt out, run `sudo systemctl disable --now glyndor-upgrade.timer`. That choice
 survives upgrades of the package.
@@ -108,8 +113,9 @@ gpg --show-keys --fingerprint keyring-check/usr/share/keyrings/glyndor.gpg
 
 Nothing from the package runs. The downloads are capped at 8 MiB and 64 KiB, and the
 `awk` line refuses a package whose files declare more than 8 MiB once unpacked (a
-sparse member costs a few kilobytes in the archive and 16 MiB on disk), the same bounds
-the installer applies; if it exits non-zero, stop and report it. The fingerprint it prints must be **exactly**:
+sparse member costs a few kilobytes in the archive and 16 MiB on disk). Those are two of
+the three bounds the installer applies; the third caps the unpacked archive itself at
+8 MiB before it is extracted. If the line exits non-zero, stop and report it. The fingerprint it prints must be **exactly**:
 
 ```
 9ADF 04EA 8C31 39CD B673  03CF A670 5C2E A153 F3D6
@@ -164,9 +170,12 @@ the one this repository built, and you check it above. The archive is rebuilt
 from scratch on every run, so the failure mode is an archive that does not
 update, never one that serves something unverified.
 
-A second, post-quantum release signature (ML-DSA-65) is supported beside the
-Ed25519 one and never replaces it; no ML-DSA-65 key is configured yet, so every
-package is admitted on its Ed25519 signature.
+A second, post-quantum release signature (ML-DSA-65) can sit beside the
+Ed25519 one and never replaces it. No ML-DSA-65 key is configured yet, so every
+package is admitted on its Ed25519 signature, and a package that carries a second
+signature is refused at publication, because the archive cannot check it. It is
+checked when a package is admitted; apt on a client verifies the archive's index
+with Ed25519 only.
 
 The [threat model](docs/threat-model.md) covers these controls and the others, with the test
 that holds each one in place.
