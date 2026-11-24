@@ -120,5 +120,14 @@ tests/verify/distro-floor.test.sh
 	scripts/verify/**
 	tests/verify/**
 	.github/workflows/distro-floor.yml
+	.github/workflows/publish.yml
 	README.md
 
+tests/verify/upgrade-floor.test.sh
+	scripts/verify/upgrade-floor.sh
+	tests/verify/upgrade-floor.test.sh
+	.github/workflows/distro-floor.yml
+
+tests/verify/previous-release.test.sh
+	scripts/verify/previous-release.sh
+	tests/verify/previous-release.test.sh

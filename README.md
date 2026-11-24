@@ -72,7 +72,9 @@ start. The refusal names the library:
 `libc6 (>= 2.39) but 2.35-0ubuntu3.15 is to be installed`.
 
 The [distribution floor workflow](.github/workflows/distro-floor.yml) runs the
-install line above in fresh containers every week and asserts exactly this:
+install line above, for each of the three products the archive serves (`podup`,
+`epistle` and `podman`), in fresh containers every week and after each
+publication, and asserts exactly this:
 
 | Image | Expected |
 | --- | --- |
@@ -83,6 +85,14 @@ install line above in fresh containers every week and asserts exactly this:
 | `debian:12` | refused, naming libc6 |
 
 A release missing from that table has not been measured.
+
+The same workflow also tries the upgrade. On each release that installs, it puts
+in place the version of each product before the served one, runs
+`apt-get install --only-upgrade`, and checks that the served version is now
+installed, that the product starts, and that dpkg is left with nothing half
+configured. The archive keeps the latest version only, so the version before is
+the one of the product's previous release; a product with no earlier release
+fails that check instead of passing it.
 
 ## Automatic upgrades
 
