@@ -1,0 +1,124 @@
+# The suites of the scripts that verify the archive and the packages: the signature checks, the read-back of the published
+# archive, the distribution floor and the upgrade. One zone of the map, in its own file because a file holds 500 lines at most.
+# The resolver reads the file beside this folder and every .txt file of it as one map.
+
+# --- the read-back of the published archive ----------------------------------
+tests/verify/check-release-order.test.sh
+	scripts/verify/**
+	keyring/**
+	tests/verify/**
+	tests/fixtures/**
+
+tests/verify/verify-published.test.sh
+	tests/fixtures/verify/**
+	scripts/verify/**
+	tests/verify/**
+
+tests/verify/verify-published/verify-published-bootstrap.test.sh
+	tests/fixtures/verify/**
+	scripts/verify/**
+	tests/verify/**
+
+tests/verify/verify-published/verify-published-object-size.test.sh
+	scripts/verify/**
+	tests/verify/**
+
+tests/verify/verify-published/verify-published-budget.test.sh
+	tests/fixtures/verify/**
+	scripts/verify/**
+	tests/verify/**
+
+tests/verify/verify-published/verify-published-packages.test.sh
+	tests/fixtures/verify/**
+	scripts/verify/**
+	tests/verify/**
+
+tests/verify/verify-published/verify-published-collision.test.sh
+	tests/fixtures/verify/**
+	scripts/verify/**
+	tests/verify/**
+# The by-hash leg of the read-back, over an archive offered by hash with the
+# script the build uses.
+tests/verify/verify-published/verify-published-by-hash.test.sh
+	tests/fixtures/verify/**
+	scripts/verify/**
+	scripts/build/add-by-hash.sh
+	tests/verify/**
+
+tests/verify/verify-published/verify-published-build.test.sh
+	tests/fixtures/verify/**
+	scripts/verify/**
+	tests/verify/**
+	keyring/**
+	.github/workflows/publish.yml
+
+tests/verify/verify-installers.test.sh
+	scripts/build/**
+	scripts/installer/**
+	scripts/verify/**
+	tests/verify/**
+	.github/workflows/publish.yml
+	.github/workflows/health-check.yml
+# It renders nothing real: a stub generator in a throwaway repository, so only
+# the script and this suite can change its verdict.
+tests/verify/reference-installers.test.sh
+	scripts/verify/reference-installers.sh
+
+tests/verify/roster-has-releases.test.sh
+	scripts/verify/roster-has-releases.sh
+
+tests/verify/new-product-end-to-end.test.sh
+	scripts/verify/**
+
+tests/verify/published-roster.test.sh
+	scripts/verify/published-roster.sh
+	.github/workflows/health-check.yml
+	.github/workflows/publish.yml
+# Both run the verifier with its default ML-DSA-65 key and required files, the
+# committed ones under keyring/, so a change there can change either verdict.
+tests/verify/verify-debs.test.sh
+	scripts/verify/**
+	tests/verify/**
+	keyring/**
+
+tests/verify/verify-debs-hybrid.test.sh
+	scripts/verify/**
+	tests/verify/**
+	keyring/**
+
+tests/verify/verify-debs-anchor-bytes.test.sh
+	scripts/verify/**
+	tests/verify/**
+	keyring/**
+
+tests/verify/verify-debs-control-fields.test.sh
+	scripts/verify/**
+	tests/verify/**
+
+tests/verify/verify-debs-same-bytes.test.sh
+	scripts/verify/**
+	tests/verify/**
+	keyring/**
+# The same check with the ML-DSA-65 library, which only the `ML-DSA-65 verifier`
+# job of tests.yml runs, in a virtual environment built from
+# scripts/verify/verify-debs-requirements.txt. It has an entry so that job can
+# skip the wheel install and the suite when nothing here changed
+# (`ci-job-scope.sh suite-needed`, on a pull request and on a push to main). It
+# reads the verifier and everything beside it, the committed keys and the list of
+# products that require the second signature, the requirements file with its
+# hashes, the vector under tests/fixtures/verify-debs, and the job that runs it.
+# The suite and the runner are inputs of every decision by rule.
+tests/verify/verify-debs-mldsa.test.sh
+	scripts/verify/verify-debs.sh
+	scripts/verify/verify-debs-requirements.txt
+	tests/verify/verify-debs-mldsa.test.sh
+	tests/fixtures/verify-debs/**
+	keyring/**
+	.github/workflows/tests.yml
+
+tests/verify/distro-floor.test.sh
+	scripts/verify/**
+	tests/verify/**
+	.github/workflows/distro-floor.yml
+	README.md
+

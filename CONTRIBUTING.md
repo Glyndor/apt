@@ -137,12 +137,16 @@ A suite that cannot run on a pull request goes in `scripts/quality/coverage/suit
 with its reason. That list is read from the base commit too, so an entry takes
 effect from the pull request after the one that adds it.
 
-**A new suite needs an entry in `scripts/quality/scope/suite-scope.txt`.**
+**A new suite needs an entry in `scripts/quality/scope/suite-scope.txt`, or in a `.txt` file of
+`scripts/quality/scope/suite-scope.d/`.** The map is that file and the files of that folder, read as
+one in the order of their names, because a file of the repository holds 500 lines at most: the
+suites of one zone of the tree (today, those that verify the archive) have a file of their own. A
+suite listed in two of them is an unusable map, and the whole set runs.
 On a pull request the runner skips the suites whose paths the change does not touch;
 `tests/quality/scope/suite-scope-map.test.sh` reports a suite with no entry, which would
 run every time. List every path the suite reads: a missing path lets a change merge
 without the suite that should have judged it, while an extra one only costs a run. A
-change to the map, to `scripts/quality/scope/ci-job-scope.sh` or to the runner runs everything.
+change to the map or its folder, to `scripts/quality/scope/ci-job-scope.sh` or to the runner runs everything.
 A suite that only a job of its own runs, such as the ML-DSA-65 one, has its entry here
 too, and the same test checks it: that job asks `ci-job-scope.sh suite-needed` before it
 installs anything.

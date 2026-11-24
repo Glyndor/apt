@@ -168,6 +168,46 @@ check "a suite listed twice in the map runs every suite" "$ALL" "$(decide)"
 repo orphan; base_map $'\tscripts/a/**\ntests/a/one.test.sh\n\tscripts/a/**\n'; echo more >> "$R/DOCS.md"; merge
 check "a pattern before any suite runs every suite" "$ALL" "$(decide)"
 
+# --- the map in a folder: the file, and the `.txt` files of suite-scope.d read after it ------------------------
+
+# base_dir <file name> <content>: add a file of the folder to the BASE, and branch the pull request from there.
+base_dir() {
+	git -C "$R" checkout -q main; mkdir -p "$R/scripts/quality/scope/suite-scope.d/$(dirname "$1")"
+	printf '%s' "$2" > "$R/scripts/quality/scope/suite-scope.d/$1"
+	git -C "$R" add -A; git -C "$R" commit -qm "base folder"; git -C "$R" branch -D pr -q; git -C "$R" checkout -q -b pr
+}
+ONE_ONLY=$'tests/a/one.test.sh\n\tscripts/a/**\n\ttests/a/**\n'
+TWO_ONLY=$'tests/b/two.test.sh\n\tscripts/b/**\n\tREADME.md\n\ttests/b/two.test.sh\n'
+
+repo dirsplit; base_map "$ONE_ONLY"; base_dir zone-b.txt "$TWO_ONLY"; echo more >> "$R/scripts/b/y.sh"; merge
+check "a suite listed in a file of the folder is scoped by it: a change to its area runs it and the suite with no entry" \
+	"tests/b/two.test.sh tests/c/three.test.sh" "$(decide)"
+repo dirsplit2; base_map "$ONE_ONLY"; base_dir zone-b.txt "$TWO_ONLY"; echo more >> "$R/scripts/a/x.sh"; merge
+check "and a change to the area of the suite in the map file does not run the one of the folder" \
+	"tests/a/one.test.sh tests/c/three.test.sh" "$(decide)"
+repo dirsplit3; base_map "$ONE_ONLY"; base_dir zone-b.txt "$TWO_ONLY"; echo more >> "$R/DOCS.md"; merge
+check "and a change that is in no area runs only the suite with no entry" "tests/c/three.test.sh" "$(decide)"
+
+repo dirdup; base_map "$MAP"; base_dir zone-b.txt "$TWO_ONLY"; echo more >> "$R/DOCS.md"; merge
+check "a suite listed in the map file and in a file of the folder is an unusable map: every suite runs" "$ALL" "$(decide)"
+repo dirdup2; base_map "$ONE_ONLY"; base_dir zone-b.txt "$TWO_ONLY"; base_dir zone-c.txt "$TWO_ONLY"; echo more >> "$R/DOCS.md"; merge
+check "and so is one listed in two files of the folder" "$ALL" "$(decide)"
+
+repo dirmd; base_map "$ONE_ONLY"; base_dir zone-b.md "$TWO_ONLY"; echo more >> "$R/scripts/a/x.sh"; merge
+check "a file of the folder that is not .txt is not read, so its suite has no entry and runs" "$ALL" "$(decide)"
+repo dirsub; base_map "$ONE_ONLY"; base_dir sub/zone-b.txt "$TWO_ONLY"; echo more >> "$R/scripts/a/x.sh"; merge
+check "a file in a folder under it is not read either" "$ALL" "$(decide)"
+
+repo dirempty; base_map "$ONE_ONLY"; base_dir zone-b.txt $'tests/b/two.test.sh\n'; echo more >> "$R/DOCS.md"; merge
+check "an entry with no pattern in a file of the folder is an unusable map: every suite runs" "$ALL" "$(decide)"
+repo dirnomap; base_map -; base_dir zone-b.txt "$TWO_ONLY"; echo more >> "$R/DOCS.md"; merge
+check "a folder without the map file is no map: every suite runs" "$ALL" "$(decide)"
+
+repo diradd; base_map "$ONE_ONLY"; base_dir zone-b.txt "$TWO_ONLY"; printf 'tests/c/three.test.sh\n\tscripts/c/**\n' > "$R/scripts/quality/scope/suite-scope.d/zone-c.txt"; merge
+check "a pull request that adds a file to the folder runs every suite" "$ALL" "$(decide)"
+repo dirnarrow; base_map "$ONE_ONLY"; base_dir zone-b.txt "$TWO_ONLY"; printf 'tests/b/two.test.sh\n\tnothing/**\n' > "$R/scripts/quality/scope/suite-scope.d/zone-b.txt"; merge
+check "and one that narrows a file of the folder runs every suite" "$ALL" "$(decide)"
+
 echo
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

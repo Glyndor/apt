@@ -6,6 +6,17 @@
 # Requires real reprepro, gpg, gpgv, dpkg-deb, apt-get and python3; no root/network.
 set -euo pipefail
 
+# A tool this needs that is not installed is not a failed check and not a pass: nothing was run. Say which, and leave
+# with 77, the code of "could not run", which is not the 1 of a failure, before anything is made. The runner of the
+# suites still counts the suite as not passed, as it must: in CI the packages of suite-dependencies.txt install these
+# tools, and a suite that cannot run there is a broken job. The sentinel is not printed, since the suite did not end.
+for tool in reprepro gpg gpgv gpgconf dpkg-deb apt-get apt-cache python3; do
+	command -v "$tool" >/dev/null || {
+		echo "NOTE  could not run: $tool is not installed, so the expiry of the archive is SIN VERIFICAR here. Not a pass."
+		exit 77
+	}
+done
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="$(mktemp -d)"
 export GNUPGHOME="$WORK/gnupg" LC_ALL=C
@@ -28,10 +39,6 @@ check() {
 		echo "FAIL  $description"; fail=$((fail + 1))
 	fi
 }
-
-for tool in reprepro gpg gpgv gpgconf dpkg-deb apt-get apt-cache python3; do
-	command -v "$tool" >/dev/null || { echo "missing prerequisite: $tool"; false; }
-done
 
 gpg --batch --quiet --pinentry-mode loopback --passphrase '' \
 	--quick-generate-key 'APT expiry test <expiry@test.invalid>' rsa3072 sign 0

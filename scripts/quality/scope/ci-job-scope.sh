@@ -25,6 +25,10 @@ import sys
 # narrow its own scope gets the full set instead, because the base copy is
 # what decides. This is the rule for a gate script.
 MAP = "scripts/quality/scope/suite-scope.txt"
+# The map is one file, or that file and the `.txt` files of this folder, read in the order of their names and
+# taken as one text: a file of the repository holds 500 lines at most, and the suites that read one zone of the
+# tree can be listed by themselves. A suite listed in two of them is an unusable map, as it is in one.
+MAP_DIR = "scripts/quality/scope/suite-scope.d/"
 
 # The map, this script, the runner, the workflows and the actions are an input of every suite, by rule
 # rather than by an entry per suite: a change to any of the three changes
@@ -34,6 +38,7 @@ MAP = "scripts/quality/scope/suite-scope.txt"
 GLOBAL_INPUTS = (
     "scripts/quality/scope/ci-job-scope.sh",
     MAP,
+    MAP_DIR + "**",
     "tests/ci/suites/check-suite-completeness.test.sh",
     # What a workflow or an action runs decides what a suite sees, so a change to
     # either runs everything.
@@ -121,6 +126,16 @@ def pushed_paths():
         git("diff", "--name-status", "-z", "--find-renames", before, "HEAD", "--"))
 
 
+def read_map(commit):
+    """The text of the map in `commit`: the map file and the `.txt` files of its folder. Raises when the map
+    file is not there, like `git show` does, so every caller keeps its answer for a map that cannot be read."""
+    text = git("show", commit + ":" + MAP).decode("utf-8", "replace")
+    names = git("ls-tree", "--name-only", commit, MAP_DIR).decode("utf-8", "replace").split("\n")
+    for name in sorted(n for n in names if n.startswith(MAP_DIR) and n.endswith(".txt")):
+        text += "\n" + git("show", commit + ":" + name).decode("utf-8", "replace")
+    return text
+
+
 def parse_map(text):
     """Suite path -> the patterns that can change its verdict.
 
@@ -189,11 +204,11 @@ def suites(candidates):
     if paths is None:
         return list(candidates)
     try:
-        body = git("show", "HEAD^1:" + MAP)
+        body = read_map("HEAD^1")
     except (OSError, subprocess.CalledProcessError):
         # No map in the base commit: the scope cannot be established.
         return list(candidates)
-    scope = parse_map(body.decode("utf-8", "replace"))
+    scope = parse_map(body)
     if scope is None:
         return list(candidates)
     keep = []
@@ -229,10 +244,10 @@ def suite_needed(candidate):
     if paths is None:
         return True
     try:
-        body = git("show", base + ":" + MAP)
+        body = read_map(base)
     except (OSError, subprocess.CalledProcessError):
         return True
-    scope = parse_map(body.decode("utf-8", "replace"))
+    scope = parse_map(body)
     if scope is None:
         return True
     name = normalise(candidate)
@@ -338,7 +353,7 @@ def packages():
     if (open(runner, "rb").read() != git("show", "HEAD^1:" + runner)
             or depmap in paths):
         raise ValueError("runner or dependency policy changed")
-    scope = parse_map(git("show", "HEAD^1:" + MAP).decode("utf-8"))
+    scope = parse_map(read_map("HEAD^1"))
     if scope is None:
         raise ValueError("unusable suite map")
     # Exercise the same BASE resolver in its suites mode as the runner does.

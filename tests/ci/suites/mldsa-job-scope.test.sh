@@ -114,9 +114,17 @@ def audit(spec, map_text=None):
     return found
 
 
+def real_map():
+    """The map as the resolver reads it: the file, then the .txt files of the folder beside it."""
+    text = (root / MAP).read_text()
+    for extra in sorted((root / "scripts/quality/scope/suite-scope.d").glob("*.txt")):
+        text += "\n" + extra.read_text()
+    return text
+
+
 def scope_entry(suite, text=None):
     patterns, current = None, None
-    for raw in (text if text is not None else (root / MAP).read_text()).splitlines():
+    for raw in (text if text is not None else real_map()).splitlines():
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
         if not raw[:1].isspace():
@@ -203,7 +211,7 @@ def fixture(name, resolver=None):
     git(repo, "config", "user.email", "t@example.invalid")
     git(repo, "config", "commit.gpgsign", "false")
     write(repo, RESOLVER, resolver if resolver is not None else (root / RESOLVER).read_text())
-    write(repo, MAP, (root / MAP).read_text())
+    write(repo, MAP, real_map())
     write(repo, RUNNER, "#!/bin/sh\necho ran >> \"$MARKER\"\n")
     (repo / RUNNER).chmod(0o755)
     write(repo, "README.md", "prose\n")
