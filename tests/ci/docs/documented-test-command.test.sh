@@ -37,6 +37,13 @@ printf '#!/usr/bin/env bash\n: ok\n' > "$WORK/t/scripts/x/tool.sh"
 # shellcheck disable=SC2016 # the stand-in reads these variables when it runs
 printf '#!/usr/bin/env bash\n[ "$#" -gt 0 ] || { echo usage >&2; exit 2; }\nrc=0\nfor f in "$@"; do "$f" || { echo "FAIL  $f"; rc=1; }; done\nexit $rc\n' \
 	> "$WORK/t/tests/ci/suites/check-suite-completeness.test.sh"
+# The files CI lints and a shebang search does not find: a sourced fixture with no shebang, and an extensionless
+# script in a folder whose name has a dot. And one it must leave out: an extensionless file that is not a shell.
+mkdir -p "$WORK/t/tests/fixtures" "$WORK/t/keyring/upgrade" "$WORK/t/hooks.d"
+printf ': fixture\n' > "$WORK/t/tests/fixtures/sourced.sh"
+printf '#!/bin/sh\n: hook\n' > "$WORK/t/keyring/upgrade/maintainer-postinst"
+printf '#!/usr/bin/env bash\n: hook\n' > "$WORK/t/hooks.d/run"
+printf '#!/usr/bin/env python3\nprint(1)\n' > "$WORK/t/scripts/x/py-tool"
 chmod +x "$WORK/t/tests/a/good.test.sh" "$WORK/t/tests/a/b/bad.test.sh" "$WORK/t/tests/ci/suites/check-suite-completeness.test.sh"
 # shellcheck disable=SC2016 # the stub reads this variable when it runs
 printf '#!/bin/sh\nprintf "%%s\\n" "$@" >> "%s/shellcheck.args"\nexit 0\n' "$WORK" > "$WORK/bin/shellcheck"
@@ -51,6 +58,12 @@ check "the nested passing suite runs exactly once" "1" "$(printf '%s' "$out" | g
 check "the nested failing suite runs exactly once" "1" "$(printf '%s' "$out" | grep -c ran-bad)"
 check "and the failure is named" "1" "$(printf '%s' "$out" | grep -c 'FAIL.*bad.test.sh')"
 check "shellcheck is given a nested script" "1" "$(grep -c 'scripts/x/tool.sh' "$WORK/shellcheck.args" 2>/dev/null)"
+args() { grep -cx -- "$1" "$WORK/shellcheck.args" 2>/dev/null; }
+check "shellcheck is given a *.sh file that has no shebang, as CI gives it" "1" "$(args tests/fixtures/sourced.sh)"
+check "and an extensionless script whose first line names a shell" "1" "$(args keyring/upgrade/maintainer-postinst)"
+check "and one in a folder whose name has a dot" "1" "$(args hooks.d/run)"
+check "and not an extensionless file that is not a shell script" "0" "$(args scripts/x/py-tool)"
+check "and it is asked at the severity CI uses" "1" "$(args --severity=style)"
 
 git -C "$WORK/t" rm -qf tests/a/b/bad.test.sh
 out="$(cd "$WORK/t" && PATH="$WORK/bin:$PATH" bash -c "$block" 2>&1)"

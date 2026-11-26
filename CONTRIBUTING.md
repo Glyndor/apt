@@ -62,7 +62,17 @@ if [ -x tests/ci/suites/check-suite-completeness.test.sh ]; then
 else
   echo "FAILED: tests/ci/suites/check-suite-completeness.test.sh is not executable"; fail=1
 fi
-git ls-files -z | xargs -0 grep -lIE '^#!.*(ba)?sh' | xargs shellcheck || fail=1
+# The files CI lints: every tracked *.sh and *.bash, and the files with no extension whose first line names
+# a shell. A fixture that is only sourced has no shebang, and a `# shellcheck source=` that names one cannot
+# be followed unless it is in the list, so collecting by shebang alone goes red here and not in CI.
+list=$(mktemp)
+git ls-files -z '*.sh' '*.bash' > "$list"
+git ls-files -z | while IFS= read -r -d '' f; do
+  case "${f##*/}" in *.*) continue ;; esac
+  if [ -f "$f" ] && head -n1 "$f" | grep -qE '^#!.*(/| )(sh|bash|dash)([[:space:]]|$)'; then printf '%s\0' "$f"; fi
+done >> "$list"
+xargs -0 -r shellcheck --severity=style < "$list" || fail=1
+rm -f "$list"
 [ "$fail" -eq 0 ] && echo "all green" || echo "SOMETHING FAILED"
 [ "$fail" -eq 0 ]
 ```
@@ -86,14 +96,21 @@ suite are skipped and the job says so in its summary. It asks the same question
 on a pull request and on a push to main, and any doubt runs the suite.
 
 The tests live in folders that mirror `scripts/` (`tests/verify/`, `tests/build/`
-and so on), so the loop finds them recursively, and the shellcheck line picks up
-every tracked file that starts with a shell shebang, including the scripts under
-`keyring/upgrade/` that have no extension.
+and so on), so the loop finds them recursively, and the shellcheck lines pick up
+what CI lints: every tracked `*.sh` and `*.bash`, and the files with no extension
+whose first line names `sh`, `bash` or `dash`, which is how the scripts under
+`keyring/upgrade/` are reached.
+
+CI lints with the shellcheck release it pins by tag and sha256 in
+`.github/workflows/reusable-shell-ci.yml` (`v0.11.0` today). An older one reports
+`SC2218` on this tree (0.10.0 reports it 35 times on
+`tests/quality/coverage/check-suites-wired.test.sh`), so check yours with
+`shellcheck --version` before believing a red here.
 
 The `fail` flag is not decoration. The loop runs every test instead of stopping
-at the first red one, which is what you want locally, but it means the loop ends
-on `echo` and reports success no matter how many scripts failed. Without the
-flag the status you glance at disagrees with the output you scrolled past. CI
+at the first red one, which is what you want locally, and the last line of the
+block, `[ "$fail" -eq 0 ]`, is what makes the exit status agree with the output
+you scrolled past. Without the flag the status you glance at disagrees with it. CI
 lists the suites one per line in `.github/workflows/tests.yml` and runs them
 through one runner that runs every suite and fails at the end if any failed, so
 the job goes red.
@@ -102,7 +119,8 @@ list does not run.
 
 Two rules matter more than coverage:
 
-**Every script in `scripts/` needs a test.** `scripts/quality/coverage/check-test-coverage.sh`
+**Every script in `scripts/` needs a test, and so does every maintainer script in
+`keyring/upgrade/`.** `scripts/quality/coverage/check-test-coverage.sh`
 fails when one does not, itself included: it lives in `scripts/`, so deleting
 its test makes it report itself.
 
@@ -125,7 +143,9 @@ red comes from somewhere else entirely.
 
 Assert **which** failure fired, never that some failure did. Every script runs
 under `set -e` (`set -euo pipefail` in bash, `set -eu` in the POSIX shell ones), so almost any mistake exits non-zero and a bare
-non-zero assertion is satisfied by the failure you did not mean.
+non-zero assertion is satisfied by the failure you did not mean. The exception is
+`scripts/verify/roster-has-releases.sh`, which runs under `set -uo pipefail` and checks
+every product's answer itself, so one product's failure does not hide the next.
 
 New test files must be added to `test-command` in `.github/workflows/tests.yml`.
 `tests/ci/suites/ci-runs-every-test.test.sh` fails when one is not. An unregistered test
@@ -186,7 +206,7 @@ CI is split by responsibility rather than gathered in one file:
 Every reusable this repository calls lives in `.github/workflows/reusable-*.yml`
 as a copy kept identical in logic to the
 copies in the sibling channels (`scripts/monitoring/check-reusable-drift.sh` compares
-them). The comparison does fetch the sibling copies, read-only and size-capped, from `raw.githubusercontent.com`; it runs in `drift.yml`, and the test job fetches nothing.
+them). The comparison does fetch the sibling copies, read-only and size-capped, from `raw.githubusercontent.com`; it runs in `drift.yml`, and the test job never runs the comparison: its suite stubs `curl`, so the comparison is exercised without the network.
 
 **Job ids are load-bearing.** A required status check is named
 `<caller job id> / <inner job name>`, so renaming a job renames its check and

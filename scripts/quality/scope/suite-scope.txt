@@ -626,7 +626,7 @@ tests/ci/suites/mldsa-job-scope.test.sh
 	tests/verify/verify-debs-mldsa.test.sh
 
 # The drift check compares the seven reusables of this repository against the
-# copies the two sibling repositories carry.
+# copies the four sibling repositories carry.
 
 tests/monitoring/check-reusable-drift.test.sh
 	scripts/monitoring/**
