@@ -141,6 +141,9 @@ with tempfile.TemporaryDirectory() as temp:
     (work / 'bin').mkdir()
     for command in ('aws', 'curl'):
         (work / 'bin' / command).symlink_to(root / 'tests/fixtures/publish' / (command + '.py'))
+    # The delay between two attempts at a pass is recorded, not slept.
+    (work / 'bin/sleep').write_text('#!/bin/sh\necho "$@" >> "$SLEEPS"\n')
+    (work / 'bin/sleep').chmod(0o755)
     for name, body in [('publish', publish), ('purge', purge)]:
         (work / (name + '.sh')).write_text(body)
     # Separate bash -e processes match Actions steps. A failed step stops the job.
@@ -151,7 +154,7 @@ with tempfile.TemporaryDirectory() as temp:
                ARCHIVE_URL='https://apt.invalid', CF_API_BASE='https://cloudflare.invalid', PRUNED_PATHS='pruned-installers.txt',
                BUCKET=str(work / 'bucket'), FAKE_BUCKET=str(work / 'bucket'), EDGE=str(work / 'edge'),
                AWS_STATE=str(work / 'state'), AWS_CALLS=str(work / 'aws-calls'),
-               AWS_WRITES=str(work / 'writes'), PURGE_CALLS=str(work / 'purges'))
+               AWS_WRITES=str(work / 'writes'), PURGE_CALLS=str(work / 'purges'), SLEEPS=str(work / 'sleeps'))
 
     def reset(start=old):
         for directory in ('public', 'bucket', 'edge'):
@@ -166,7 +169,7 @@ with tempfile.TemporaryDirectory() as temp:
         put(work / 'edge', 'pool/shared.deb', b'bad cached copy', 1000)
 
     def run(fail_pass=0, after=0, fail_purge=0, order='forward', missing=None, version=None, extra=None):
-        for name in ('state', 'aws-calls', 'writes', 'purges'):
+        for name in ('state', 'aws-calls', 'writes', 'purges', 'sleeps'):
             (work / name).unlink(missing_ok=True)
         current = dict(env, FAIL_PASS=str(fail_pass), FAIL_AFTER=str(after),
                        FAIL_PURGE=str(fail_purge), OBJECT_ORDER=order)
@@ -245,12 +248,15 @@ with tempfile.TemporaryDirectory() as temp:
                     label = f'{start_name}, {order} pass {phase} after {after}/{count}'
                     reset(start)
                     result = run(phase, after, order=order)
-                    check(result.returncode == 42 and f'injected aws failure: pass {phase} after {after} writes'
+                    check(result.returncode == (1 if phase in (3, 4) else 42)
+                          and f'injected aws failure: pass {phase} after {after} writes'
                           in result.stderr, label + ': preserves the injected failure')
                     check('PUBLICATION_COMPLETE' not in result.stdout and not records('purges'),
                           label + ': no success or purge after failed sync')
-                    check(records('aws-calls') == [download_call] + expected_calls[:phase],
-                          label + ': no later sync executes')
+                    attempts = 3 if phase in (3, 4) else 1
+                    check(records('aws-calls') == [download_call] + expected_calls[:phase - 1]
+                          + [expected_calls[phase - 1]] * attempts,
+                          label + ': the pass is attempted that often and no later sync executes')
                     writes = records('writes')
                     last = [entry for entry in writes if entry[0] == phase]
                     check(len(last) == after, label + ': failure occurs after N visible mutations')
@@ -311,6 +317,33 @@ with tempfile.TemporaryDirectory() as temp:
                           label + ': failed sync leaves the previous cached index')
                     check('upload: ' in result.stdout, label + ': AWS output remains visible')
                     converged(run(order=order), label, start)
+
+    # A failure of pass 3 or 4 that clears is repaired inside the same publish.
+    def slept():
+        path = work / 'sleeps'
+        return path.read_text().split() if path.exists() else []
+
+    for phase, count in ((3, len(signed_index)), (4, len(mutable))):
+        for after in (1, count):
+            for times in (1, 2):
+                label = f'pass {phase} fails {times} time(s) after {after} writes'
+                reset()
+                result = run(phase, after, extra={'FAIL_TIMES': str(times)})
+                check(result.returncode == 0 and 'PUBLICATION_COMPLETE' in result.stdout, label + ': publishes')
+                check(result.stdout.count('::warning::publish pass failed on attempt') == times
+                      and '::error::' not in result.stdout, label + ': each failed attempt is reported')
+                check(slept() == ['10'] * times, label + ': waits between attempts')
+                check(records('aws-calls') == [download_call] + expected_calls[:phase - 1]
+                      + [expected_calls[phase - 1]] * (times + 1) + expected_calls[phase:] + [list_call, list_call],
+                      label + ': only that pass is attempted again')
+                check(tree(work / 'bucket') == dict(new, **residual_of(old)), label + ': origin converges')
+        reset()
+        result = run(phase, 1)
+        check(result.returncode == 1 and 'PUBLICATION_COMPLETE' not in result.stdout and not records('purges'),
+              f'pass {phase} that keeps failing: the job fails')
+        check('::warning::publish pass failed on attempt 3 of 3' in result.stdout and slept() == ['10', '10']
+              and '::error::the signed index may be served over index files it does not declare' in result.stdout,
+              f'pass {phase} that keeps failing: three attempts, two waits, and it says what is left')
 
     for batch, group in ((1, 'content'), (2, 'index')):
         reset()

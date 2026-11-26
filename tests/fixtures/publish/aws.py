@@ -87,9 +87,20 @@ if args[:2] == ['s3', 'cp']:
     sys.exit(0)
 
 assert args[:4] == ['s3', 'sync', 'public/', 's3://glyndor-apt/'], args
+# A pass is numbered by its arguments, so a second attempt at it keeps its number.
 state = Path(os.environ['AWS_STATE'])
-number = int(state.read_text()) + 1 if state.exists() else 1
-state.write_text(str(number))
+seen = json.loads(state.read_text()) if state.exists() else {'passes': [], 'failures': 0}
+if args not in seen['passes']:
+    seen['passes'].append(args)
+    state.write_text(json.dumps(seen))
+number = seen['passes'].index(args) + 1
+# After its first failure the pass fails outright, until it has failed FAIL_TIMES times.
+if number == int(os.environ.get('FAIL_PASS', '0')) and seen['failures']:
+    if seen['failures'] < int(os.environ.get('FAIL_TIMES', '99')):
+        seen['failures'] += 1
+        state.write_text(json.dumps(seen))
+        print(f'injected aws failure: pass {number} again', file=sys.stderr)
+        sys.exit(42)
 filters = []
 for i, arg in enumerate(args):
     if arg in ('--include', '--exclude'):
@@ -128,6 +139,9 @@ for count, (action, key) in enumerate(operations, 1):
     print(f'{action}: {key}', flush=True)
     with open(os.environ['AWS_WRITES'], 'a') as log:
         log.write(json.dumps([number, action, key]) + '\n')
-    if number == int(os.environ.get('FAIL_PASS', '0')) and count == int(os.environ.get('FAIL_AFTER', '0')):
+    if number == int(os.environ.get('FAIL_PASS', '0')) and count == int(os.environ.get('FAIL_AFTER', '0')) \
+            and not seen['failures']:
+        seen['failures'] = 1
+        state.write_text(json.dumps(seen))
         print(f'injected aws failure: pass {number} after {count} writes', file=sys.stderr)
         sys.exit(42)

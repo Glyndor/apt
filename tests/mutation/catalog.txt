@@ -262,6 +262,8 @@ pool-bytes-refusal	scripts/publish/settle-pool-bytes.sh	[ "$refused" -eq 0 ] || 
 pool-bytes-keyring-only	scripts/publish/settle-pool-bytes.sh	pool/main/g/glyndor-archive-keyring/*) rebuilt+=("$key") ;;	*) rebuilt+=("$key") ;;	tests/publish/settle-pool-bytes.test.sh
 pool-bytes-keyring-uploaded	scripts/publish/settle-pool-bytes.sh	aws s3 cp "public/$key" "s3://glyndor-apt/$key" \	: \	tests/publish/settle-pool-bytes.test.sh
 pool-bytes-before-first-pass	scripts/publish/sync-archive.sh	"$(dirname "$0")/settle-pool-bytes.sh"	:	tests/publish/settle-pool-bytes.test.sh
+sync-metadata-pass-three-attempts	scripts/publish/sync-archive.sh	for attempt in 1 2 3; do	for attempt in 1; do	tests/publish/sync-archive.test.sh
+sync-metadata-pass-gives-up	scripts/publish/sync-archive.sh	  return 1	  return 0	tests/publish/sync-archive.test.sh
 check-suites-wired-if-errors-sys-exit-1	scripts/quality/coverage/check-suites-wired.sh	if errors:	if False:	tests/quality/coverage/check-suites-wired.test.sh
 check-test-coverage-missing-script-have-no-test	scripts/quality/coverage/check-test-coverage.sh	if [ ${#missing[@]} -gt 0 ]; then	if false; then	tests/quality/coverage/check-test-coverage.test.sh
 check-test-coverage-no-scripts-directory-under-root	scripts/quality/coverage/check-test-coverage.sh	[ -d "$root/scripts" ] || { echo "no scripts/ directory under $root" >&2; exit 1; }	[ -d "$root/scripts" ] || true || { echo "no scripts/ directory under $root" >&2; exit 1; }	tests/quality/coverage/check-test-coverage.test.sh

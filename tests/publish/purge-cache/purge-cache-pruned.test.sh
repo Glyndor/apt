@@ -32,6 +32,9 @@ with tempfile.TemporaryDirectory() as temp:
     (work / 'scripts').symlink_to(root / 'scripts', target_is_directory=True)
     for command in ('aws', 'curl'):
         (work / 'bin' / command).symlink_to(root / 'tests/fixtures/publish' / (command + '.py'))
+    # The delay between two attempts at a pass is not slept.
+    (work / 'bin/sleep').write_text('#!/bin/sh\n')
+    (work / 'bin/sleep').chmod(0o755)
     env = dict(os.environ, PATH=str(work / 'bin') + ':' + os.environ['PATH'],
                BUCKET=str(work / 'bucket'), FAKE_BUCKET=str(work / 'bucket'), EDGE=str(work / 'edge'),
                AWS_STATE=str(work / 'state'), AWS_CALLS=str(work / 'calls'),
@@ -122,7 +125,8 @@ with tempfile.TemporaryDirectory() as temp:
     reset()
     # Pass 3 publishes the signed index; pass 2 uploads the by-hash copies, which this tree has none of.
     result = job(FAIL_PASS='3', FAIL_AFTER='1')
-    check(result.returncode == 42 and not any(c[1] == 'delete-object' for c in records('calls')),
+    check(result.returncode == 1 and 'injected aws failure: pass 3 after 1 writes' in result.stderr
+          and not any(c[1] == 'delete-object' for c in records('calls')),
           'metadata failure prevents installer pruning')
     check(not records('purges'), 'metadata failure prevents purge')
 
