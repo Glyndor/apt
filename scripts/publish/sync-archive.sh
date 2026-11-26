@@ -84,26 +84,20 @@ done
 #     below, not the TTL, is what makes a publish visible.
 #
 # Passes 1, 2 and 5 use --size-only: a by-hash name is the hash of its
-# content, so the same name is the same bytes. A product .deb is built once and
-# published, and its version is baked into the filename, so a size
-# match is sufficient proof pool/ already carries the same object.
-#
-# That reasoning covers product .debs and nothing else, which is the
-# part that bit. The keyring package is ALSO in pool/ and is NOT a
-# release: publish.yml rebuilds it every run, under a filename that
-# only moves when one of its inputs changes -- the files it installs
-# and the generator that writes them. So "same name, same size,
-# different content" needs no immutability violation to happen here;
-# it just needs a non-deterministic build, which is what #55 was. When
-# the rebuild landed on the same size, --size-only skipped the upload
-# while reprepro had already written the new hash into the signed
-# index, and the archive served a package its own index rejected.
-# build-keyring.sh is reproducible now (stamped from the commit of its
-# inputs, locked by tests/build/build-keyring.test.sh and
-# tests/build/keyring/build-keyring-generator.test.sh), which is what makes
-# --size-only sound for that object too. If anything else that is
-# regenerated per run is ever added under pool/, it needs the same
-# property or it does not belong in these passes.
+# content, so the same name is the same bytes. For pool/ the name is not
+# proof of that: a release can be built again under the same version, and the
+# keyring package, which publish.yml rebuilds every run under a name that only
+# moves when one of its inputs changes, was once not reproducible (#55): the
+# rebuild landed on the same size, the upload was skipped while reprepro had
+# already written the new hash into the signed index, and the archive served a
+# package its own index rejected. So settle-pool-bytes.sh compares what the
+# bucket holds with what was built, byte for byte, before the first pass: it
+# refuses a product package that differs and uploads a rebuilt keyring itself.
+# After it, every pool name both sides hold is the same bytes on both, which is
+# what these passes assume. build-keyring.sh is reproducible (stamped from the
+# commit of its inputs, locked by tests/build/build-keyring.test.sh and
+# tests/build/keyring/build-keyring-generator.test.sh), so that upload is not
+# expected to happen.
 #
 # Passes 3 and 4 keep the default comparison (size + modification time;
 # the AWS CLI never content-hashes): the dists/ metadata and the
@@ -143,6 +137,8 @@ done
 # .deb and differ before it), and the read-back check at the end of
 # this job verifies the pool too, so a recurrence there would be loud
 # rather than silent.
+# 0. Compare pool/ in the bucket with the built pool, before any write.
+"$(dirname "$0")/settle-pool-bytes.sh"
 # 1. Upload new pool/ packages (no deletions yet).
 aws s3 sync public/ s3://glyndor-apt/ \
   --no-progress --size-only \

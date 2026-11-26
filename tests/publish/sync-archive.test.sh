@@ -131,7 +131,9 @@ expected_calls = [['s3', 'sync', 'public/', 's3://glyndor-apt/'] + args
 
 list_call = ['s3api', 'list-objects-v2', '--bucket', 'glyndor-apt', '--prefix', 'install/',
              '--output', 'json', '--no-paginate']
-complete_calls = expected_calls + [list_call, list_call]
+# settle-pool-bytes.sh downloads the pool, into a directory of its own, before pass 1.
+download_call = ['s3', 'sync', 's3://glyndor-apt/pool/', 'DOWNLOAD', '--no-progress']
+complete_calls = [download_call] + expected_calls + [list_call, list_call]
 
 with tempfile.TemporaryDirectory() as temp:
     work = Path(temp)
@@ -178,7 +180,12 @@ with tempfile.TemporaryDirectory() as temp:
 
     def records(name):
         path = work / name
-        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+        found = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+        if name == 'aws-calls':
+            for call in found:
+                if call[:3] == download_call[:3]:
+                    call[3] = 'DOWNLOAD'
+        return found
 
     def converged(result, label, start=old):
         check(result.returncode == 0 and 'PUBLICATION_COMPLETE' in result.stdout, label + ': retry succeeds')
@@ -242,7 +249,8 @@ with tempfile.TemporaryDirectory() as temp:
                           in result.stderr, label + ': preserves the injected failure')
                     check('PUBLICATION_COMPLETE' not in result.stdout and not records('purges'),
                           label + ': no success or purge after failed sync')
-                    check(records('aws-calls') == expected_calls[:phase], label + ': no later sync executes')
+                    check(records('aws-calls') == [download_call] + expected_calls[:phase],
+                          label + ': no later sync executes')
                     writes = records('writes')
                     last = [entry for entry in writes if entry[0] == phase]
                     check(len(last) == after, label + ': failure occurs after N visible mutations')

@@ -75,6 +75,7 @@ tests/publish/purge-cache.test.sh -
 tests/publish/purge-cache/purge-cache-budget.test.sh -
 tests/publish/purge-cache/purge-cache-guards.test.sh -
 tests/publish/sync-archive.test.sh -
+tests/publish/settle-pool-bytes.test.sh -
 tests/quality/lint/check-action-pins.test.sh -
 tests/quality/hygiene/check-editorconfig.test.sh -
 tests/quality/coverage/check-test-coverage.test.sh -

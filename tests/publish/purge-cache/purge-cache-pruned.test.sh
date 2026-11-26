@@ -102,7 +102,7 @@ with tempfile.TemporaryDirectory() as temp:
         check(not any(u == 'https://apt.invalid/' for u in urls), label + ': never purges archive root')
         calls = records('calls')
         delete_at = next(i for i, record in enumerate(calls) if record[1] == 'delete-object')
-        check(len([c for c in calls[:delete_at] if c[:2] == ['s3', 'sync']]) == 5
+        check(len([c for c in calls[:delete_at] if c[:3] == ['s3', 'sync', 'public/']]) == 5
               and (work / 'bucket/dists/stable/Release').read_bytes()
               == (work / 'public/dists/stable/Release').read_bytes(),
               label + ': metadata published before the first installer delete')
