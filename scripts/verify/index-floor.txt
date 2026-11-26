@@ -1,0 +1,9 @@
+# The oldest index the publish accepts as the one served: its Date, in UTC, or `none`.
+#
+#   YYYY-MM-DDTHH:MM:SSZ
+#
+# A record kept in the repository, which whoever can write the bucket cannot change. check-index-baseline.sh refuses a
+# served InRelease dated earlier, signed or not. Raising it is a pull request, made when somebody wants to: the daily
+# publish needs none, because each publication also leaves the Date and hash of what it published in an artifact of its
+# own run (read-publication-record.sh).
+2026-11-26T16:36:00Z

@@ -120,6 +120,10 @@ jobs:
         ./tests/publication/publish/publish-workflow-mldsa-venv.test.sh
         ./tests/publication/publish/publish-workflow-verify-debs.test.sh
         ./tests/publication/publish/publish-workflow-release-order.test.sh
+        ./tests/publication/publish/publish-workflow-index-baseline.test.sh
+        ./tests/verify/check-index-baseline.test.sh
+        ./tests/verify/read-publication-record.test.sh
+        ./tests/verify/write-publication-record.test.sh
         ./tests/publication/publish/publish-workflow-bootstrap.test.sh
         ./tests/publication/publish/publish-workflow-signing-key.test.sh
         ./tests/publish/sync-archive.test.sh

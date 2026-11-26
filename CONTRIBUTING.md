@@ -214,6 +214,25 @@ creates a phantom the ruleset still requires, which blocks every pull request
 with no explanation. Move jobs between files freely; renaming one is a ruleset
 change.
 
+## A publication stopped longer than the index lasts
+
+The publish refuses a served index that has expired (14 days after it was signed), one
+older than what the last publication recorded in its run, and, when no run has recorded
+one in the last 90 days, one more than three days old. After a stop that long, or after
+the bucket was put back by hand, the scheduled run fails and says which of these it is,
+with the Date and SHA256 of what is served.
+
+1. Establish that the served `InRelease` is the right one. Compare its SHA256
+   (`curl -s https://apt.glyndor.net/dists/stable/InRelease | sha256sum`) with the one the
+   step `Record the index that was published` printed in the log of the publication that
+   wrote it. The log is what the bucket cannot change; the download alone proves nothing.
+2. Start `publish.yml` by hand from `main` with `accept_old_index` set to that SHA256. It
+   accepts that index and no other, and leaves a warning with its Date and SHA256 in the
+   run. It never accepts an index older than `scripts/verify/index-floor.txt`.
+
+`index-floor.txt` can be raised by a pull request at any time; an ordinary publish needs
+none.
+
 ## Security
 
 Never open a public issue for a vulnerability. Use the Security tab →

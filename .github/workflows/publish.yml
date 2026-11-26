@@ -14,6 +14,11 @@ name: Publish apt repository
 
 on:
   workflow_dispatch:
+    inputs:
+      accept_old_index:
+        description: "The SHA256 of the served InRelease to accept although it expired or is older than the last recorded one (see CONTRIBUTING.md). Empty for an ordinary publish."
+        type: string
+        default: ""
   schedule:
     - cron: "0 6 * * *"
 
@@ -79,6 +84,7 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+      actions: read # the record the last publication left in its own run
     # Measured over the last ten runs: 31 to 50 seconds end to end. The job
     # downloads from GitHub, syncs to R2 and purges Cloudflare, and any of the
     # three can stall; unbounded, a stall holds the concurrency group for six
@@ -392,7 +398,19 @@ jobs:
             ./scripts/verify/verify-debs.sh --require-tag "debs/$p" keyring/glyndor-release-ed25519.b64 "$p" "$tag"
           done
 
+      # Whoever can write the bucket can serve an older signed index again. What the last publication put there is
+      # recorded in its own run, which the bucket cannot change; the step below judges the served index against it.
+      - name: Read what the last publication recorded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: ./scripts/verify/read-publication-record.sh "$RUNNER_TEMP/index-record"
+
       - name: Refuse a release older than the one served
+        env:
+          INDEX_RECORD: ${{ runner.temp }}/index-record
+          # Only a run somebody starts by hand can name an index to accept; a scheduled run has no input.
+          ACCEPT_OLD_INDEX: ${{ github.event_name == 'workflow_dispatch' && inputs.accept_old_index || '' }}
         run: |
           set -euo pipefail
           # "Latest" is a pointer GitHub keeps, not a version: an older release
@@ -550,6 +568,20 @@ jobs:
           # "cancelled after 15 minutes" instead of which group of URLs was
           # not purged.
           ./scripts/publish/purge-cache.sh "$ARCHIVE_URL" public 120
+
+      # Only once the new index is in the bucket and the edge was told: a record of an index that is not served would
+      # stop every later publish. It comes before the read-back, which stays the last step.
+      - name: Record the index that was published
+        run: ./scripts/verify/write-publication-record.sh public/dists/stable/InRelease "$RUNNER_TEMP/published-index"
+
+      - name: Keep the record for the next publication
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: apt-published-index
+          path: ${{ runner.temp }}/published-index/published-index
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
 
       - name: Verify the published installers match the build
         run: |

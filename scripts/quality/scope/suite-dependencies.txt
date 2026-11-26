@@ -68,6 +68,10 @@ tests/publication/publish/publish-workflow-assets.test.sh -
 tests/publication/publish/publish-workflow-pq-sidecar.test.sh -
 tests/publication/publish/publish-workflow-bootstrap.test.sh -
 tests/publication/publish/publish-workflow-release-order.test.sh -
+tests/publication/publish/publish-workflow-index-baseline.test.sh python3-yaml
+tests/verify/check-index-baseline.test.sh -
+tests/verify/read-publication-record.test.sh -
+tests/verify/write-publication-record.test.sh -
 tests/publication/publish/publish-workflow-signing-key.test.sh -
 tests/publication/publish/publish-workflow-sync.test.sh -
 tests/publish/prune-installers.test.sh -

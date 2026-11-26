@@ -46,6 +46,13 @@
 # Usage:
 #   check-release-order.sh <product> <tag> <base-url> [<pubkey-asc>] [<debs-dir>]
 #
+# THE SERVED INDEX HAS TO BE THE CURRENT ONE
+#
+#   The signature does not say that, so check-index-baseline.sh judges the
+#   verified bytes against what this archive is known to have served, before
+#   anything is compared with them. It takes INDEX_RECORD and ACCEPT_OLD_INDEX
+#   from the environment.
+#
 # Requires: curl, gpg, gpgv, python3, sha256sum, dpkg, dpkg-deb.
 
 set -euo pipefail
@@ -90,10 +97,9 @@ gpg --batch --quiet --import "$PUBKEY_ASC" \
 # the sequence, so a peer that never answers cannot hold the publish.
 # Cache-Control: no-cache asks the edge to revalidate, so a stale copy of the
 # index is not read as the baseline. It lowers the chance, it is not the
-# defence: an older signed index can only make this check pass more releases
-# than it should, never fewer, and the publish still rebuilds the archive from
-# the pinned release, so this check is one layer against a mistaken or hostile
-# re-marking of an old release, not a freshness proof of the served archive.
+# defence: an older signed index would make this check pass releases it should
+# refuse, which is why check-index-baseline.sh judges the index before it is
+# compared with.
 fetch() {
 	curl -fsS -H 'Cache-Control: no-cache' --retry 2 --retry-all-errors --retry-delay 2 \
 		--max-time 20 --retry-max-time 40 \
@@ -276,6 +282,8 @@ if ! gpgv --keyring "$GNUPGHOME/pubring.kbx" --quiet \
 	sed 's/^/  /' "$WORK/gpgv.err" >&2
 	exit 1
 fi
+bash "$HERE/scripts/verify/check-index-baseline.sh" "$WORK/InRelease.body" "$WORK/InRelease" \
+	|| { echo "::error::the served index cannot be taken as the baseline of $PRODUCT $TAG" >&2; exit 1; }
 
 # The per-architecture Packages files the signed index declares, with the size
 # and the SHA256 it declares for each. Only the plain ones: reprepro writes
