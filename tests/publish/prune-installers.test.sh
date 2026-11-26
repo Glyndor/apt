@@ -114,11 +114,35 @@ with tempfile.TemporaryDirectory() as temp:
          'invalid installer listing'),
         ({'IsTruncated': False, 'Contents': [{'Key': 'install/../index.html'}]},
          'unsafe installer key'),
+        ({'IsTruncated': False, 'Contents': [{'Key': 'install//epistle'}]},
+         'unsafe installer key'),
     ]:
         reset()
         response_file = work / 'response.json'
         response_file.write_text(json.dumps(response))
         refused(run(LIST_RESPONSE=str(response_file)), reason, keys())
+
+    # The read-back after the deletes is read as strictly as the listing before them: a key with a dot-dot or an empty
+    # segment, or one outside install/, stops the run and says so. The deletes of the first listing have happened by then.
+    for response, reason in [
+        ({'IsTruncated': False, 'Contents': [{'Key': 'install/epistle'}, {'Key': 'install/epistle-panel'},
+                                                   {'Key': 'install/with space'}, {'Key': 'install/../index.html'}]},
+         'unsafe installer key'),
+        ({'IsTruncated': False, 'Contents': [{'Key': 'install/epistle'}, {'Key': 'install/epistle-panel'},
+                                                   {'Key': 'install/with space'}, {'Key': 'install//x'}]},
+         'unsafe installer key'),
+        ({'IsTruncated': False, 'Contents': [{'Key': 'install/epistle'}, {'Key': 'install/epistle-panel'},
+                                                   {'Key': 'install/with space'}, {'Key': 'pool/old.deb'}]},
+         'the bucket returned'),
+    ]:
+        reset()
+        put(bucket, 'install/retired product')
+        after_file = work / 'after.json'
+        after_file.write_text(json.dumps(response))
+        result = run(LIST_RESPONSE_AFTER=str(after_file))
+        check(result.returncode != 0 and reason in result.stdout + result.stderr,
+              'named refusal of the read-back: ' + reason + ' (' + response['Contents'][-1]['Key'] + ')')
+        check(any(c[1] == 'delete-object' for c in records()), 'and the stale installer had been deleted before it')
 
     # Empty listings (omitted Contents is legal) do not authorize any deletion.
     for response in ({'IsTruncated': False}, {'IsTruncated': False, 'Contents': []}):

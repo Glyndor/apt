@@ -111,6 +111,15 @@ for flag in '--workflow publish.yml' '--branch main' '--status success' '--limit
 	check "the lookup passes ${flag}" "1" "$(grep -c -- "$flag" "$WORK/gh.args")"
 done
 
+# The checkout itself has no roster: an empty roster would make the health check ask for no installer and pass, so the
+# check stops and says where it looked.
+cp "$CLONE/.github/workflows/publish.yml" "$WORK/publish.keep"
+printf 'env:\n  OTHER: "x"\n' > "$CLONE/.github/workflows/publish.yml"
+fake_gh "" 0
+check "a checkout whose publish.yml has no PRODUCTS list stops the check" "exit 1" "$(run)"
+check "and says that no list was found there" "1" "$(grep -c 'no PRODUCTS list found in .github/workflows/publish.yml' "$WORK/log")"
+cp "$WORK/publish.keep" "$CLONE/.github/workflows/publish.yml"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

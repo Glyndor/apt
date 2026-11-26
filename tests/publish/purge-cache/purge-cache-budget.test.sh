@@ -343,6 +343,7 @@ check "and says so" "1" "$(grep -c 'must be a positive integer' "$OUT")"
 rc=0
 "$PURGE" "https://apt.example" "$BUILT" 0 > "$OUT" 2>&1 || rc=$?
 check "a budget of zero seconds fails the purge" "1" "$rc"
+check "and says that it must be at least one second, before anything is asked of the network" "1" "$(grep -c 'must be at least 1 second' "$OUT")"
 
 # The default budget is a number too, and it is the one production would use
 # if the workflow ever stopped passing it.

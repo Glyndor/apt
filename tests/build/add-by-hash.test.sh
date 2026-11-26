@@ -193,6 +193,25 @@ check "a distribution with no Release is refused" "1" "$(said 'no Release at')"
 rc=0; bash "$SCRIPT" "$D/dists/stable" > "$WORK/out" 2>&1 || rc=$?
 check "and a call without its arguments says how to call it" "2" "$rc"
 
+# The detached signature is read back too, on its own: both are made by the same key a line apart, so a gpgv that accepts the
+# InRelease and refuses the Release.gpg is how a defect in the detached one would look, and nothing else shows it.
+D="$(fresh detached)"
+mkdir -p "$WORK/gpgv-stub"
+REAL_GPGV="$(command -v gpgv)"
+cat > "$WORK/gpgv-stub/gpgv" <<STUB
+#!/usr/bin/env bash
+for a in "\$@"; do
+	case "\$a" in *Release.gpg) echo "gpgv: BAD signature from the stub" >&2; exit 1 ;; esac
+done
+exec "$REAL_GPGV" "\$@"
+STUB
+chmod +x "$WORK/gpgv-stub/gpgv"
+rc=0; PATH="$WORK/gpgv-stub:$PATH" run "$D" || rc=$?
+check "a Release.gpg that does not verify is refused although the InRelease does" "1" "$rc"
+check "and the refusal names the detached signature" "1" "$(said 'the Release.gpg just signed does not verify against')"
+check "and says what gpgv said" "1" "$(grep -c 'gpgv said: gpgv: BAD signature from the stub' "$WORK/out")"
+check "and leaves no signed index behind" "0" "$(find "$D/dists/stable" -maxdepth 1 \( -name InRelease -o -name Release.gpg \) | wc -l)"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

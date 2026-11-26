@@ -49,7 +49,22 @@ run() { ( cd "$1" && ./scripts/quality/hygiene/check-editorconfig.sh 2>&1 ); }
 
 # --- this repository ------------------------------------------------------
 
-out="$("$SCRIPT" 2>&1)"
+# The files of this repository are the tracked ones. The sweep of mutations runs this suite in a copy made with
+# `git archive`, which is the tracked files and no repository, so there the tree is made a repository of its own first and
+# the checker of that copy is the one that runs.
+if git -C "$HERE" rev-parse --git-dir >/dev/null 2>&1; then
+	real="$HERE"
+else
+	real="$WORK/real"
+	mkdir -p "$real"
+	cp -a "$HERE/." "$real/"
+	git init -q -b main "$real"
+	git -C "$real" config user.email t@example.invalid
+	git -C "$real" config user.name t
+	git -C "$real" add -A
+	git -C "$real" commit -qm tree
+fi
+out="$("$real/scripts/quality/hygiene/check-editorconfig.sh" 2>&1)"
 rc=$?
 check "this repository agrees with its own .editorconfig" "0" "$rc"
 

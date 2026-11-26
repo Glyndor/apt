@@ -36,6 +36,11 @@ if args[:1] == ['s3api']:
         keys = sorted(key for key in files(bucket) if key.startswith(prefix))
         result = {'IsTruncated': os.environ.get('LIST_TRUNCATED') == '1',
                   'Contents': [{'Key': key} for key in keys]}
+        # LIST_RESPONSE_AFTER answers the second listing of a run, the read-back after the deletes.
+        listings = sum(1 for line in Path(os.environ['AWS_CALLS']).read_text().splitlines() if '"list-objects-v2"' in line)
+        if os.environ.get('LIST_RESPONSE_AFTER') and listings >= 2:
+            print(Path(os.environ['LIST_RESPONSE_AFTER']).read_text())
+            sys.exit(0)
         if os.environ.get('LIST_RESPONSE'):
             print(Path(os.environ['LIST_RESPONSE']).read_text())
             sys.exit(0)

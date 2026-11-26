@@ -200,7 +200,7 @@ while IFS= read -r key; do
 	case "$key" in
 		"$PREFIX"*)
 			case "$key" in
-				*..* | *'//'*) echo "::error::unsafe installer key: $key" >&2; exit 1 ;;
+				*..* | *'//'*) echo "::error::unsafe installer key in the read-back: $key" >&2; exit 1 ;;
 			esac
 			;;
 		*)

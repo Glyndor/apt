@@ -10,3 +10,5 @@ tests/mutation/catalog.d/instrument.txt	16	85	estimated from the scheduled sweep
 tests/mutation/catalog.d/switch-rule.txt	164	869	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 164 entries
 tests/mutation/catalog.d/scope.txt	3	16	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 3 entries
 tests/mutation/catalog.d/live.txt	41	217	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 41 entries
+tests/mutation/catalog.d/gaps.txt	22	320	measured on a runner from the job of run 45775745487, which went through all of these entries: 244 seconds before the first and 76 seconds for them
+tests/mutation/catalog.d/gaps-archive.txt	7	695	measured on a runner from the job of run 45775745487: 244 seconds before the first, 134 for the four probes of a key that ended, and 107 for each of the three that serve the archive with faults (the first measured, the other two counted the same)

@@ -165,6 +165,13 @@ rc=0; run - || rc=$?
 check "refuses to run with no products" "1" "$rc"
 check "and says so" "1" "$(grep -c 'no products given' "$WORK/stderr" || true)"
 
+# A tree with no template is refused by name: the generator would otherwise have nothing to render and no way to say so.
+rm -rf "$WORK/bare"; mkdir -p "$WORK/bare/scripts/build"
+cp "$BUILD" "$WORK/bare/scripts/build/build-installers.sh"
+rc=0; "$WORK/bare/scripts/build/build-installers.sh" "$WORK/bare-out" podup > "$WORK/stdout" 2> "$WORK/stderr" || rc=$?
+check "refuses a tree with no template" "1" "$rc"
+check "and names the template it is missing" "1" "$(grep -c 'missing template: .*scripts/installer/install-template.sh' "$WORK/stderr" || true)"
+
 echo
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

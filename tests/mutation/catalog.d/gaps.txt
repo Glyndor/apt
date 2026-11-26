@@ -1,0 +1,24 @@
+# The guards that had an exemption and now have a case: arguments, local files and keys that are not there.
+# Same format as tests/mutation/catalog.txt, which says what every field means.
+build-installers-missing-template	scripts/build/build-installers.sh	[ -f "$TEMPLATE" ] || { echo "::error::missing template: $TEMPLATE" >&2; exit 1; }	[ -f "$TEMPLATE" ] || true	tests/build/build-installers.test.sh
+build-keyring-missing-input	scripts/build/build-keyring.sh	[ -f "$HERE/$f" ] || { echo "::error::missing build input: $f" >&2; exit 1; }	[ -f "$HERE/$f" ] || true	tests/build/build-keyring.test.sh
+purge-cache-budget-at-least-one	scripts/publish/purge-cache.sh	[ "$BUDGET" -ge 1 ] || { echo "::error::the purge budget must be at least 1 second" >&2; exit 1; }	[ "$BUDGET" -ge 1 ] || true	tests/publish/purge-cache/purge-cache-budget.test.sh
+check-action-pins-no-workflows-folder	scripts/quality/lint/check-action-pins.sh	if [ ! -d "$workflows" ]; then	if false; then	tests/quality/lint/check-action-pins.test.sh
+lint-workflow-shell-no-shellcheck	scripts/quality/lint/lint-workflow-shell.sh	if ! command -v shellcheck >/dev/null 2>&1; then	if false; then	tests/quality/lint/lint-workflow-shell.test.sh
+published-roster-checkout-without-products	scripts/verify/published-roster.sh	roster="$(roster_of < "$root/$workflow" 2>/dev/null || true)"	roster="alpha"	tests/verify/published-roster.test.sh
+reference-installers-needs-a-product	scripts/verify/reference-installers.sh	[ "$#" -ge 1 ] || { echo "usage: reference-installers.sh <out-dir> <product>..." >&2; exit 2; }	[ "$#" -ge 1 ] || true	tests/verify/reference-installers.test.sh
+prune-installers-unsafe-key-before-the-deletes	scripts/publish/prune-installers.sh	*..* | *'//'*) echo "::error::unsafe installer key: $key" >&2; exit 1 ;;	*..* | *'//'*) : ;;	tests/publish/prune-installers.test.sh
+prune-installers-unsafe-key-in-the-read-back	scripts/publish/prune-installers.sh	*..* | *'//'*) echo "::error::unsafe installer key in the read-back: $key" >&2; exit 1 ;;	*..* | *'//'*) : ;;	tests/publish/prune-installers.test.sh
+prune-installers-read-back-outside-the-prefix	scripts/publish/prune-installers.sh	echo "::error::the bucket returned '$key', which is not under $PREFIX" >&2	echo "::error::x" >&2	tests/publish/prune-installers.test.sh
+editorconfig-final-newline	scripts/quality/hygiene/check-editorconfig.sh	if [ "$(tail -c1 "$f" | wc -l)" -eq 0 ]; then	if false; then	tests/quality/hygiene/check-editorconfig.test.sh
+editorconfig-crlf	scripts/quality/hygiene/check-editorconfig.sh	if grep -qU $'\r$' "$f" 2>/dev/null; then	if false; then	tests/quality/hygiene/check-editorconfig.test.sh
+editorconfig-trailing-whitespace	scripts/quality/hygiene/check-editorconfig.sh	if grep -qE '[[:space:]]+$' "$f" 2>/dev/null; then	if false; then	tests/quality/hygiene/check-editorconfig.test.sh
+editorconfig-valid-utf8	scripts/quality/hygiene/check-editorconfig.sh	if ! iconv -f UTF-8 -t UTF-8 "$f" >/dev/null 2>&1; then	if false; then	tests/quality/hygiene/check-editorconfig.test.sh
+editorconfig-nothing-checked	scripts/quality/hygiene/check-editorconfig.sh	if [ "$checked" -eq 0 ]; then	if false; then	tests/quality/hygiene/check-editorconfig.test.sh
+editorconfig-some-failed	scripts/quality/hygiene/check-editorconfig.sh	if [ "$fail" -ne 0 ]; then	if false; then	tests/quality/hygiene/check-editorconfig.test.sh
+ci-job-scope-packages-failure-is-exit-1	scripts/quality/scope/ci-job-scope.sh	if sys.argv[1:] == ["packages"]:	if False:	tests/quality/scope/ci-job-scope-packages.test.sh
+publish-empty-archive-secret	.github/workflows/publish.yml	if [ -z "$GLYNDOR_APT_GPG_PRIVATE_KEY" ]; then	if false; then	tests/publication/publish/publish-workflow-bootstrap.test.sh
+add-by-hash-detached-signature	scripts/build/add-by-hash.sh	if ! gpgv --keyring "$WORK/archive-key.gpg" --quiet "$WORK/Release.gpg" "$RELEASE" 2>"$WORK/gpgv.err"; then	if false; then	tests/build/add-by-hash.test.sh
+verify-debs-unreadable-mldsa-key-file	scripts/verify/verify-debs.sh	|| { echo "::error::cannot read the ML-DSA-65 release public key file $MLDSA_KEY_FILE" >&2; exit 1; }	|| { :; }	tests/verify/verify-debs-hybrid.test.sh
+reusable-shell-ci-non-executable-lint-message	.github/workflows/reusable-shell-ci.yml	elif [ ! -x "$script" ]; then	elif false; then	tests/ci/reusable/reusable-shell-ci.test.sh
+published-roster-no-products-message	scripts/verify/published-roster.sh	echo "::error::no PRODUCTS list found in $workflow; this check cannot tell which installers to ask for" >&2	echo "::error::x" >&2	tests/verify/published-roster.test.sh

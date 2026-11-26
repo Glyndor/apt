@@ -51,8 +51,7 @@ ONLY=()
 # Suites that need the git metadata the copy does not have. Excluded by name:
 # they fail in every copy, on every machine, and measuring them per run would
 # only re-measure a fact that cannot change.
-ALWAYS_EXCLUDED="tests/ci/suites/check-suite-completeness.test.sh
-tests/quality/hygiene/check-editorconfig.test.sh"
+ALWAYS_EXCLUDED="tests/ci/suites/check-suite-completeness.test.sh"
 
 usage() {
 	cat <<'EOF'
