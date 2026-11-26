@@ -28,6 +28,11 @@ tests/verify/verify-published/verify-published-budget.test.sh
 	scripts/verify/**
 	tests/verify/**
 
+tests/verify/verify-published/verify-published-cut-connection.test.sh
+	tests/fixtures/verify/**
+	scripts/verify/**
+	tests/verify/**
+
 tests/verify/verify-published/verify-published-packages.test.sh
 	tests/fixtures/verify/**
 	scripts/verify/**

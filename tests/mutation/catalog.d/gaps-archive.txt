@@ -1,0 +1,10 @@
+# The refusals of the read-back of the archive that need its server to cut, reset or hang, or to be asked twice for
+# a key that is not there. Same format as tests/mutation/catalog.txt. A file of their own because each one takes
+# minutes on a runner, and with the rest of gaps.txt the fragment did not fit the bound of a job.
+check-release-order-key-not-found	scripts/verify/check-release-order.sh	[ -f "$PUBKEY_ASC" ] || { echo "::error::archive public key $PUBKEY_ASC not found" >&2; exit 1; }	[ -f "$PUBKEY_ASC" ] || true	tests/verify/check-release-order.test.sh
+check-release-order-key-not-importable	scripts/verify/check-release-order.sh	|| { echo "::error::could not import the archive public key from $PUBKEY_ASC" >&2; exit 1; }	|| true	tests/verify/check-release-order.test.sh
+verify-published-key-not-found	scripts/verify/verify-published.sh	[ -f "$PUBKEY_ASC" ] || { echo "::error::archive public key $PUBKEY_ASC not found" >&2; exit 1; }	[ -f "$PUBKEY_ASC" ] || true	tests/verify/verify-published.test.sh
+verify-published-key-not-importable	scripts/verify/verify-published.sh	|| { echo "::error::could not import the archive public key from $PUBKEY_ASC" >&2; exit 1; }	|| true	tests/verify/verify-published.test.sh
+verify-published-inrelease-budget-message	scripts/verify/verify-published.sh	echo "::error::InRelease did not converge to the published build before the ${BUDGET}s budget ran out" >&2	echo "::error::x" >&2	tests/verify/verify-published/verify-published-cut-connection.test.sh
+verify-published-detached-pair-budget	scripts/verify/verify-published.sh	[ "$(elapsed)" -lt "$BUDGET" ] || { echo "::error::the detached Release / Release.gpg pair was not fetched	: || { echo "::error::the detached Release / Release.gpg pair was not fetched	tests/verify/verify-published/verify-published-cut-connection.test.sh
+verify-published-bootstrap-budget-message	scripts/verify/verify-published.sh	echo "::error::$BOOTSTRAP_DEB.asc did not verify and the ${BUDGET}s budget ran out on attempt $attempt;	echo "::error::x $attempt;	tests/verify/verify-published/verify-published-cut-connection.test.sh

@@ -34,9 +34,8 @@
 #       with `git archive HEAD` and carries no history, so it fails there
 #       whatever the mutant is. Excluded by name in the runner.
 #
-#   tests/quality/hygiene/check-editorconfig.test.sh
-#       Walks `git ls-files`. The copy carries no index, so it sees no tracked
-#       file and fails. Excluded by name in the runner.
+# The suite of check-editorconfig.sh used to be left out too: it walks `git ls-files` over this repository, and the copy
+# carries no index. It now makes the copy a repository of its own first, and runs.
 #
 # Any OTHER suite that fails in a pristine copy is excluded as well, measured
 # once per suite. On the machine this catalogue was measured on, that list was:

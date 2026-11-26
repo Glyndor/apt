@@ -221,6 +221,15 @@ else
 	assert_error 1 "cannot read the required-products file" "an unreadable required file is an error, not an empty list" \
 		-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq.b64" "$WORK/required-locked"
 fi
+# The same for the file of ML-DSA-65 keys: a locked one is not an empty list of keys either, which would admit a package that
+# carries a second signature and the product is not required to have it.
+cp "$WORK/pq.b64" "$WORK/pq-locked.b64"; chmod 000 "$WORK/pq-locked.b64"
+if [ -r "$WORK/pq-locked.b64" ]; then
+	echo "not run - an unreadable ML-DSA-65 key file (running as root, the file stays readable)"
+else
+	assert_error 1 "cannot read the ML-DSA-65 release public key file" "an unreadable key file is an error, not an empty list" \
+		-- "$VERIFY" "$d" "$WORK/ed.b64" podup "" "$WORK/pq-locked.b64" "$WORK/required-none"
+fi
 
 # --- the library cannot verify ML-DSA: refused and said ------------------------
 # The runner's python3-cryptography has no ML-DSA. The blocker below makes that

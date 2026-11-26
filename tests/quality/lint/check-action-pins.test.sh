@@ -255,6 +255,11 @@ R="$(mktemp -d -p "$WORK")"
 mkdir -p "$R/.github/workflows"
 check "a root with no workflow file is an error, not a pass" "1" "$(rc_of "$R")"
 
+# A root with no .github/workflows at all is not a repository that pins everything: nothing was read, and it says where.
+rm -rf "$WORK/bare"; mkdir -p "$WORK/bare"
+check "a root with no workflows folder is an error, not a pass" "1" "$(rc_of "$WORK/bare")"
+check "and names the folder it did not find" "1" "$(said 'no .github/workflows directory under')"
+
 check "the real workflows of this repository pass" "0" "$(rc_of "$HERE")"
 
 echo

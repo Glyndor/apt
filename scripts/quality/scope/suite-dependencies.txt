@@ -98,6 +98,7 @@ tests/verify/verify-installers.test.sh -
 tests/verify/verify-published.test.sh -
 tests/verify/verify-published/verify-published-bootstrap.test.sh -
 tests/verify/verify-published/verify-published-budget.test.sh -
+tests/verify/verify-published/verify-published-cut-connection.test.sh -
 tests/verify/verify-published/verify-published-collision.test.sh -
 tests/verify/verify-published/verify-published-by-hash.test.sh -
 tests/build/add-by-hash.test.sh -

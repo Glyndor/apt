@@ -183,6 +183,18 @@ TAG=not-semver
 CAND=99:1.0.0
 case_with_control 'non-SemVer tag fails comparison' 1 'not a valid SemVer' semver
 
+# The key that anchors the signature of the index has to exist and to import before the order is judged: the guard that
+# stops a rollback reads the served index through it, and one that went on without it would read an unsigned answer.
+snapshot old
+PRODUCT=podup
+TAG=v3.0.0
+ACTIVE="$VERIFY"
+KEY="$WORK/absent.asc"
+check 1 "archive public key $WORK/absent.asc not found" "a public key file that is not there is refused"
+printf 'this is not a key\n' > "$WORK/not-a-key.asc"
+KEY="$WORK/not-a-key.asc"
+check 1 "could not import the archive public key from $WORK/not-a-key.asc" "a public key file that is not a key is refused"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

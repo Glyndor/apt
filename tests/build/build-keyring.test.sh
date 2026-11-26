@@ -381,6 +381,15 @@ for input in glyndor-upgrade glyndor-upgrade.service glyndor-upgrade.timer maint
 		test "${version#*+pkg}" = "203101${day}120000"
 done
 
+# --- A packaged input that is not there is refused by name ----------------------
+# The version is derived from the change dates of these files; one that is absent would drop out of the date, and the
+# version would go on as if it had never changed.
+mv "$REPO/keyring/glyndor.sources" "$WORK/sources.away"
+rc=0; mkdir -p "$WORK/missing-out"; "$BUILD" "$WORK/missing-out" >"$WORK/missing.out" 2>&1 || rc=$?
+mv "$WORK/sources.away" "$REPO/keyring/glyndor.sources"
+expect "a missing packaged input fails the build" test "$rc" -eq 1
+expect "and the error names the input" grep -q 'missing build input: keyring/glyndor.sources' "$WORK/missing.out"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

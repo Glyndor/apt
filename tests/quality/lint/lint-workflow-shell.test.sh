@@ -327,6 +327,15 @@ plant_shape folded "      - name: folded" "        run: >" "          $VIOLATION
 check "control: not linting folded blocks declares the folded violation clean" "0 0" "$(red folded ./scripts/quality/lint/old-lint.sh)"
 rm -f "$work/.github/workflows/"*.yml
 
+# --- no shellcheck: a linter that cannot run is not a clean tree -----------------------
+
+mkdir -p "$work/nobin"
+ln -sf "$(command -v dirname)" "$work/nobin/dirname"
+out="$(PATH="$work/nobin" "$(command -v bash)" "$SCRIPT" style 2>&1)"
+rc=$?
+check "with no shellcheck on PATH it fails" "1" "$rc"
+check "and says it cannot run" "1" "$(printf '%s' "$out" | grep -c 'shellcheck is not on PATH; this check cannot run')"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

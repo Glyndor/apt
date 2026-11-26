@@ -458,6 +458,29 @@ PYMAP
 )"
 check "the real dependency map names run suites and listed packages without duplicates" "ok" "$map_valid"
 
+# --- the lint of the shell embedded in workflows: absent is skipped, present and not executable is refused ---------------
+# The step lets a repository that has not adopted the script go on, and refuses one that has it recorded at 100644 with the
+# fix in the message, because reading a broken adoption as no adoption would open the gate it exists to close.
+step_script "$WORKFLOW" "Lint the shell embedded in workflows" > "$WORK/embedded.sh"
+lrepo() { # <mode: none|644|755> -> a directory with the script in it as the mode says
+	rm -rf "$WORK/l"; mkdir -p "$WORK/l/scripts/quality/lint"
+	case "$1" in
+		644) printf '#!/bin/sh\necho ran-the-script "$@"\n' > "$WORK/l/scripts/quality/lint/lint-workflow-shell.sh"; chmod 644 "$WORK/l/scripts/quality/lint/lint-workflow-shell.sh" ;;
+		755) printf '#!/bin/sh\necho ran-the-script "$@"\n' > "$WORK/l/scripts/quality/lint/lint-workflow-shell.sh"; chmod 755 "$WORK/l/scripts/quality/lint/lint-workflow-shell.sh" ;;
+	esac
+	printf '%s' "$WORK/l"
+}
+run_embedded() { ( cd "$1" && SEVERITY=style bash "$WORK/embedded.sh" 2>&1 ); }
+d="$(lrepo none)"; out="$(run_embedded "$d")"; rc=$?
+check "a repository without the script of the lint skips the step" "0" "$rc"
+check "and says so" "1" "$(printf '%s' "$out" | grep -c 'skipping')"
+d="$(lrepo 644)"; out="$(run_embedded "$d")"; rc=$?
+check "a script that is there and not executable fails the step" "1" "$rc"
+check "with the reason in its message" "1" "$(printf '%s' "$out" | grep -c 'exists but git records it non-executable')"
+check "and the script did not run" "0" "$(printf '%s' "$out" | grep -c ran-the-script)"
+d="$(lrepo 755)"; out="$(run_embedded "$d")"; rc=$?
+check "an executable one is run, with the severity" "0/1" "$rc/$(printf '%s' "$out" | grep -c 'ran-the-script style')"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

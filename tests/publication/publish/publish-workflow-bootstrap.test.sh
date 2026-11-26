@@ -217,6 +217,15 @@ check "and says the signing key is not in the keyring" "1" "$(grep -c 'is not pr
 check "and nothing is signed for the bootstrap with it" "0" \
 	"$([ -e "$D/public/glyndor-archive-keyring.deb.asc" ] && echo 1 || echo 0)"
 
+# An empty secret is refused by the step itself, with its own words, before anything is built: the repository is signed
+# with the key of this secret, and a build that went on without one would stop later, in a script, for another reason.
+D="$(sandbox empty)"; rc=0
+run_step "$D" "$WORK/step.sh" "" || rc=$?
+check "an empty archive secret stops the step" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+check "and says the secret is not configured" "1" "$(grep -c 'GLYNDOR_APT_GPG_PRIVATE_KEY secret is not configured' "$WORK/out")"
+check "and nothing is signed for the bootstrap" "0" \
+	"$([ -e "$D/public/glyndor-archive-keyring.deb.asc" ] && echo 1 || echo 0)"
+
 # --- the control: without --bootstrap, no signature is served ---------------
 sed 's|build-repo\.sh --bootstrap debs/glyndor-archive-keyring\.deb |build-repo.sh |' "$WF" > "$WORK/publish-cut.yml"
 check "the sabotage changed the workflow" "1" "$(cmp -s "$WF" "$WORK/publish-cut.yml" && echo 0 || echo 1)"

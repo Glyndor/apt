@@ -104,6 +104,14 @@ check "outside a git checkout it renders from the copy it is in" "version 2" "$(
 check "the fetched worktree is removed afterwards" "0" \
 	"$(git -C "$CLONE" worktree list | grep -c 'src')"
 
+# With an output folder and no product there is nothing to render, and the script says how it is used instead of
+# writing an empty reference that every served installer would then fail to match.
+fake_gh "$OLD" 0
+rc=0; PATH="$WORK/bin:$PATH" bash "$CLONE/scripts/verify/reference-installers.sh" "$WORK/out-none" >"$WORK/none.out" 2>&1 || rc=$?
+check "with no product named it is a usage error" "2" "$rc"
+check "and says how it is used" "1" "$(grep -c 'usage: reference-installers.sh <out-dir> <product>' "$WORK/none.out")"
+check "and writes nothing" "no" "$([ -e "$WORK/out-none" ] && echo yes || echo no)"
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

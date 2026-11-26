@@ -33,6 +33,12 @@ fail=0
 
 # --- Cases -------------------------------------------------------------------
 
+# The key that anchors the signature of the archive has to exist and to import before anything is fetched: a read-back
+# that went on without it would verify against whatever the keyring happened to hold.
+printf 'this is not a key\n' > "$WORK/not-a-key.asc"
+assert_error 1 "archive public key $WORK/absent.asc not found" "a public key file that is not there is refused" -- "$VERIFY" "$BASE" "$WORK/absent.asc" 1 0
+assert_error 1 "could not import the archive public key from $WORK/not-a-key.asc" "a public key file that is not a key is refused" -- "$VERIFY" "$BASE" "$WORK/not-a-key.asc" 1 0
+
 build_archive
 assert 0 "a consistent archive is accepted" -- run
 
