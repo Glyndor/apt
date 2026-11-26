@@ -86,7 +86,17 @@ jobs:
     # minutes is well above an honest run with a larger roster and far below
     # that.
     timeout-minutes: 15
+    # The environment whose branch policy admits main only: it is what releases a secret kept in it to this job, and what
+    # GitHub decides outside this file, so a branch cannot take it away from itself.
+    environment: publish
     steps:
+      # A manual run can be started from any branch, and the job would run that branch's scripts with the keys. This
+      # refuses anything but main before anything is checked out. It is not the defence on its own, since a branch can
+      # edit this file: the environment above is, once the secrets are kept in it.
+      - name: Refuse any ref but main
+        env:
+          REF: ${{ github.ref }}
+        run: '[ "$REF" = refs/heads/main ] || { echo "::error::$REF is not refs/heads/main; nothing is published"; exit 1; }'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

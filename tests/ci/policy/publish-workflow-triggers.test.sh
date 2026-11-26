@@ -124,6 +124,45 @@ for event in pull_request pull_request_target workflow_run push; do
 done
 
 echo
+# --- the job that holds the keys runs on main only --------------------------------------------------------
+# A manual run starts from any branch. The job declares the environment whose branch policy admits main, and its
+# first step, before anything is checked out, refuses any other ref.
+guard_problems() { # $1 = workflow file
+	python3 -I - "$1" <<'PY'
+import sys, yaml
+doc = yaml.load(open(sys.argv[1], encoding="utf-8"), Loader=yaml.BaseLoader)
+job = doc["jobs"]["publish"]
+if job.get("environment") != "publish":
+    print("the publish job does not declare the environment publish")
+first = job["steps"][0]
+if "uses" in first or first.get("env", {}).get("REF") != "${{ github.ref }}" or "refs/heads/main" not in first.get("run", ""):
+    print("the first step of the publish job is not the refusal of any ref but main")
+PY
+}
+check "publish.yml runs its keys on main only" "" "$(guard_problems "$WORKFLOWS/publish.yml")"
+run="$(python3 -I -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["jobs"]["publish"]["steps"][0]["run"])' "$WORKFLOWS/publish.yml")"
+for ref in refs/heads/main refs/heads/mainx refs/heads/fix refs/tags/v1 refs/pull/3/merge ""; do
+	rc=0; REF="$ref" bash -c "$run" > "$WORK/guard.out" 2>&1 || rc=$?
+	if [ "$ref" = refs/heads/main ]; then
+		check "the first step lets main through" "0" "$rc"
+	else
+		check "the first step refuses '$ref' and says nothing is published" "1 1" "$rc $(grep -c 'nothing is published' "$WORK/guard.out")"
+	fi
+done
+for sabotage in environment first-step; do
+	python3 -I - "$WORKFLOWS/publish.yml" "$WORK/$sabotage.yml" "$sabotage" <<'PY'
+import sys, yaml
+doc = yaml.load(open(sys.argv[1], encoding="utf-8"), Loader=yaml.BaseLoader)
+job = doc["jobs"]["publish"]
+if sys.argv[3] == "environment":
+    del job["environment"]
+else:
+    job["steps"].pop(0)
+yaml.safe_dump(doc, open(sys.argv[2], "w"), sort_keys=False)
+PY
+	check "a publish job without its $sabotage is reported" "1" "$([ -n "$(guard_problems "$WORK/$sabotage.yml")" ] && echo 1 || echo 0)"
+done
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

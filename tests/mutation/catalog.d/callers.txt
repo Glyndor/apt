@@ -73,3 +73,4 @@ pins-enumerated-as-keys	.github/workflows/reusable-dependabot-freshness.yml	grep
 pins-counted-as-keys	.github/workflows/reusable-dependabot-freshness.yml	grep -rhoE '^[[:space:]]*(-[[:space:]]+)?uses:	grep -rhoE 'uses:	tests/ci/reusable/reusable-dependabot-freshness.test.sh
 shell-ci-a-script-that-is-not-executable-fails-the-job	.github/workflows/reusable-shell-ci.yml	exit "$rc"	exit 0	tests/ci/reusable/reusable-shell-ci.test.sh
 lint-listed-mutations	scripts/quality/lint/switch-rule-forms.json	needs.decide.outputs.run != 'false' }}", "needs": "decide"	needs.decide.outputs.run == 'false' }}", "needs": "decide"	tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
+publish-only-from-main	.github/workflows/publish.yml	[ "$REF" = refs/heads/main ] ||	true ||	tests/ci/policy/publish-workflow-triggers.test.sh
