@@ -42,12 +42,9 @@ done
 # copies the InRelease it read declares; the old ones are never deleted
 # and the new ones land before the InRelease that names them, so it
 # never sees a mismatch, whichever InRelease it read. A client that
-# asks by the fixed name (one holding an InRelease from before
-# Acquire-By-Hash, which is every client during the first publish that
-# carries it) finds the fixed names unchanged for as long as the old
-# InRelease is the one served, and only a client that read the old
-# InRelease and then asks for Packages after pass 4 has replaced it can
-# see a mismatch: the window every publish had before, and no longer.
+# asks by the fixed name can see a mismatch either way: one that read the
+# old InRelease and asks for Packages after pass 4 has replaced it, and
+# one that reads the new InRelease and asks before pass 4 has.
 # Putting the signed index after the fixed names instead would leave
 # the old InRelease served over new Packages for the whole of that pass,
 # and for as long as a publish cut between the two stays cut.
@@ -55,9 +52,12 @@ done
 # A publish cut before the new InRelease lands leaves the previous index
 # served with everything it declares. Cut after it and before pass 4
 # ends, it leaves the new InRelease over some old fixed-name files: a
-# client that offers by hash is not affected, and the read-back at the
-# end of the job fails on those files, as the six-hourly health check
-# does until the next publish.
+# client that offers by hash is not affected, but nothing after this step
+# runs once it has failed, so neither the purge nor the read-back does,
+# and the bucket stays that way until a later publish; the six-hourly
+# health check is what reports it. So passes 3 and 4 are tried three
+# times before the step gives up. That covers a request that fails, not a
+# job that is cancelled or loses its runner.
 #
 # The ordering is necessary and not sufficient: it says nothing about an
 # index file being removed after it is written, which is what #47/#53
@@ -125,7 +125,8 @@ done
 # The same absence keeps every by-hash copy a publish ever uploaded:
 # nothing deletes one, so a client that read an InRelease of any earlier
 # publish (a proxy or a cache can hand one out until its Valid-Until)
-# still finds the copies it declares. A copy only appears when an index
+# still finds the index files it declares. Not the packages those files
+# name: pass 5 deletes the ones the new build no longer has. A copy only appears when an index
 # changes, which is when a product releases, and an index is a few KiB,
 # so the kept set grows by kilobytes per release. Pruning them would need
 # a delete by age, the shape prune-installers.sh uses for install/, and
@@ -136,7 +137,21 @@ done
 # has to go, no pool filename is a prefix of another (they all end in
 # .deb and differ before it), and the read-back check at the end of
 # this job verifies the pool too, so a recurrence there would be loud
-# rather than silent.
+# rather than silent. The archive serves the latest release only, and
+# this is what it costs: a client that ran `apt update` before a publish
+# and installs after it is answered 404 for a superseded package, until
+# it updates again.
+# A pass that may not be left half done: three attempts, then the step fails.
+retried() { # <command>...
+  local attempt
+  for attempt in 1 2 3; do
+    if "$@"; then return 0; fi
+    echo "::warning::publish pass failed on attempt $attempt of 3"
+    if [ "$attempt" -lt 3 ]; then sleep 10; fi
+  done
+  echo "::error::the signed index may be served over index files it does not declare; run the publish again"
+  return 1
+}
 # 0. Compare pool/ in the bucket with the built pool, before any write.
 "$(dirname "$0")/settle-pool-bytes.sh"
 # 1. Upload new pool/ packages (no deletions yet).
@@ -152,13 +167,13 @@ aws s3 sync public/ s3://glyndor-apt/ \
   --cache-control "public, max-age=31536000, immutable"
 # 3. Publish the signed index, after the copies it declares and before
 #    the fixed-name index files.
-aws s3 sync public/ s3://glyndor-apt/ \
+retried aws s3 sync public/ s3://glyndor-apt/ \
   --no-progress \
   --exclude "*" --include "dists/stable/InRelease" --include "dists/stable/Release" --include "dists/stable/Release.gpg" \
   --cache-control "public, max-age=86400"
 # 4. Publish the rest of the metadata, the index files under their fixed
 #    names among it. Deliberately NOT --delete: see above.
-aws s3 sync public/ s3://glyndor-apt/ \
+retried aws s3 sync public/ s3://glyndor-apt/ \
   --no-progress \
   --exclude "pool/*" --exclude "dists/*/by-hash/*" \
   --exclude "dists/stable/InRelease" --exclude "dists/stable/Release" --exclude "dists/stable/Release.gpg" \

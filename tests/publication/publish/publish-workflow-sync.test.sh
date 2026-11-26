@@ -46,7 +46,7 @@ check "the workflow invokes the sync script" "1" \
 	"$(grep -c '^          ./scripts/publish/sync-archive.sh$' "$WF")"
 
 # Anchored to the command's own indentation.
-mapfile -t starts < <(grep -n '^aws s3 sync' "$SYNC" | cut -d: -f1)
+mapfile -t starts < <(grep -nE '^(retried )?aws s3 sync' "$SYNC" | cut -d: -f1)
 check "the publish step syncs in five passes" "5" "${#starts[@]}"
 starts+=("$(($(wc -l < "$SYNC") + 1))")
 
@@ -72,6 +72,8 @@ check "and but the signed index" "1" \
 	"$(has 4 '--exclude "dists/stable/InRelease" --exclude "dists/stable/Release" --exclude "dists/stable/Release.gpg"')"
 check "and deletes nothing" "0" "$(has 4 '--delete')"
 check "pass 5 is the one that deletes, and only in pool/" "11" "$(has 5 '--delete')$(has 5 '--exclude "*" --include "pool/*"')"
+check "passes 3 and 4 are the ones tried again" "00110" \
+	"$(for n in 1 2 3 4 5; do flags_of "$n" | head -n 1 | grep -c '^retried ' ; done | tr -d '\n')"
 
 # --- the endpoint reaches every step that talks to the bucket ---------------
 #
