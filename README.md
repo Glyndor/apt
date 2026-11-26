@@ -11,8 +11,10 @@ Signed `.deb` packages for Glyndor software on Debian and Ubuntu, for `amd64` an
 curl -fsSL https://apt.glyndor.net/install/podup | sudo sh
 ```
 
-The script needs `curl` and `ca-certificates`. A minimal image, a container for
-example, has neither and has no `sudo` either. There you are already root, so
+The script needs `curl` and `ca-certificates`, and a Debian or Ubuntu system: it
+refuses to run without `apt-get`, `dpkg` and `dpkg-deb`, and it installs `gnupg`
+itself to check the archive key (and purges it again if it was the script that installed it). A minimal
+image, a container for example, has neither and has no `sudo` either. There you are already root, so
 install the two and run the command above without `sudo`:
 
 ```bash
@@ -23,7 +25,8 @@ The script:
 
 - adds the Glyndor archive and installs its signing key after checking the
   fingerprint against the one published [below](#verify-the-signing-key);
-- installs the package and what it depends on, including a current Podman;
+- installs the package with apt, so its dependencies and recommendations come
+  with it (for `podup`, that is where a current Podman comes from);
 - reports whether the daily Glyndor upgrade timer is on (it installs the
   `unattended-upgrades` package if it is missing, and the keyring package adds
   `Glyndor:stable` to that tool's allowed origins; its schedule is not changed).

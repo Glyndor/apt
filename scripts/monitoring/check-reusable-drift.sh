@@ -53,7 +53,7 @@ SIBLINGS=(
 	Glyndor/pacman
 )
 
-# The reusable workflows that all three repositories are expected to carry
+# The reusable workflows that all four sibling repositories are expected to carry
 # identically. Files outside this list are each repository's own business.
 REUSABLES=(
 	reusable-dco.yml

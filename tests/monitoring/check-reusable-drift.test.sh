@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Behaviour tests for scripts/monitoring/check-reusable-drift.sh.
 #
-# The script is the only thing standing between three deliberately duplicated
+# The script is the only thing standing between the deliberately duplicated
 # copies of seven reusable workflows and a silent divergence between them. Its
 # failure mode is not a crash: it is passing. A drift checker that fetches
 # nothing, or that compares a file against itself, prints the same green line as
@@ -41,7 +41,7 @@ check() { # <description> <expected> <actual>
 	fi
 }
 
-# The seven files the script expects to find in every repository, and the two
+# The seven files the script expects to find in every repository, and the
 # siblings it reads over HTTPS. Kept here so a change to either list in the
 # script shows up as a failing test rather than as a silently smaller test run.
 FILES=(
@@ -54,8 +54,8 @@ FILES=(
 	reusable-workflow-lint.yml
 )
 # Read out of the script under test rather than restated here. Each channel
-# repository names the other two, so a hardcoded pair is correct in exactly one
-# of the three and silently wrong in the others: the stub would serve paths the
+# repository names the others, so a hardcoded list is correct in exactly one
+# of them and silently wrong in the rest: the stub would serve paths the
 # script never asks for, and every case would fail for a reason that has
 # nothing to do with drift. Deriving it also means this list cannot fall out of
 # step with the one the script actually uses.
@@ -137,7 +137,7 @@ jobs:
 YML
 }
 
-# Lay down a local tree and two sibling trees, all seven files, all agreeing.
+# Lay down a local tree and a tree for each sibling, all seven files, all agreeing.
 seed() {
 	rm -rf "$WORK/repo" "$WORK/remote"
 	mkdir -p "$WORK/repo/.github/workflows"
@@ -172,7 +172,7 @@ counts() { # $1=output  $2=pattern
 seed
 out="$(run_check)"
 rc=$?
-check "seven identical files across two siblings pass" "0" "$rc"
+check "seven identical files across every sibling pass" "0" "$rc"
 check "and the success line reports a comparison count" "1" \
 	"$(says "$out" "compared $EXPECTED reusable workflow")"
 compared="$(printf '%s' "$out" | sed -n 's/^compared \([0-9]*\) .*/\1/p')"
