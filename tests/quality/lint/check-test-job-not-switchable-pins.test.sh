@@ -33,22 +33,60 @@ change "$SHELL_CI" "s = $SCOPE_STEP; s['run'] += chr(10) + 'echo docs_only=true 
 verdict "the scope step that always writes docs_only=true is refused" 1
 check "and the refusal names the file, the job and the step" "1" \
 	"$(said "$out" 'step `scope` of job `test` in .github/workflows/reusable-shell-ci.yml writes outputs a condition reads')"
-check "and says how to change a producer on purpose" "1" "$(said "$out" 'PRODUCERS_MAY_CHANGE of this script')"
+check "and says how to change a producer on purpose" "1" "$(said "$out" 'in PRODUCERS_MAY_CHANGE of the forms')"
 out="$(cd "$G" && env -u BASE_SHA bash "$SCRIPT" 2>&1)"; rc=$?
 check "the same change with no base commit named is not compared" "0" "$rc"
 
 # The same change when the forms of the base commit list the step: the two-step way.
 cp "$G/.github/workflows/reusable-shell-ci.yml" "$WORK/changed.yml"; git -C "$G" checkout -q -- .github/workflows/reusable-shell-ci.yml
-python3 -I - "$G/scripts/quality/lint/switch-rule-forms.json" <<'PY'
+BASE0="$(gitg rev-parse HEAD)"
+cp "$WORK/changed.yml" "$G/.github/workflows/reusable-shell-ci.yml"
+out="$(run_base "$G" "$BASE0")"
+DIGEST="$(printf '%s' "$out" | sed -n 's/.*digest `\([0-9a-f]\{64\}\)`.*/\1/p' | head -n 1)"
+check "the refusal of the change names the digest of what it makes of the step" "1" "$(printf '%s' "$DIGEST" | grep -cE '^[0-9a-f]{64}$')"
+git -C "$G" checkout -q -- .github/workflows/reusable-shell-ci.yml
+listed() { # <digest> : the forms of the base list the step, with this digest
+	python3 -I - "$G/scripts/quality/lint/switch-rule-forms.json" "$1" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
-d["producers_may_change"].append([".github/workflows/reusable-shell-ci.yml", "scope"])
+d["producers_may_change"] = [{"file": ".github/workflows/reusable-shell-ci.yml", "ident": "scope", "digest": sys.argv[2]}]
 json.dump(d, open(sys.argv[1], "w"))
 PY
-gitg add -A; gitg commit -qm "forms list the step"; LISTED="$(gitg rev-parse HEAD)"
-cp "$WORK/changed.yml" "$G/.github/workflows/reusable-shell-ci.yml"
+	gitg add -A; gitg commit -qm "forms list the step"; gitg rev-parse HEAD
+}
+unlist() { # the pull request takes its exemption off its own copy of the forms
+	python3 -I - "$G/scripts/quality/lint/switch-rule-forms.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["producers_may_change"] = []
+json.dump(d, open(sys.argv[1], "w"))
+PY
+}
+LISTED="$(listed "$DIGEST")"
+cp "$WORK/changed.yml" "$G/.github/workflows/reusable-shell-ci.yml"; unlist
 out="$(run_base "$G" "$LISTED")"; rc=$?
-check "the change is accepted once a pull request of its own has listed the step" "0" "$rc"
+check "the change is accepted once a pull request of its own has listed the step with the digest of the change" "0" "$rc"
+check "and the exemption that names the content is not read as surplus in the pull request that makes the change when it is the base's" "0" "$(said "$out" 'has done its work')"
+git -C "$G" checkout -q -- .github/workflows/reusable-shell-ci.yml
+OTHER="$(listed 0000000000000000000000000000000000000000000000000000000000000000)"
+cp "$WORK/changed.yml" "$G/.github/workflows/reusable-shell-ci.yml"
+out="$(run_base "$G" "$OTHER")"; rc=$?
+check "a step changed under an exemption that names other content is refused" "1" "$rc"
+check "and the refusal says what it differs in and names the digest to list" "1" "$(said "$out" "$DIGEST")"
+git -C "$G" checkout -q -- .github/workflows/reusable-shell-ci.yml
+# The copy of the pull request still lists an exemption whose content the producer already is.
+BASE1="$(gitg rev-parse HEAD)"
+cp "$WORK/changed.yml" "$G/.github/workflows/reusable-shell-ci.yml"
+python3 -I - "$G/scripts/quality/lint/switch-rule-forms.json" "$DIGEST" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["producers_may_change"] = [{"file": ".github/workflows/reusable-shell-ci.yml", "ident": "scope", "digest": sys.argv[2]}]
+json.dump(d, open(sys.argv[1], "w"))
+PY
+out="$(run_base "$G" "$LISTED")"; rc=$?
+check "an exemption that the pull request's own forms still list, once the producer is what it names, is refused as surplus" "1" "$rc"
+check "and the refusal says it has done its work" "1" "$(said "$out" 'has done its work')"
+git -C "$G" checkout -q -- . ; git -C "$G" reset -q --hard "$BASE1"
 
 base_repo
 change "$SHELL_CI" "s = $SCOPE_STEP; s['env']['SKIP_PATHS'] = 'docs/**'"

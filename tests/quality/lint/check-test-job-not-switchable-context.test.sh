@@ -33,7 +33,7 @@ verdict "a step added before the scope step that writes to GITHUB_ENV is refused
 check "and $SEE" "1" \
 	"$(said "$out" 'step `scope` of job `test` in .github/workflows/reusable-shell-ci.yml writes outputs a condition reads')"
 check "and it says what differs, the first step" "1" "$(said "$out" "commit's in: step 1")"
-check "and that the change goes in two pull requests" "1" "$(said "$out" 'PRODUCERS_MAY_CHANGE of this script in a pull request of its own')"
+check "and that the change goes in two pull requests" "1" "$(said "$out" 'in PRODUCERS_MAY_CHANGE of the forms in a pull request of its own')"
 
 base_repo
 change "$SHELL_CI" "doc['jobs']['test']['env'] = {'X': '1'}"
