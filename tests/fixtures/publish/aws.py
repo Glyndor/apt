@@ -65,6 +65,27 @@ if args[:1] == ['s3api']:
         raise AssertionError(args)
     sys.exit(0)
 
+# settle-pool-bytes.sh reads pool/ out of the bucket, and uploads one object by name.
+if args[:3] == ['s3', 'sync', 's3://glyndor-apt/pool/']:
+    assert args[4:] == ['--no-progress'] and args[3].endswith('/pool/'), args
+    if os.environ.get('FAIL_DOWNLOAD') == '1':
+        print('injected download failure', file=sys.stderr)
+        sys.exit(42)
+    for key, src in files(bucket).items():
+        if key.startswith('pool/'):
+            dst = Path(args[3]) / key.removeprefix('pool/')
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+    sys.exit(0)
+if args[:2] == ['s3', 'cp']:
+    key = args[2].removeprefix('public/')
+    assert args[2] == 'public/' + key and key.startswith('pool/') and args[3] == 's3://glyndor-apt/' + key, args
+    (bucket / key).parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(args[2], bucket / key)
+    with open(os.environ['AWS_WRITES'], 'a') as log:
+        log.write(json.dumps([0, 'upload', key]) + '\n')
+    sys.exit(0)
+
 assert args[:4] == ['s3', 'sync', 'public/', 's3://glyndor-apt/'], args
 state = Path(os.environ['AWS_STATE'])
 number = int(state.read_text()) + 1 if state.exists() else 1

@@ -334,6 +334,11 @@ tests/publish/sync-archive.test.sh
 	tests/publish/**
 	.github/workflows/publish.yml
 
+tests/publish/settle-pool-bytes.test.sh
+	tests/fixtures/publish/**
+	scripts/publish/**
+	tests/publish/**
+
 tests/publish/prune-installers.test.sh
 	tests/fixtures/publish/**
 	scripts/publish/**

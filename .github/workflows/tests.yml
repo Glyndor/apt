@@ -123,6 +123,7 @@ jobs:
         ./tests/publication/publish/publish-workflow-bootstrap.test.sh
         ./tests/publication/publish/publish-workflow-signing-key.test.sh
         ./tests/publish/sync-archive.test.sh
+        ./tests/publish/settle-pool-bytes.test.sh
         ./tests/publish/prune-installers.test.sh
         ./tests/publish/purge-cache/purge-cache-pruned.test.sh
         ./tests/publication/health-check/health-check-workflow.test.sh
