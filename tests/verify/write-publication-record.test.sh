@@ -34,6 +34,8 @@ rc=0; INDEX_RECORD="$WORK/record" INDEX_FLOOR="$WORK/floor" INDEX_NOW="$(date -u
 	bash "$HERE/scripts/verify/check-index-baseline.sh" "$WORK/body" "$WORK/InRelease" > "$WORK/out" 2>&1 || rc=$?
 check "the next publication accepts the index it records" "0" "$rc"
 check "an index that is not there" "1 1" "$(write "$WORK/nowhere" "$WORK/kept") $(says 'cannot be recorded')"
+check "and it says that the index could not be read" "1 1" "$(write "$WORK/nowhere" "$WORK/kept") $(says 'cannot read')"
+check "an index that is a folder" "1 1" "$(write "$WORK" "$WORK/kept") $(says 'cannot read')"
 check "and nothing is recorded" "no" "$([ -e "$WORK/kept/published-index" ] && echo yes || echo no)"
 for edit in '/^Date:/d' 's/^Date: .*/&\n&/' 's/^Date: .*/Date: soon/' 's/ UTC$/ +0200/'; do
 	sed "$edit" "$WORK/InRelease" > "$WORK/bad"

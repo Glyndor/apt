@@ -96,7 +96,9 @@ echo "-- an answer that cannot be read is a failure, never 'none'"
 fresh; a_run 30; keeps 30 2026-11-26T16:00:00Z 1
 check "the runs cannot be listed" "1 absent" "$(FAIL_RUNS=1 read_record) $(got)"
 check "the artifacts cannot be listed" "1 absent" "$(FAIL_ARTIFACTS=1 read_record) $(got)"
+check "and it says whose artifacts it cannot list" "1 1" "$(FAIL_ARTIFACTS=1 read_record) $(says '::error::cannot list the artifacts of run')"
 check "the artifact cannot be downloaded" "1 absent" "$(FAIL_DOWNLOAD=1 read_record) $(got)"
+check "and it says which artifact it cannot download" "1 1" "$(FAIL_DOWNLOAD=1 read_record) $(says '::error::cannot download')"
 rm "$STUB/content-30"
 check "the artifact holds no record" "1 1" "$(read_record) $(says 'holds no published-index')"
 for bad in "2026-11-26T16:00:00Z" "now $(printf '%064d' 1)" "2026-11-26T16:00:00Z abc"; do
