@@ -49,7 +49,10 @@ check "the index the last publication recorded passes" "0" "$(judge)"
 index 2026-11-26T17:00:00Z 2026-12-10T17:00:00Z
 check "a newer one passes: a publication that recorded nothing is not a rollback" "0" "$(judge)"
 record "2026-11-26T17:30:00Z $(printf '%064d' 1)"
-check "an index older than the recorded one, signed and not expired, is refused" "1 1" "$(judge) $(says 'an earlier signed index was put back')"
+check "an index older than the recorded one, signed and not expired, is refused" "1 1" "$(judge) $(says 'older than the one the last publication recorded')"
+check "and it names the bucket going back to an earlier index" "1" "$(says 'the bucket was put back to an earlier signed index')"
+check "and the edge still serving the copy of before that publication" "1" "$(says 'the edge still serves the copy of before that publication')"
+check "and that purging the cache and trying again may settle it" "1" "$(says 'purge the cache and try again')"
 check "and says how to accept it" "1" "$(says 'accept_old_index set to its SHA256')"
 record "2026-11-26T17:00:00Z $(printf '%064d' 1)"
 check "the recorded Date with other bytes is refused" "1 1" "$(judge) $(says 'has the Date the last publication recorded and other bytes')"
@@ -101,6 +104,22 @@ index 2026-11-05T00:00:00Z 2026-11-19T00:00:00Z
 for bad in true yes "${OLD_SHA:1}" "${OLD_SHA^^}" "$OLD_SHA x"; do
 	check "accept_old_index as '${bad:0:12}' is refused" "1 1" "$(judge "$bad") $(says 'takes the SHA256 of the InRelease')"
 done
+
+echo "-- a file larger than the limit is refused, not read in part"
+floor none; record none
+index 2026-11-26T16:00:00Z 2026-12-10T16:00:00Z
+head -c $(( (1 << 22) + 1 )) /dev/zero > "$WORK/big"
+rc=0; INDEX_NOW="$NOW" INDEX_FLOOR="$WORK/floor" INDEX_RECORD="$WORK/record" \
+	bash "$SCRIPT" "$WORK/body" "$WORK/big" > "$WORK/out" 2>&1 || rc=$?
+check "an index larger than the limit is refused" "1 1" "$rc $(says 'is larger than')"
+head -c $(( (1 << 22) + 1 )) /dev/zero > "$WORK/big-body"
+rc=0; INDEX_NOW="$NOW" INDEX_FLOOR="$WORK/floor" INDEX_RECORD="$WORK/record" \
+	bash "$SCRIPT" "$WORK/big-body" "$WORK/InRelease" > "$WORK/out" 2>&1 || rc=$?
+check "a body larger than the limit is refused" "1 1" "$rc $(says 'is larger than')"
+head -c $(( 1 << 22 )) /dev/zero > "$WORK/exact"
+rc=0; INDEX_NOW="$NOW" INDEX_FLOOR="$WORK/floor" INDEX_RECORD="$WORK/record" \
+	bash "$SCRIPT" "$WORK/body" "$WORK/exact" > "$WORK/out" 2>&1 || rc=$?
+check "an index of exactly the limit is read" "0" "$rc"
 
 echo "-- what cannot be read is a refusal"
 floor none; record none

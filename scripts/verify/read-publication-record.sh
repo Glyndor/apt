@@ -8,6 +8,10 @@
 # Writes '<time> <sha256>', or 'none' when no run that is read has recorded one. Env: REPO (owner/name), GH_TOKEN with
 # actions: read.
 #
+# The runs read are those of the last 91 days, the life of the artifact a publication keeps: every page of them is
+# listed, not only the first, and they are walked from the newest to the oldest, because the order of a page is not the
+# order of their creation.
+#
 # Only a run of .github/workflows/publish.yml, on main of this repository, started by the schedule or by hand, is read:
 # an artifact of the same name from another workflow, branch, fork or event is ignored. Any answer of GitHub that
 # cannot be read is a failure, never 'none'.
@@ -21,10 +25,15 @@ out="$1"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-runs="$(gh api "repos/$REPO/actions/workflows/publish.yml/runs?branch=main&per_page=50" \
-	--jq '.workflow_runs[] | [(.id | tostring), .path, .head_branch, .event, (.head_repository.full_name // "")] | @tsv')" \
+# The artifact of a publication is kept for 90 days, so a run of 91 days ago can still hold one: every run of that
+# time is asked for, and every page of them. The filter is created=>=<day>, the day 91 days ago.
+since="$(date -u -d '91 days ago' +%Y-%m-%d)"
+runs="$(gh api --paginate "repos/$REPO/actions/workflows/publish.yml/runs?branch=main&per_page=100&created=>=$since" \
+	--jq '.workflow_runs[] | [(.created_at // ""), (.id | tostring), .path, .head_branch, .event, (.head_repository.full_name // "")] | @tsv')" \
 	|| { echo "::error::cannot list the runs of the publish; what the last one served cannot be established" >&2; exit 1; }
-while IFS=$'\t' read -r id path branch event head; do
+# The page is not read in the order it comes: the newest run is the first one to hold the record.
+runs="$(printf '%s\n' "$runs" | sort -t$'\t' -k1,1r -k2,2nr)"
+while IFS=$'\t' read -r created id path branch event head; do
 	[ -n "$id" ] || continue
 	[ "$path" = .github/workflows/publish.yml ] && [ "$branch" = main ] && [ "$head" = "$REPO" ] || continue
 	case "$event" in schedule | workflow_dispatch) ;; *) continue ;; esac
@@ -43,7 +52,7 @@ while IFS=$'\t' read -r id path branch event head; do
 	[[ "$line" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\ [0-9a-f]{64}$ ]] \
 		|| { echo "::error::the record of run $id is not '<time> <sha256>'" >&2; exit 1; }
 	printf '%s\n' "$line" > "$out"
-	echo "run $id recorded the index it published: $line"
+	echo "run $id (created $created) recorded the index it published: $line"
 	exit 0
 done <<< "$runs"
 echo none > "$out"

@@ -8,6 +8,7 @@ baseline-record-time	scripts/verify/check-index-baseline.sh	        refuse(f"{wh
 baseline-header-once	scripts/verify/check-index-baseline.sh	if len(found) != 1:	if not found:	tests/verify/check-index-baseline.test.sh
 baseline-header-utc	scripts/verify/check-index-baseline.sh	if value is None or value.utcoffset() != datetime.timedelta(0):	if value is None:	tests/verify/check-index-baseline.test.sh
 baseline-unreadable	scripts/verify/check-index-baseline.sh	        refuse(f"cannot read {path}: {error.strerror}")	        return b""	tests/verify/check-index-baseline.test.sh
+baseline-read-limit	scripts/verify/check-index-baseline.sh	    if len(data) > LIMIT:	    if False:	tests/verify/check-index-baseline.test.sh
 baseline-epoch	scripts/verify/check-index-baseline.sh	if now_text and not now_text.isdigit():	if False:	tests/verify/check-index-baseline.test.sh
 baseline-accept-shape	scripts/verify/check-index-baseline.sh	if accept and not re.fullmatch(r"[0-9a-f]{64}", accept):	if False:	tests/verify/check-index-baseline.test.sh
 baseline-accept-names-the-served	scripts/verify/check-index-baseline.sh	if accept and accept != digest:	if False:	tests/verify/check-index-baseline.test.sh
@@ -21,6 +22,8 @@ baseline-accept-warns	scripts/verify/check-index-baseline.sh	    print(f"::warni
 baseline-accept-summary	scripts/verify/check-index-baseline.sh	    if summary:	    if False:	tests/verify/check-index-baseline.test.sh
 baseline-refuses	scripts/verify/check-index-baseline.sh	if reasons:	if False:	tests/verify/check-index-baseline.test.sh
 record-runs-listed	scripts/verify/read-publication-record.sh	|| { echo "::error::cannot list the runs of the publish	|| true || { echo "::error::cannot list the runs of the publish	tests/verify/read-publication-record.test.sh
+record-runs-paginated	scripts/verify/read-publication-record.sh	gh api --paginate "repos/$REPO/actions/workflows/publish.yml/runs?	gh api "repos/$REPO/actions/workflows/publish.yml/runs?	tests/verify/read-publication-record.test.sh
+record-runs-ordered	scripts/verify/read-publication-record.sh	sort -t$'\t' -k1,1r -k2,2nr	cat	tests/verify/read-publication-record.test.sh
 record-run-path	scripts/verify/read-publication-record.sh	[ "$path" = .github/workflows/publish.yml ] &&	true &&	tests/verify/read-publication-record.test.sh
 record-run-branch	scripts/verify/read-publication-record.sh	[ "$branch" = main ] &&	true &&	tests/verify/read-publication-record.test.sh
 record-run-repository	scripts/verify/read-publication-record.sh	[ "$head" = "$REPO" ] || continue	true || continue	tests/verify/read-publication-record.test.sh

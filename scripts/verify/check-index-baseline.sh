@@ -11,7 +11,9 @@
 # The index is refused when its Date is in the future or earlier than the one of index-floor.txt, a record kept in this
 # repository. It is also refused when it has expired; when it is earlier than what the last publication recorded, or has
 # that Date and other bytes; and, where no publication has recorded one, when it is more than three days old. These
-# three can be set aside for one index, named by the SHA256 of its InRelease, by a run somebody started by hand.
+# four can be set aside for one index, named by the SHA256 of its InRelease, by a run somebody started by hand.
+#
+# Every file it reads is bounded: one larger than the limit is refused, not read in part and hashed as if it were whole.
 #
 # Env: INDEX_RECORD (required), the file read-publication-record.sh wrote; ACCEPT_OLD_INDEX, empty or that SHA256;
 # INDEX_FLOOR, the record of the repository (index-floor.txt beside this script); INDEX_NOW, an epoch, for the tests.
@@ -34,6 +36,7 @@ UTC = datetime.timezone.utc
 STAMP = "%Y-%m-%dT%H:%M:%SZ"
 FUTURE = datetime.timedelta(minutes=10)
 WINDOW = datetime.timedelta(days=3)
+LIMIT = 1 << 22
 
 
 def refuse(message):
@@ -44,9 +47,12 @@ def refuse(message):
 def read(path):
     try:
         with open(path, "rb") as handle:
-            return handle.read(1 << 22)
+            data = handle.read(LIMIT + 1)
     except OSError as error:
         refuse(f"cannot read {path}: {error.strerror}")
+    if len(data) > LIMIT:
+        refuse(f"{path} is larger than {LIMIT} bytes, the most this script reads")
+    return data
 
 
 def record_lines(path):
@@ -114,7 +120,11 @@ if record is None:
     if date < now - WINDOW:
         reasons.append(f"no publication has recorded what it served and the index is more than {WINDOW.days} days old")
 elif date < record[0]:
-    reasons.append(f"it is older than the one the last publication recorded, of {record[0].strftime(STAMP)}: an earlier signed index was put back")
+    reasons.append(
+        f"it is older than the one the last publication recorded, of {record[0].strftime(STAMP)}: "
+        f"either the bucket was put back to an earlier signed index, or the edge still serves the copy of before "
+        f"that publication, which can last a day; purge the cache and try again"
+    )
 elif date == record[0] and digest != record[1]:
     reasons.append(f"it has the Date the last publication recorded and other bytes (recorded SHA256 {record[1]})")
 
