@@ -28,7 +28,9 @@ PINNED = {
     "mutation.yml": ["tests/mutation/run-mutations.sh"],
     "roster-releases.yml": ["scripts/verify/roster-has-releases.sh"],
     "publish.yml": [
+        "scripts/verify/read-publication-record.sh",
         "scripts/verify/check-release-order.sh",
+        "scripts/verify/write-publication-record.sh",
         "scripts/verify/verify-debs.sh",
         "scripts/build/build-keyring.sh",
         "scripts/build/build-repo.sh",

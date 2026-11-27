@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Sourced by check-release-order.test.sh. No signing agent is needed.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
-VERIFY="$HERE/scripts/verify/check-release-order.sh"
 FIXTURES="$HERE/tests/fixtures/verify/published-build"
 EXTRA="$HERE/tests/fixtures/verify/release-order"
 WORK="$(mktemp -d)"
@@ -17,6 +16,19 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir -p "$DIST" "$WORK/bin"
+# The script runs from a copy, beside a stand-in for check-index-baseline.sh: the signed fixtures are of fixed dates and
+# what they test is the comparison of versions. The stand-in records what it was handed and answers BASELINE_EXIT.
+# check-index-baseline.test.sh tests the judgement itself.
+COPY="$WORK/repo/scripts/verify"
+mkdir -p "$COPY"
+cp "$HERE/scripts/verify/check-release-order.sh" "$COPY/"
+cat > "$COPY/check-index-baseline.sh" <<SH
+#!/usr/bin/env bash
+sha256sum "\$1" "\$2" | cut -d' ' -f1 > "$WORK/baseline.calls"
+head -n 1 "\$2" >> "$WORK/baseline.calls"
+exit "\${BASELINE_EXIT:-0}"
+SH
+VERIFY="$COPY/check-release-order.sh"
 # As in verify-published-build: public imports need no signing-agent socket.
 REAL_GPG="$(command -v gpg)"
 export REAL_GPG
@@ -133,7 +145,7 @@ case_with_control() { # label status output mutation
 		echo "SIN VERIFICAR: CONTROL $label (baseline failed)"
 		return
 	fi
-	ACTIVE="$WORK/mutant.sh"
+	ACTIVE="$COPY/mutant.sh"
 	python3 -I "$EXTRA/mutate.py" "$VERIFY" "$ACTIVE" "$mutation"
 	echo "CONTROL $label: $mutation (diff follows)"
 	local diff_status=0

@@ -142,10 +142,10 @@ check "a write granted to one job is named for the job" \
 fixture publish.yml '/^    permissions:$/{n;s/contents: read/contents: admin/}'
 check "a level that is not read, write or none is named" \
 	"publish.yml: publish holds contents: admin, which is not read, write or none" "$(violations "$BAD")"
-fixture publish.yml '/^    permissions:$/,/^      contents: read$/d'
+fixture publish.yml '/^    permissions:$/,/^      contents: read$/d; /^      actions: read/d'
 check "the job that holds the secrets, left to inherit the workflow's token, is named" \
 	"publish.yml: publish names a secret and declares no permissions of its own" "$(violations "$BAD")"
-fixture publish.yml 's/^    permissions:$/    permissions: {}/; /^      contents: read$/d'
+fixture publish.yml 's/^    permissions:$/    permissions: {}/; /^      contents: read$/d; /^      actions: read/d'
 check "and the same job with permissions: {} of its own is accepted" "" "$(violations "$BAD")"
 fixture commit-hygiene.yml 's/^    permissions:$/    permissions: write-all/; /^      contents: read$/d'
 check "a job that grants write-all is named for the job, twice as there are two" \

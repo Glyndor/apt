@@ -214,6 +214,33 @@ creates a phantom the ruleset still requires, which blocks every pull request
 with no explanation. Move jobs between files freely; renaming one is a ruleset
 change.
 
+## A publication stopped longer than the index lasts
+
+The publish refuses a served index that has expired (14 days after it was signed), one
+older than what the last publication recorded in its run, and, when no run has recorded
+one in the last 91 days, one more than three days old. The record is read from the
+artifacts the publications of the last 91 days kept, every page of them, and they are
+walked from the newest to the oldest. A publication that synchronized the archive and did
+not get to record leaves the index immediately before the one it published acceptable
+until the next publication records. After a stop that long, or after the bucket was put
+back by hand, the scheduled run fails and says which of these it is, with the Date and
+SHA256 of what is served.
+
+1. Establish that the served `InRelease` is the right one. Compare its SHA256
+   (`curl -s https://apt.glyndor.net/dists/stable/InRelease | sha256sum`) with the one the
+   step `Record the index that was published` printed in the log of the publication that
+   wrote it. The log is what the bucket cannot change; the download alone proves nothing.
+2. Start `publish.yml` by hand from `main` with `accept_old_index` set to that SHA256. It
+   accepts that index and no other, and leaves a warning with its Date and SHA256 in the
+   run. It sets aside four of the refusals -- one that has expired, one older than the
+   one the last publication recorded, one with the recorded `Date` and other bytes, and
+   one more than three days old with no publication recorded -- and never the floor of
+   `scripts/verify/index-floor.txt` and never a `Date` that has not come.
+
+`index-floor.txt` is the oldest index the publish accepts: only a pull request that
+changes that file moves it, and `accept_old_index` never moves it. It can be raised by a
+pull request at any time; an ordinary publish needs none.
+
 ## Security
 
 Never open a public issue for a vulnerability. Use the Security tab →

@@ -195,6 +195,40 @@ printf 'this is not a key\n' > "$WORK/not-a-key.asc"
 KEY="$WORK/not-a-key.asc"
 check 1 "could not import the archive public key from $WORK/not-a-key.asc" "a public key file that is not a key is refused"
 
+# --- the served index is judged before it is compared with ------------------------------------
+snapshot new
+PRODUCT=podup
+TAG=v3.0.0
+ACTIVE="$VERIFY"
+rm -f "$WORK/baseline.calls"
+check 0 'is not older' 'an index the baseline accepts is compared with'
+if [ "$(sed -n 3p "$WORK/baseline.calls")" = "-----BEGIN PGP SIGNED MESSAGE-----" ] \
+	&& [ "$(sed -n 2p "$WORK/baseline.calls")" = "$(sha256sum "$DIST/InRelease" | cut -d' ' -f1)" ] \
+	&& [ "$(sed -n 1p "$WORK/baseline.calls")" != "$(sed -n 2p "$WORK/baseline.calls")" ]; then
+	echo "ok   - the baseline is handed the verified body and the InRelease that was served"
+	pass=$((pass + 1))
+else
+	echo "FAIL - the baseline was not handed the verified body and the served InRelease"
+	fail=$((fail + 1))
+fi
+BASELINE_EXIT=1 check 1 'cannot be taken as the baseline of podup v3.0.0' 'an index the baseline refuses stops the publish'
+rm -f "$WORK/baseline.calls"
+sed -i 's/Origin: Glyndor/Origin: Altered/' "$DIST/InRelease"
+check 1 'does not verify against' 'an index that does not verify is refused by the signature'
+if [ ! -e "$WORK/baseline.calls" ]; then
+	echo "ok   - and the baseline is not asked about it"
+	pass=$((pass + 1))
+else
+	echo "FAIL - the baseline judged an index that did not verify"
+	fail=$((fail + 1))
+fi
+# The script beside the real baseline, which judges the same fixture and finds no Valid-Until in it.
+snapshot new
+cp "$HERE/scripts/verify/check-index-baseline.sh" "$COPY/check-index-baseline.sh"
+echo none > "$WORK/record"
+printf 'none\n' > "$COPY/index-floor.txt"
+INDEX_RECORD="$WORK/record" check 1 'does not declare Valid-Until exactly once' 'the baseline that ships is the one the script calls'
+
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]

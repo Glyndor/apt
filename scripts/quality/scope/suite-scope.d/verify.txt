@@ -9,6 +9,23 @@ tests/verify/check-release-order.test.sh
 	tests/verify/**
 	tests/fixtures/**
 
+tests/verify/check-index-baseline.test.sh
+	scripts/verify/**
+	tests/verify/check-index-baseline.test.sh
+
+tests/verify/read-publication-record.test.sh
+	scripts/verify/read-publication-record.sh
+	tests/verify/read-publication-record.test.sh
+
+tests/verify/write-publication-record.test.sh
+	scripts/verify/**
+	tests/verify/write-publication-record.test.sh
+
+tests/publication/publish/publish-workflow-index-baseline.test.sh
+	scripts/verify/read-publication-record.sh
+	tests/publication/publish/**
+	.github/workflows/publish.yml
+
 tests/verify/verify-published.test.sh
 	tests/fixtures/verify/**
 	scripts/verify/**

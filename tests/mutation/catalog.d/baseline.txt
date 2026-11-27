@@ -1,0 +1,46 @@
+# The guards that decide whether the served index may be taken as the current one, and the record that says what
+# the last publication served. Same format as tests/mutation/catalog.txt.
+release-order-judges-the-index	scripts/verify/check-release-order.sh	bash "$HERE/scripts/verify/check-index-baseline.sh" "$WORK/InRelease.body" "$WORK/InRelease" \	true \	tests/verify/check-release-order.test.sh
+baseline-record-variable	scripts/verify/check-index-baseline.sh	[ -n "${INDEX_RECORD:-}" ] || {	true || {	tests/verify/check-index-baseline.test.sh
+baseline-floor-one-line	scripts/verify/check-index-baseline.sh	if len(floor) != 1:	if not floor:	tests/verify/check-index-baseline.test.sh
+baseline-record-shape	scripts/verify/check-index-baseline.sh	if len(parts) != 2 or not re.fullmatch(r"[0-9a-f]{64}", parts[1]):	if len(parts) != 2:	tests/verify/check-index-baseline.test.sh
+baseline-record-time	scripts/verify/check-index-baseline.sh	        refuse(f"{where} holds a time that is not {STAMP}: {text!r}")	        return None	tests/verify/check-index-baseline.test.sh
+baseline-header-once	scripts/verify/check-index-baseline.sh	if len(found) != 1:	if not found:	tests/verify/check-index-baseline.test.sh
+baseline-header-utc	scripts/verify/check-index-baseline.sh	if value is None or value.utcoffset() != datetime.timedelta(0):	if value is None:	tests/verify/check-index-baseline.test.sh
+baseline-unreadable	scripts/verify/check-index-baseline.sh	        refuse(f"cannot read {path}: {error.strerror}")	        return b""	tests/verify/check-index-baseline.test.sh
+baseline-read-limit	scripts/verify/check-index-baseline.sh	    if len(data) > LIMIT:	    if False:	tests/verify/check-index-baseline.test.sh
+baseline-epoch	scripts/verify/check-index-baseline.sh	if now_text and not now_text.isdigit():	if False:	tests/verify/check-index-baseline.test.sh
+baseline-accept-shape	scripts/verify/check-index-baseline.sh	if accept and not re.fullmatch(r"[0-9a-f]{64}", accept):	if False:	tests/verify/check-index-baseline.test.sh
+baseline-accept-names-the-served	scripts/verify/check-index-baseline.sh	if accept and accept != digest:	if False:	tests/verify/check-index-baseline.test.sh
+baseline-future	scripts/verify/check-index-baseline.sh	if date > now + FUTURE:	if False:	tests/verify/check-index-baseline.test.sh
+baseline-floor	scripts/verify/check-index-baseline.sh	if floor is not None and date < floor:	if False:	tests/verify/check-index-baseline.test.sh
+baseline-expired	scripts/verify/check-index-baseline.sh	if until <= now:	if False:	tests/verify/check-index-baseline.test.sh
+baseline-window	scripts/verify/check-index-baseline.sh	    if date < now - WINDOW:	    if False:	tests/verify/check-index-baseline.test.sh
+baseline-older-than-the-record	scripts/verify/check-index-baseline.sh	elif date < record[0]:	elif False:	tests/verify/check-index-baseline.test.sh
+baseline-same-date-other-bytes	scripts/verify/check-index-baseline.sh	elif date == record[0] and digest != record[1]:	elif False:	tests/verify/check-index-baseline.test.sh
+baseline-accept-warns	scripts/verify/check-index-baseline.sh	    print(f"::warning::{message}")	    pass	tests/verify/check-index-baseline.test.sh
+baseline-accept-summary	scripts/verify/check-index-baseline.sh	    if summary:	    if False:	tests/verify/check-index-baseline.test.sh
+baseline-refuses	scripts/verify/check-index-baseline.sh	if reasons:	if False:	tests/verify/check-index-baseline.test.sh
+record-runs-listed	scripts/verify/read-publication-record.sh	|| { echo "::error::cannot list the runs of the publish	|| true || { echo "::error::cannot list the runs of the publish	tests/verify/read-publication-record.test.sh
+record-runs-paginated	scripts/verify/read-publication-record.sh	gh api --paginate "repos/$REPO/actions/workflows/publish.yml/runs?	gh api "repos/$REPO/actions/workflows/publish.yml/runs?	tests/verify/read-publication-record.test.sh
+record-runs-ordered	scripts/verify/read-publication-record.sh	sort -t$'\t' -k1,1r -k2,2nr	cat	tests/verify/read-publication-record.test.sh
+record-run-path	scripts/verify/read-publication-record.sh	[ "$path" = .github/workflows/publish.yml ] &&	true &&	tests/verify/read-publication-record.test.sh
+record-run-branch	scripts/verify/read-publication-record.sh	[ "$branch" = main ] &&	true &&	tests/verify/read-publication-record.test.sh
+record-run-repository	scripts/verify/read-publication-record.sh	[ "$head" = "$REPO" ] || continue	true || continue	tests/verify/read-publication-record.test.sh
+record-run-event	scripts/verify/read-publication-record.sh	*) continue ;; esac	*) ;; esac	tests/verify/read-publication-record.test.sh
+record-run-id	scripts/verify/read-publication-record.sh	[[ "$id" =~ ^[0-9]+$ ]] || {	true || {	tests/verify/read-publication-record.test.sh
+record-artifacts-listed	scripts/verify/read-publication-record.sh	|| { echo "::error::cannot list the artifacts of run $id"	|| true || { echo "::error::cannot list the artifacts of run $id"	tests/verify/read-publication-record.test.sh
+record-artifact-expired	scripts/verify/read-publication-record.sh	 and .expired == false	 and .expired != null	tests/verify/read-publication-record.test.sh
+record-artifact-count	scripts/verify/read-publication-record.sh	*) echo "::error::run $id answers	*) continue ;; xx) echo "::error::run $id answers	tests/verify/read-publication-record.test.sh
+record-download	scripts/verify/read-publication-record.sh	|| { echo "::error::cannot download $NAME of run $id"	|| true || { echo "::error::cannot download $NAME of run $id"	tests/verify/read-publication-record.test.sh
+record-content	scripts/verify/read-publication-record.sh	|| { echo "::error::$NAME of run $id holds no published-index"	|| true || { echo "::error::$NAME of run $id holds no published-index"	tests/verify/read-publication-record.test.sh
+record-shape	scripts/verify/read-publication-record.sh	|| { echo "::error::the record of run $id is not	|| true || { echo "::error::the record of run $id is not	tests/verify/read-publication-record.test.sh
+record-repo-set	scripts/verify/read-publication-record.sh	[ -n "${REPO:-}" ] || {	true || {	tests/verify/read-publication-record.test.sh
+record-usage	scripts/verify/read-publication-record.sh	[ "$#" -eq 1 ] || {	true || {	tests/verify/read-publication-record.test.sh
+written-record-date-once	scripts/verify/write-publication-record.sh	if len(found) != 1:	if not found:	tests/verify/write-publication-record.test.sh
+written-record-utc	scripts/verify/write-publication-record.sh	if date is None or date.utcoffset() != datetime.timedelta(0):	if date is None:	tests/verify/write-publication-record.test.sh
+written-record-refused	scripts/verify/write-publication-record.sh	)" || { echo "::error::the index that was published cannot be recorded"	)" || true || { echo "::error::the index that was published cannot be recorded"	tests/verify/write-publication-record.test.sh
+written-record-usage	scripts/verify/write-publication-record.sh	[ "$#" -eq 2 ] || {	true || {	tests/verify/write-publication-record.test.sh
+baseline-usage	scripts/verify/check-index-baseline.sh	[ "$#" -eq 2 ] || {	true || {	tests/verify/check-index-baseline.test.sh
+baseline-refusal-ends	scripts/verify/check-index-baseline.sh	    sys.exit(1)	    return None	tests/verify/check-index-baseline.test.sh
+written-record-unreadable	scripts/verify/write-publication-record.sh	    sys.exit(f"cannot read {sys.argv[1]}: {error.strerror}")	    raw = b""	tests/verify/write-publication-record.test.sh
