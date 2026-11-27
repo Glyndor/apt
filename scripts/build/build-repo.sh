@@ -62,7 +62,13 @@ OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 GNUPGHOME="$(mktemp -d)"
 export GNUPGHOME
 chmod 700 "$GNUPGHOME"
-cleanup() { timeout 10 gpgconf --kill all 2>/dev/null || true; rm -rf "$GNUPGHOME"; }
+# The agent of the ephemeral keyring is closed before its folder goes, and the folder of sockets GnuPG made for it
+# under /run goes with it: killing the agent does not remove that folder.
+cleanup() {
+	timeout 10 gpgconf --homedir "$GNUPGHOME" --kill all 2>/dev/null || true
+	gpgconf --homedir "$GNUPGHOME" --remove-socketdir > /dev/null 2>&1 || true
+	rm -rf "$GNUPGHOME"
+}
 trap cleanup EXIT
 
 # Import the signing key. Don't swallow import errors: if the secret is

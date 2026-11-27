@@ -22,7 +22,31 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+# The script under test reads a keyring file and never asks for a secret key,
+# but gpg still wants a home to read its configuration from, and without this
+# one it would reach for the machine's own keyring: the agent of that keyring
+# would be started by this run and left running after it, on a machine where
+# it is nobody's business. This run gets a home of its own, and it is closed
+# with the rest.
+export GNUPGHOME="$WORK/gnupg-ambient"
+mkdir -m 700 "$GNUPGHOME"
+# The temporary keyrings the case makes are all under $WORK: every one of them
+# is closed on the way out, and none of them is left running. The kill names
+# the homedir it belongs to, so the agent of THIS run stops and not the one of
+# the machine's own keyring, which the bare form would have killed instead
+# while leaving the temporary ones running. The socket dir GnuPG made for each
+# homedir is removed as well: GnuPG leaves it behind under
+# /run/user/<uid>/gnupg/d.*, and killing the agent does not take it away.
+cleanup() {
+	local dir
+	for dir in "$WORK"/*/.gnupg "$WORK"/gnupg-* "$WORK"/sk-gnupg; do
+		[ -d "$dir" ] || continue
+		timeout 10 gpgconf --homedir "$dir" --kill all > /dev/null 2>&1 || true
+		gpgconf --homedir "$dir" --remove-socketdir > /dev/null 2>&1 || true
+	done
+	rm -rf "$WORK"
+}
+trap cleanup EXIT
 
 REPO="$WORK/repo"
 BUILD="$REPO/scripts/build/build-keyring.sh"
@@ -206,7 +230,7 @@ key_repo() { # $1=dir $2=gpg lifetime spec
 		>/dev/null 2>&1
 	GNUPGHOME="$home" gpg --batch --armor --export fixture \
 		> "$dir/keyring/glyndor-apt-key.asc"
-	GNUPGHOME="$home" timeout 10 gpgconf --kill all >/dev/null 2>&1 || true
+	timeout 10 gpgconf --homedir "$home" --kill all >/dev/null 2>&1 || true
 	git -C "$dir" init -q
 	git -C "$dir" add -A
 	git -C "$dir" -c user.name=test -c user.email=test@example.invalid \
@@ -286,7 +310,9 @@ gpg --batch --quiet --passphrase '' --quick-generate-key 'nokey <nokey@example.i
 printf 'payload\n' > "$WORK/payload"
 rm -f "$NOKEY/keyring/glyndor-apt-key.asc"
 gpg --batch --quiet --armor --detach-sign --output "$NOKEY/keyring/glyndor-apt-key.asc" "$WORK/payload"
-unset GNUPGHOME
+# Back to this run's own home, not to the machine's: `unset` here would send
+# the gpg calls that follow back to the machine's keyring.
+export GNUPGHOME="$WORK/gnupg-ambient"
 git -C "$NOKEY" add -A
 git -C "$NOKEY" -c user.name=test -c user.email=test@example.invalid commit -qm "no key"
 mkdir -p "$WORK/nokey-out"

@@ -15,7 +15,27 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 TEMPLATE="$HERE/scripts/installer/install-template.sh"
 WORK="$(mktemp -d)"
-trap 'timeout 10 gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK"' EXIT
+# The temporary keyrings the fixtures make are all under $WORK: every one of
+# them is closed on the way out, and none of them is left running. The kill
+# names the homedir it belongs to, so the agent of THIS run stops and not the
+# one of the machine's own keyring, which the bare form would have killed
+# instead while leaving the temporary ones running. The socket dir GnuPG made
+# for each homedir is removed as well: GnuPG leaves it behind under
+# /run/user/<uid>/gnupg/d.*, and killing the agent does not take it away.
+#
+# The name is not `cleanup` on purpose: install-template-behaviour.test.sh
+# evals the installer's own cleanup() into this shell, and a function of the
+# same name would take this trap's place and leave the keyrings above alive.
+fixture_cleanup() {
+	local dir
+	for dir in "$WORK"/gnupg-*; do
+		[ -d "$dir" ] || continue
+		timeout 10 gpgconf --homedir "$dir" --kill all > /dev/null 2>&1 || true
+		gpgconf --homedir "$dir" --remove-socketdir > /dev/null 2>&1 || true
+	done
+	rm -rf "$WORK"
+}
+trap fixture_cleanup EXIT
 pass=0; fail=0
 
 check() { # <description> <expected> <actual>
