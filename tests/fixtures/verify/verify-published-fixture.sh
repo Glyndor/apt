@@ -32,6 +32,7 @@ SERVER_PID=""
 cleanup() {
 	[ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null
 	timeout 10 gpgconf --homedir "$GNUPGHOME" --kill all 2>/dev/null || true
+	gpgconf --homedir "$GNUPGHOME" --remove-socketdir > /dev/null 2>&1 || true
 	rm -rf "$WORK"
 }
 trap cleanup EXIT

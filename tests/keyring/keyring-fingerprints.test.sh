@@ -38,6 +38,14 @@ ROOT="${GLYNDOR_KEYRING_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "$ROOT" || exit 1
 KEYRING="keyring/glyndor-apt-key.asc"
 INSTALLER="scripts/installer/install-template.sh"
+# The fingerprint of a keyring file is read with gpg, and gpg wants a home to
+# read its configuration from: without this one the call would reach for the
+# machine's own keyring, and the agent of that keyring would be started by
+# this run and left running after it. This run gets a home of its own, and it
+# is closed on the way out with the rest.
+GNUPGHOME_DIR="$(mktemp -d)"
+export GNUPGHOME="$GNUPGHOME_DIR"
+chmod 700 "$GNUPGHOME_DIR"
 pass=0; fail=0
 
 check() { # <description> <expected> <actual>
@@ -134,7 +142,26 @@ check "every primary fingerprint in the packaged keyring is one the installer ac
 # overridden.
 rot_installer="$(mktemp)"
 rot_block="$(mktemp)"
-trap 'rm -f "$rot_installer" "$rot_block"' EXIT
+# The scratch keyring the probe below makes is a temporary one: its agent is
+# closed before the folder goes, and none of it is left running. The kill
+# names the homedir it belongs to, so the agent of THIS run stops and not the
+# one of the machine's own keyring, which the bare form would have killed
+# instead while leaving the temporary one running. The socket dir GnuPG made
+# for each homedir is removed as well: GnuPG leaves it behind under
+# /run/user/<uid>/gnupg/d.*, and killing the agent does not take it away.
+probe=""
+cleanup() {
+	if [ -n "$probe" ]; then
+		timeout 10 gpgconf --homedir "$probe/gnupg" --kill all > /dev/null 2>&1 || true
+		gpgconf --homedir "$probe/gnupg" --remove-socketdir > /dev/null 2>&1 || true
+		rm -rf "$probe"
+	fi
+	timeout 10 gpgconf --homedir "$GNUPGHOME_DIR" --kill all > /dev/null 2>&1 || true
+	gpgconf --homedir "$GNUPGHOME_DIR" --remove-socketdir > /dev/null 2>&1 || true
+	rm -rf "$GNUPGHOME_DIR"
+	rm -f "$rot_installer" "$rot_block"
+}
+trap cleanup EXIT
 
 packaged_fpr="$(printf '%s' "$keyring_fprs" | head -1)"
 # A second 40-hex value that is certainly not the first. Flipping the leading
@@ -207,7 +234,7 @@ if [ -z "${GLYNDOR_KEYRING_PROBE:-}" ]; then
 		>/dev/null 2>&1
 	GNUPGHOME="$gpghome" gpg --batch --armor --export "fixture" \
 		> "$probe/keyring/glyndor-apt-key.asc"
-	GNUPGHOME="$gpghome" timeout 10 gpgconf --kill all >/dev/null 2>&1 || true
+	timeout 10 gpgconf --homedir "$gpghome" --kill all >/dev/null 2>&1 || true
 
 	# The planted keyring has to differ from the committed one, or the probe
 	# proves nothing about a check that never saw a violation.

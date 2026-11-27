@@ -17,7 +17,21 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="$(mktemp -d)"
-trap 'timeout 10 gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK"' EXIT
+# The archive keyring the case makes is a temporary one: its agent is closed
+# before the folder goes, and the kill names the homedir it belongs to, so the
+# agent of THIS run stops and not the one of the machine's own keyring. The
+# socket dir GnuPG made for that homedir is removed as well: GnuPG leaves it
+# behind under /run/user/<uid>/gnupg/d.*, and killing the agent does not take
+# it away.
+GH_HOME=""
+cleanup() {
+	if [ -n "$GH_HOME" ]; then
+		timeout 10 gpgconf --homedir "$GH_HOME" --kill all > /dev/null 2>&1 || true
+		gpgconf --homedir "$GH_HOME" --remove-socketdir > /dev/null 2>&1 || true
+	fi
+	rm -rf "$WORK"
+}
+trap cleanup EXIT
 pass=0; fail=0
 
 check() { # <description> <expected> <actual>

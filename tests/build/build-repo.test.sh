@@ -20,7 +20,25 @@ set -u
 
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 WORK="$(mktemp -d)"
-trap 'timeout 10 gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK"' EXIT
+# The temporary keyrings the case makes are all under $WORK: every one of them
+# is closed on the way out, and none of them is left running. The kill names
+# the homedir it belongs to, so the agent of THIS run stops and not the one of
+# the machine's own keyring, which the bare form would have killed instead
+# while leaving the temporary ones running. The socket dir GnuPG made for each
+# homedir is removed as well: GnuPG leaves it behind under
+# /run/user/<uid>/gnupg/d.*, and killing the agent does not take it away.
+# The verify-* keyrings are named too: they are temporary keyrings of this
+# case, and a homedir the loop does not name is a socket dir nobody removes.
+cleanup() {
+	local dir
+	for dir in "$WORK"/gnupg-* "$WORK"/verify-*; do
+		[ -d "$dir" ] || continue
+		timeout 10 gpgconf --homedir "$dir" --kill all > /dev/null 2>&1 || true
+		gpgconf --homedir "$dir" --remove-socketdir > /dev/null 2>&1 || true
+	done
+	rm -rf "$WORK"
+}
+trap cleanup EXIT
 pass=0; fail=0
 
 check() { # <description> <expected> <actual>

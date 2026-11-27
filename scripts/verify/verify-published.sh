@@ -155,6 +155,7 @@ export GNUPGHOME
 chmod 700 "$GNUPGHOME"
 cleanup() {
 	timeout 10 gpgconf --homedir "$GNUPGHOME" --kill all 2>/dev/null || true
+	gpgconf --homedir "$GNUPGHOME" --remove-socketdir > /dev/null 2>&1 || true
 	rm -rf "$WORK" "$GNUPGHOME"
 }
 trap cleanup EXIT

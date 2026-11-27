@@ -22,7 +22,17 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="$(mktemp -d)"
-trap 'timeout 10 gpgconf --kill all 2>/dev/null || true; rm -rf "$WORK"' EXIT
+# This run gets a keyring of its own, so the kill below reaches that one and
+# not the machine's. Measured 2026-11-27: killing the agent leaves the folder
+# of sockets GnuPG made for it under /run, so that folder is removed as well.
+export GNUPGHOME="$WORK/gnupg"
+mkdir -m 700 "$GNUPGHOME"
+cleanup() {
+	timeout 10 gpgconf --homedir "$GNUPGHOME" --kill all 2>/dev/null || true
+	gpgconf --homedir "$GNUPGHOME" --remove-socketdir > /dev/null 2>&1 || true
+	rm -rf "$WORK"
+}
+trap cleanup EXIT
 pass=0; fail=0
 VERIFY="$HERE/scripts/verify/verify-debs.sh"
 TAG=v1.2.3
