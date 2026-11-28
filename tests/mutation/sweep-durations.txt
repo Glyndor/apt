@@ -7,7 +7,7 @@ tests/mutation/catalog.txt	384	2035	estimated from the scheduled sweep of 2026-1
 tests/mutation/catalog.d/callers.txt	73	387	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 73 entries
 tests/mutation/catalog.d/hygiene.txt	54	286	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 54 entries
 tests/mutation/catalog.d/instrument.txt	16	85	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 16 entries
-tests/mutation/catalog.d/switch-rule.txt	164	869	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 164 entries
+tests/mutation/catalog.d/switch-rule.txt	172	1490	measured on run 45970834124 (2026-11-27): the whole job took 1490 seconds
 tests/mutation/catalog.d/scope.txt	3	16	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 3 entries
 tests/mutation/catalog.d/live.txt	41	217	estimated from the scheduled sweep of 2026-11-23 (run 45199149607): 3618 seconds over about 690 entries, scaled to 41 entries
 tests/mutation/catalog.d/gaps.txt	22	320	measured on a runner from the job of run 45775745487, which went through all of these entries: 244 seconds before the first and 76 seconds for them
