@@ -22,7 +22,10 @@ on:
 permissions: {}
 
 concurrency:
-  group: commit-hygiene-${{ github.workflow }}-${{ github.ref }}
+  # The group names the event as well as the ref: a pull request and a run on
+  # another event are told apart, so a run on one never queues behind, or
+  # cancels, a run on the other.
+  group: commit-hygiene-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   # A newer push to the same pull request supersedes the earlier run: the
   # earlier one answers a question about a commit that no longer exists, and
   # both jobs check out the whole history to answer it. The expression is the

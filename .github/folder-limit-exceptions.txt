@@ -1,0 +1,4 @@
+# path<TAB>ceiling<TAB>reason, read by scripts/quality/structure/folder-limit.sh; use . for the root.
+# No folder is listed: every tracked folder holds twenty files or fewer directly. .github/workflows is left
+# out by the script, because GitHub registers workflows only there. Add an entry only with a ceiling and a
+# reason; a ceiling only goes down, and an entry whose folder is back at twenty or fewer fails.

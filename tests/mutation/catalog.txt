@@ -399,7 +399,6 @@ verify-debs-anchor-checked	scripts/verify/verify-debs.sh	ascii_only "$anchor" ||
 verify-debs-anchor-three-files	scripts/verify/verify-debs.sh	for anchor in "$KEY_FILE" "$MLDSA_KEY_FILE" "$PQ_REQUIRED_FILE"; do	for anchor in "$KEY_FILE"; do	tests/verify/verify-debs-anchor-bytes.test.sh
 verify-debs-anchor-cr-counted	scripts/verify/verify-debs.sh	tr -d ' -~\n' < 	tr -d ' -~\n\r' < 	tests/verify/verify-debs-anchor-bytes.test.sh
 publish-checkout-keeps-no-token	.github/workflows/publish.yml	persist-credentials: false	persist-credentials: true	tests/ci/policy/persist-credentials.test.sh
-freshness-reads-tests	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" tests.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 freshness-reads-line-limit	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" line-limit.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 freshness-reads-workflow-lint	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" workflow-lint.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 verify-debs-private-dir	scripts/verify/verify-debs.sh	|| { echo "::error::cannot create a private directory to hold the verified packages" >&2; exit 1; }	|| true	tests/verify/verify-debs-same-bytes.test.sh
@@ -479,3 +478,17 @@ wired-waiter-keys	scripts/quality/coverage/check-suites-wired.sh	for k in waiter
 wired-workflow-defaults	scripts/quality/coverage/check-suites-wired.sh	    if workflow_defaults:	    if False:	tests/quality/coverage/check-suites-wired.test.sh
 wired-workflow-defaults-read	scripts/quality/coverage/check-suites-wired.sh	workflow_defaults = bool(spec.get("defaults"))	workflow_defaults = False	tests/quality/coverage/check-suites-wired.test.sh
 wired-dependency-defaults	scripts/quality/coverage/check-suites-wired.sh	or other.get("continue-on-error") or "defaults" in other:	or other.get("continue-on-error"):	tests/quality/coverage/check-suites-wired.test.sh
+
+# The suite runs on the pull request alone.
+tests-suite-not-on-push	.github/workflows/tests.yml	  pull_request:	  push:	tests/ci/policy/workflows/push-does-not-repeat-the-suite.test.sh
+
+# The files of a folder are counted against the ceiling of the base.
+folder-limit-only-the-flat-workflows-and-testdata-are-left-out	scripts/quality/structure/folder-limit.sh	/.github/workflows/ | */testdata/*) return 0 ;;	*) return 0 ;;	tests/quality/structure/folder-limit.test.sh
+folder-limit-exception-without-tabs-is-refused	scripts/quality/structure/folder-limit.sh	if [[ "$line" != *$'\t'* ]]; then	if false; then	tests/quality/structure/folder-limit.test.sh
+folder-limit-exception-needs-a-reason	scripts/quality/structure/folder-limit.sh	if [[ "$rest" != *$'\t'* || "$reason" == *$'\t'* || ! "$reason" =~ [^[:space:]] ]]; then	if false; then	tests/quality/structure/folder-limit.test.sh
+folder-limit-exception-path-is-canonical	scripts/quality/structure/folder-limit.sh	if [ -z "$dir" ] || { [ "$dir" != . ] && [[ "/$dir/" == *//* || "/$dir/" == */./* || "/$dir/" == */../* ]]; }; then	if false; then	tests/quality/structure/folder-limit.test.sh
+folder-limit-ceiling-is-a-decimal-over-twenty	scripts/quality/structure/folder-limit.sh	if [[ ! "$cap" =~ ^[1-9][0-9]{0,8}$ ]] || [ "$cap" -le 20 ]; then	if false; then	tests/quality/structure/folder-limit.test.sh
+folder-limit-duplicate-exception-is-refused	scripts/quality/structure/folder-limit.sh	if [ -n "${parsed["$dir"]:-}" ]; then	if false; then	tests/quality/structure/folder-limit.test.sh
+folder-limit-a-folder-over-the-base-is-refused	scripts/quality/structure/folder-limit.sh	if [ -n "${BASE:-}" ] && [ "$count" -gt "${parsed["$dir"]:-20}" ]; then	if false; then	tests/quality/structure/folder-limit.test.sh
+folder-limit-the-verdict-reaches-the-caller	scripts/quality/structure/folder-limit.sh	if [ "$failed" -ne 0 ]; then exit 1; fi	:	tests/quality/structure/folder-limit.test.sh
+folder-limit-the-rule-comes-from-the-base	.github/workflows/tests.yml	git show "$base_commit:$path" > "$gate"	cp "$path" "$gate"	tests/quality/structure/folder-limit.test.sh

@@ -2,9 +2,9 @@
 #
 # Some workflows call the same script more than once, each time asking a different question, and
 # the script's name alone does not say which question is still being asked. freshness.yml runs
-# check-suite-on-main.sh three times, for tests.yml, line-limit.yml and workflow-lint.yml; the
-# last two are the only readers of the runs they name, and deleting either call left every suite
-# green because the first call still held the script's name. commit-hygiene.yml is read by no
+# check-suite-on-main.sh twice, for line-limit.yml and workflow-lint.yml; each call is the only
+# reader of the runs it names, and deleting either left every suite green because the other call
+# still held the script's name. commit-hygiene.yml is read by no
 # other suite at all: its two steps are the only place the commit identity and the credential
 # scan run on a pull request.
 #
@@ -26,7 +26,6 @@ root = Path(sys.argv[1])
 SUITE_ON_MAIN = "./scripts/monitoring/check-suite-on-main.sh"
 PINNED = {
     "freshness.yml": [
-        f'{SUITE_ON_MAIN} "$REPO" tests.yml main',
         f'{SUITE_ON_MAIN} "$REPO" line-limit.yml main',
         f'{SUITE_ON_MAIN} "$REPO" workflow-lint.yml main',
     ],

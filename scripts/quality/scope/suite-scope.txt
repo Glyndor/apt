@@ -773,3 +773,25 @@ tests/ci/policy/mutation-workflow.test.sh
 tests/ci/policy/workflow-calls-are-exact.test.sh
 	.github/workflows/freshness.yml
 	.github/workflows/commit-hygiene.yml
+
+tests/ci/policy/workflows/pull-request-runs-are-superseded.test.sh
+	.github/workflows/**
+	tests/ci/policy/workflows/**
+
+tests/ci/policy/workflows/matrices-fail-fast.test.sh
+	.github/workflows/**
+	tests/ci/policy/workflows/**
+
+tests/ci/policy/workflows/push-does-not-repeat-the-suite.test.sh
+	.github/workflows/**
+	tests/ci/policy/workflows/**
+
+tests/quality/structure/folder-limit.test.sh
+	.github/workflows/tests.yml
+	scripts/quality/structure/**
+	tests/fixtures/ci/**
+	tests/quality/structure/**
+
+tests/ci/suites/step-script.test.sh
+	tests/fixtures/ci/**
+	tests/ci/suites/step-script.test.sh

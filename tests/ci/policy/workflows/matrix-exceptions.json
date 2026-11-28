@@ -1,0 +1,7 @@
+{
+  "independent": [
+    ["distro-floor.yml", "floor", "each leg is a distribution image and answers for its own: a product that installs on debian:trixie says nothing about the one that has to be refused on ubuntu:22.04"],
+    ["distro-floor.yml", "upgrade", "each leg is a product and answers for its own: a release that upgrades on one product says nothing about the upgrade of another"],
+    ["mutation.yml", "mutations", "each fragment is a file of the catalogue and answers for its own entries: one fragment that fails does not make what the others found worth less, and the gate tells a sweep that did not run from one that did"]
+  ]
+}

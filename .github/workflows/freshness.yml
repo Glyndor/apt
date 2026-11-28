@@ -15,10 +15,10 @@ name: Freshness
 # branch.
 #
 # suite-on-main watches a second kind of silence, one that is not about a cron
-# at all. The suite reports on the commit it ran for, so a run still reporting
-# when a merge lands finishes against a closed pull request and is shown to
-# nobody. That job reads the verdict on main and says it out loud here, which is
-# the one place a red main is visible on ordinary work.
+# at all. A gate that runs on a push to main reports on a commit nobody is
+# looking at, so that job reads the verdicts of those gates on main and says
+# them out loud here, which is the one place a red main is visible on ordinary
+# work. The suite itself runs on the pull request alone (tests.yml).
 #
 # Separate from the test suite on purpose. These fail because something did not
 # happen elsewhere, never because this pull request is wrong, and reading them
@@ -76,6 +76,16 @@ on:
 
 permissions:
   contents: read
+
+# A newer push to the same pull request supersedes the run on the older commit, the job
+# that decides which watchers apply included: it answers about a commit that no longer
+# exists. The group names the event as well as the ref, so a run on a push or on a
+# schedule is never replaced by a pull request's run and never cancels one. It is on the
+# workflow because the job that writes what a condition reads may only change after an
+# exemption of the switch rule listed in an earlier pull request.
+concurrency:
+  group: freshness-run-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # A pull request reaches this file only through the paths above, and each of
@@ -323,13 +333,13 @@ jobs:
   # verdict comes from that commit's run, not from an older one that the API
   # happened to return first.
   #
-  # It reads three verdicts, not one. The suite is what a pull request is
-  # judged by, and the two gates beside it are properties of the tree: the
-  # hard file-size limit and the lint of this repository's own workflows.
-  # Those two run on a push to main as well, and nothing else read those runs,
-  # so a push that broke either of them left main broken with nothing saying
-  # so. Reading them here is what gives the push trigger of line-limit.yml and
-  # workflow-lint.yml a reader.
+  # It reads two verdicts: the hard file-size limit and the lint of this
+  # repository's own workflows. Both are properties of the tree, both run on a
+  # push to main, and nothing else reads those runs, so a push that broke either
+  # would leave main broken with nothing saying so. Reading them here is what
+  # gives the push trigger of line-limit.yml and workflow-lint.yml a reader.
+  # The suite is not read: it runs on the pull request alone, so main has no run
+  # of it, and the ruleset lands only a tree that run passed on.
   #
   # The paths filter above names the files that decide what these watchers do.
   # The two gates are not in it because their content cannot change what this
@@ -361,12 +371,10 @@ jobs:
     # Bound: on the schedule path one API call plus a checkout measures 2 to
     # 15s (the identical call in reusable-schedule-freshness). On the push
     # path the script polls the API for up to twenty minutes (80 attempts of
-    # 15 seconds, enough for a queued suite that measured ten minutes on
-    # 2026-11-08) for every workflow it reads, and it reads three, so the
-    # worst case is sixty: the 65-minute bound is the outer limit, it covers
-    # that plus a checkout, and a hang would otherwise cost the six-hour
-    # default.
-    timeout-minutes: 65
+    # 15 seconds) for every workflow it reads, and it reads two, so the worst
+    # case is forty: the 45-minute bound is the outer limit, it covers that
+    # plus a checkout, and a hang would otherwise cost the six-hour default.
+    timeout-minutes: 45
     permissions:
       contents: read
       actions: read # reading this repository's workflow-run history
@@ -375,19 +383,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check the newest completed suite run on main
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: ./scripts/monitoring/check-suite-on-main.sh "$REPO" tests.yml main
-
       # The two gates whose answer is a property of the tree rather than of a
       # pull request. Their runs on a push to main are the only place the hard
       # file-size limit and the lint of this repository's own workflows are
       # judged against the branch, and these two steps are what read them.
       #
-      # `!cancelled()` rather than the default: a red suite must not hide the
-      # verdicts of the gates, and a cancelled run must not start them.
+      # `!cancelled()` rather than the default: one red gate must not hide the
+      # verdict of the other, and a cancelled run must not start them.
       - name: Check the newest completed line-limit run on main
         if: ${{ !cancelled() }}
         env:

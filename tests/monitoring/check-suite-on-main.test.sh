@@ -98,7 +98,13 @@ FRESHNESS="$HERE/.github/workflows/freshness.yml"
 uncommented() { grep -v '^[[:space:]]*#' "$1"; }
 check "freshness.yml invokes the script" "1" \
 	"$(says "$(uncommented "$FRESHNESS")" 'scripts/monitoring/check-suite-on-main.sh')"
-check "and passes it the suite workflow to read" "1" \
+check "and passes it the line limit to read" "1" \
+	"$(says "$(uncommented "$FRESHNESS")" 'line-limit.yml main')"
+check "and the workflow lint" "1" \
+	"$(says "$(uncommented "$FRESHNESS")" 'workflow-lint.yml main')"
+# tests.yml runs on a pull request alone, so main has no run of it: reading it would report the
+# last run that was ever made there.
+check "and not the suite, which does not run on main" "0" \
 	"$(says "$(uncommented "$FRESHNESS")" "$WF main")"
 check "and the job declares a bound" "1" \
 	"$(says "$(sed -n '/^  suite-on-main:/,$p' "$FRESHNESS")" 'timeout-minutes:')"
