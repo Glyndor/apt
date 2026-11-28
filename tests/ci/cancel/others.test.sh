@@ -32,6 +32,9 @@
 # turn it red for the reason it names.
 #
 # Requires: bash, python3 with PyYAML.
+# The fixtures plant and expect literal `${{ }}` expressions of a workflow, so the
+# single quotes that keep them literal are on purpose in the whole file.
+# shellcheck disable=SC2016
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
