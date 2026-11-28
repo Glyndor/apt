@@ -140,6 +140,7 @@ HTTP_PORT="$(python3 -c 'import socket
 s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 python3 "$WORK/srv/serve.py" "$HTTP_PORT" "$WORK/srv" >/dev/null 2>&1 &
 SRV_PID=$!
+trap 'kill "$SRV_PID" 2>/dev/null || true; fixture_cleanup' EXIT
 for _ in $(seq 1 50); do curl -fsS "http://127.0.0.1:$HTTP_PORT/good.deb.asc" >/dev/null 2>&1 && break; sleep 0.1; done
 run_installer_url() { # $1=url  $2=fingerprint
 	rm -f "$WORK/marker"
