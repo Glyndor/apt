@@ -17,6 +17,14 @@ name: Cancel the others
 #     aggregator of the pull request still fails for the original failure.
 #   * It never cancels a run of another event, of another branch or of another
 #     commit. The cancellation belongs to one pull request, not to the commit.
+#   * It never cancels a run of a fork. Another pull request of a fork can
+#     share the branch and the commit of this one, so the repository of the
+#     run that fired is what tells the two apart, and only a run of this
+#     repository may cancel.
+#   * It never cancels anything because Freshness failed. The freshness
+#     watcher is not a required check: its verdict holds no merge back and
+#     nothing waits for it, so the work of the other workflows is still worth
+#     finishing.
 #   * It never cancels anything while the commit is still green. The script
 #     reads the verdicts of the runs of that commit and cancels the rest only
 #     when one of them has failed.
@@ -28,6 +36,23 @@ name: Cancel the others
 #   actionlint refuses it, and the docs list it for `workflow_run` alone. The
 #   event fires when one of the three has completed; the script decides what
 #   that completion means, because the failure may have happened in any of them.
+#
+# WHAT THE SCRIPT LEARNS ABOUT THE RUN THAT FIRED
+#
+#   Four values of that run reach the script through the `env:` of the step:
+#   the event it came from, the repository it belongs to, its verdict and the
+#   name of its workflow. The script acts only when the run is a pull request
+#   of this repository, when its verdict is a failure or a timeout, and when
+#   its workflow is not Freshness. A run of a fork, a run that did not fail
+#   and a failed freshness watcher cancel nothing.
+#
+# THE DECISION IS IN THE SCRIPT, NOT IN A CONDITION OF THE JOB
+#
+#   The job carries no `if:`. A condition on the job would be read by the
+#   rule that judges the switches of a pull request against the commit the
+#   pull request names as its base, and the base has no such condition for
+#   this job: the rule would refuse the workflow. The script decides with the
+#   values it is given, and the job runs.
 #
 # THE PULL REQUEST CONTROLS NEITHER THE WORKFLOW NOR THE SCRIPT
 #
@@ -48,9 +73,11 @@ name: Cancel the others
 #   default branch, which the pull request cannot change.
 #
 #   Every value the pull request controls enters through `env:` and never
-#   inside the text of `run:`. The `env:` of the step holds three values and
-#   no more: the head commit of the event, the head branch of the event and
-#   the token of the job.
+#   inside the text of `run:`. The `env:` of the step holds seven values and
+#   no more: the head commit of the event, the head branch of the event, the
+#   token of the job and the four values of the run that fired, which are the
+#   event it came from, the repository it belongs to, its verdict and the name
+#   of its workflow.
 #
 # The list of workflows this one reacts to is the same list the script may
 # cancel, and tests/ci/cancel/others.test.sh holds the two to be the same.
@@ -91,4 +118,8 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           GH_TOKEN: ${{ github.token }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
+          TRIGGER_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          TRIGGER_WORKFLOW: ${{ github.event.workflow_run.name }}
         run: bash scripts/ci/cancel/others.sh

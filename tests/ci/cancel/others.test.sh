@@ -21,7 +21,8 @@
 #   * the job with the write token, read from the workflow: it holds the write
 #     alone, it interpolates no expression in the text of its `run:`, its
 #     checkout names no `ref:` and no `repository:`, its `env:` takes from the
-#     event nothing but the head commit, the head branch and the token, and it
+#     event nothing but the head commit, the head branch, the token and the four
+#     values of the run that fired, and it
 #     runs the script of the default branch from the working tree;
 #   * the names of the list of what may be cancelled: each of them has to be
 #     the `name:` of a workflow of this repository, because a name no workflow
@@ -117,6 +118,8 @@ with_runs() { # <the script to run> <run json>...
 	GH_RUNS_FILE="$WORK/runs.json" GH_CANCEL_LOG="$LOG" GH_CALLS_LOG="$WORK/calls.txt" \
 		HEAD_SHA="aaaa" HEAD_BRANCH="feature" \
 		GITHUB_REPOSITORY="Glyndor/apt" GITHUB_RUN_ID="114" GH_TOKEN="token" \
+		TRIGGER_EVENT="${TRIGGER_EVENT-pull_request}" TRIGGER_REPOSITORY="${TRIGGER_REPOSITORY-Glyndor/apt}" \
+		TRIGGER_CONCLUSION="${TRIGGER_CONCLUSION-failure}" TRIGGER_WORKFLOW="${TRIGGER_WORKFLOW-Tests}" \
 		PATH="$BIN:$PATH" bash "$script" >"$WORK/output.txt" 2>&1
 }
 
@@ -213,6 +216,32 @@ with_runs "$SCRIPT" \
 	"$(run_json 100 DCO pull_request feature aaaa completed '"failure"')" \
 	"$(run_json 113 Tests pull_request feature aaaa completed '"success"')"
 check "a run that has finished is not cancelled" "" "$(cancelled_ids)"
+
+# The run that fired, one condition at a time. Each value that is not the one
+# the script acts on, and each empty value, cancels nothing and calls no
+# `gh run cancel`. Only the TRIGGER_* variables of the call change.
+DCO_RUN="$(run_json 100 DCO pull_request feature aaaa completed '"failure"')"
+TESTS_RUN="$(run_json 101 Tests pull_request feature aaaa in_progress null)"
+fired() { # <the runs it must cancel> <description> <VAR=value>
+	local expected="$1" desc="$2" kv="$3"
+	unset TRIGGER_EVENT TRIGGER_REPOSITORY TRIGGER_CONCLUSION TRIGGER_WORKFLOW
+	export "${kv%%=*}=${kv#*=}"
+	with_runs "$SCRIPT" "$DCO_RUN" "$TESTS_RUN"
+	unset TRIGGER_EVENT TRIGGER_REPOSITORY TRIGGER_CONCLUSION TRIGGER_WORKFLOW
+	check "$desc" "$expected" "$(cancelled_ids)"
+}
+fired "" "a run of another event fires nothing" TRIGGER_EVENT=push
+fired "" "an empty event fires nothing" TRIGGER_EVENT=
+fired "" "a run of another repository fires nothing" TRIGGER_REPOSITORY=Glyndor/other
+fired "" "a repository that differs only in case fires nothing" TRIGGER_REPOSITORY=glyndor/apt
+fired "" "a repository that only has a prefix fires nothing" TRIGGER_REPOSITORY=x/Glyndor/apt
+fired "" "an empty repository fires nothing" TRIGGER_REPOSITORY=
+fired "" "a run that did not fail fires nothing" TRIGGER_CONCLUSION=success
+fired "" "a cancelled run fires nothing" TRIGGER_CONCLUSION=cancelled
+fired "" "an empty conclusion fires nothing" TRIGGER_CONCLUSION=
+fired "" "the freshness watcher fires nothing" TRIGGER_WORKFLOW=Freshness
+fired "" "an empty workflow name fires nothing" TRIGGER_WORKFLOW=
+fired "101" "a run that timed out cancels its siblings" TRIGGER_CONCLUSION=timed_out
 
 # The list of what may never be cancelled wins over the other one, even when a
 # name is in both.
@@ -395,12 +424,17 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 # The job that holds the write, and the only one that may hold it.
 WRITE_JOB = "cancel-others"
 
-# The three values the step may take: the head commit of the event, the head
-# branch of the event and the token of the job.
+# The values the step may take: the head commit of the event, the head
+# branch of the event, the token of the job and the four values of the run
+# that fired.
 ALLOWED_ENV = {
     "HEAD_SHA": "${{ github.event.workflow_run.head_sha }}",
     "HEAD_BRANCH": "${{ github.event.workflow_run.head_branch }}",
     "GH_TOKEN": "${{ github.token }}",
+    "TRIGGER_EVENT": "${{ github.event.workflow_run.event }}",
+    "TRIGGER_REPOSITORY": "${{ github.event.workflow_run.head_repository.full_name }}",
+    "TRIGGER_CONCLUSION": "${{ github.event.workflow_run.conclusion }}",
+    "TRIGGER_WORKFLOW": "${{ github.event.workflow_run.name }}",
 }
 
 problems = []

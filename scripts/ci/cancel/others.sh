@@ -19,9 +19,9 @@
 #     of the branch of this repository that carries the same name, so only the
 #     runs of the head commit of the event and of the `pull_request` event are
 #     cancelled;
-#   * only when a run of that commit has failed. A commit whose work is all
-#     green is left alone, and so is one that has not been judged yet: the
-#     cancellation buys nothing before the failure;
+#   * only when a run of that commit has failed or has timed out. A commit
+#     whose work is all green is left alone, and so is one that has not been
+#     judged yet: the cancellation buys nothing before the failure;
 #   * only the workflows named in CANCELLABLE_WORKFLOWS;
 #   * only runs that have not finished: a finished run has nothing to cancel;
 #   * never its own run: the job that runs this script is not cancelled by it.
@@ -32,6 +32,14 @@
 #   DCO. A functional failure must not leave a commit without its analysis.
 #   NEVER_CANCELLED_WORKFLOWS wins over CANCELLABLE_WORKFLOWS, so a name that
 #   ends up in both lists is not cancelled.
+#
+#   The run of a fork. Another pull request of a fork can share the branch and
+#   the commit of this one, so the repository of the run that fired this one
+#   is what tells the two apart: only a run of this repository may cancel.
+#
+#   The freshness watcher. It is no required check: its verdict holds no merge
+#   back and nothing waits for it, so the work of the other workflows is still
+#   worth finishing.
 #
 # CANCELLING DOES NOT TURN A RED PULL REQUEST GREEN
 #
@@ -44,6 +52,12 @@
 #   HEAD_SHA and HEAD_BRANCH are read from the pull request and reach this
 #   script through `env:`; GITHUB_REPOSITORY is the environment of the runner.
 #   They never arrive as arguments and never reach a command line as text.
+#
+#   Four values of the run that fired this one arrive the same way: the event
+#   it came from, the repository it belongs to, its verdict and the name of
+#   its workflow. They are read before anything is listed or cancelled, and
+#   they are compared as text, never as a pattern. They are never printed: a
+#   value that a fork controls would end up in the log of this repository.
 #
 # A FAILURE HERE IS NOT A FAILURE OF THE JOB
 #
@@ -58,6 +72,41 @@ set -uo pipefail
 : "${HEAD_SHA:?HEAD_SHA is required: the commit whose runs may be cancelled}"
 : "${HEAD_BRANCH:?HEAD_BRANCH is required: the branch whose runs may be cancelled}"
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required: the repository whose runs are cancelled}"
+
+# THE RUN THAT FIRED THIS ONE
+#
+#   Four values of it arrive through the environment: the event it came from,
+#   the repository it belongs to, its verdict and the name of its workflow.
+#   A value that is empty or absent is a value that says nothing, and nothing
+#   said is no reason to cancel: the script ends with success.
+#
+#   The comparisons are with text, one literal at a time, and the values are
+#   never printed: a value that a fork controls would end up in the log of
+#   this repository.
+TRIGGER_EVENT="${TRIGGER_EVENT:-}"
+TRIGGER_REPOSITORY="${TRIGGER_REPOSITORY:-}"
+TRIGGER_CONCLUSION="${TRIGGER_CONCLUSION:-}"
+TRIGGER_WORKFLOW="${TRIGGER_WORKFLOW:-}"
+
+if [ "$TRIGGER_EVENT" != "pull_request" ]; then
+	echo "::notice::the run that fired this one is not a pull request; nothing was cancelled."
+	exit 0
+fi
+
+if [ "$TRIGGER_REPOSITORY" != "$GITHUB_REPOSITORY" ]; then
+	echo "::notice::the run that fired this one belongs to another repository; nothing was cancelled."
+	exit 0
+fi
+
+if [ "$TRIGGER_CONCLUSION" != "failure" ] && [ "$TRIGGER_CONCLUSION" != "timed_out" ]; then
+	echo "::notice::the run that fired this one did not fail; nothing was cancelled."
+	exit 0
+fi
+
+if [ -z "$TRIGGER_WORKFLOW" ] || [ "$TRIGGER_WORKFLOW" = "Freshness" ]; then
+	echo "::notice::the run that fired this one has no workflow name or is the freshness watcher, which is no required check; nothing was cancelled."
+	exit 0
+fi
 
 # The expensive functional work of this repository: the suites, the mutation
 # run and the freshness watcher. A workflow that is not named here is never
@@ -112,8 +161,8 @@ import sys
 # A run that can still be cancelled. A finished one has nothing to cancel.
 CANCELLABLE_STATUS = ("queued", "in_progress", "waiting", "requested", "pending")
 
-# The verdict that makes the rest of the work pointless.
-FAILURE = "failure"
+# The verdicts that make the rest of the work pointless.
+FAILURES = ("failure", "timed_out")
 
 
 def norm(text):
@@ -144,10 +193,10 @@ if not isinstance(runs, list):
     sys.exit(0)
 
 # The runs of this pull request, whatever workflow they belong to. A failure
-# in any of them is what makes the rest of the work pointless. The event and
-# the head commit are what keep the list inside one pull request: the branch
-# of a pull request of a fork can carry the name of a branch of this
-# repository, and the head commit is what tells the two apart.
+# or a timeout in any of them is what makes the rest of the work pointless.
+# The event and the head commit are what keep the list inside one pull
+# request: the branch of a pull request of a fork can carry the name of a
+# branch of this repository, and the head commit is what tells the two apart.
 mine = [
     run
     for run in runs
@@ -156,7 +205,7 @@ mine = [
     and str(run.get("headBranch") or "") == head_branch
     and str(run.get("headSha") or "") == head_sha
 ]
-if not any(str(run.get("conclusion") or "") == FAILURE for run in mine):
+if not any(str(run.get("conclusion") or "") in FAILURES for run in mine):
     print("no run of this commit has failed; nothing is cancelled.", file=sys.stderr)
     sys.exit(0)
 
