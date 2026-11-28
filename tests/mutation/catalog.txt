@@ -399,7 +399,6 @@ verify-debs-anchor-checked	scripts/verify/verify-debs.sh	ascii_only "$anchor" ||
 verify-debs-anchor-three-files	scripts/verify/verify-debs.sh	for anchor in "$KEY_FILE" "$MLDSA_KEY_FILE" "$PQ_REQUIRED_FILE"; do	for anchor in "$KEY_FILE"; do	tests/verify/verify-debs-anchor-bytes.test.sh
 verify-debs-anchor-cr-counted	scripts/verify/verify-debs.sh	tr -d ' -~\n' < 	tr -d ' -~\n\r' < 	tests/verify/verify-debs-anchor-bytes.test.sh
 publish-checkout-keeps-no-token	.github/workflows/publish.yml	persist-credentials: false	persist-credentials: true	tests/ci/policy/persist-credentials.test.sh
-freshness-reads-tests	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" tests.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 freshness-reads-line-limit	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" line-limit.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 freshness-reads-workflow-lint	.github/workflows/freshness.yml	./scripts/monitoring/check-suite-on-main.sh "$REPO" workflow-lint.yml main	"true"	tests/ci/policy/workflow-calls-are-exact.test.sh
 verify-debs-private-dir	scripts/verify/verify-debs.sh	|| { echo "::error::cannot create a private directory to hold the verified packages" >&2; exit 1; }	|| true	tests/verify/verify-debs-same-bytes.test.sh
@@ -479,3 +478,6 @@ wired-waiter-keys	scripts/quality/coverage/check-suites-wired.sh	for k in waiter
 wired-workflow-defaults	scripts/quality/coverage/check-suites-wired.sh	    if workflow_defaults:	    if False:	tests/quality/coverage/check-suites-wired.test.sh
 wired-workflow-defaults-read	scripts/quality/coverage/check-suites-wired.sh	workflow_defaults = bool(spec.get("defaults"))	workflow_defaults = False	tests/quality/coverage/check-suites-wired.test.sh
 wired-dependency-defaults	scripts/quality/coverage/check-suites-wired.sh	or other.get("continue-on-error") or "defaults" in other:	or other.get("continue-on-error"):	tests/quality/coverage/check-suites-wired.test.sh
+
+# The suite runs on the pull request alone.
+tests-suite-not-on-push	.github/workflows/tests.yml	  pull_request:	  push:	tests/ci/policy/workflows/push-does-not-repeat-the-suite.test.sh

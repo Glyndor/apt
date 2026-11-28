@@ -781,3 +781,7 @@ tests/ci/policy/workflows/pull-request-runs-are-superseded.test.sh
 tests/ci/policy/workflows/matrices-fail-fast.test.sh
 	.github/workflows/**
 	tests/ci/policy/workflows/**
+
+tests/ci/policy/workflows/push-does-not-repeat-the-suite.test.sh
+	.github/workflows/**
+	tests/ci/policy/workflows/**

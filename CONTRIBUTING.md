@@ -92,8 +92,9 @@ export PATH="$HOME/.cache/apt-mldsa/bin:$PATH"
 CI runs that suite in its own job, `ML-DSA-65 verifier` in `tests.yml`. The job
 always starts and reports under that name, and decides in its first step whether
 anything the suite reads changed: when nothing did, the wheel install and the
-suite are skipped and the job says so in its summary. It asks the same question
-on a pull request and on a push to main, and any doubt runs the suite.
+suite are skipped and the job says so in its summary. Any doubt runs the
+suite. `tests.yml` runs on a pull request alone: the ruleset of `main` only lands a
+branch that is up to date and passed, so a run on the push would repeat it.
 
 The tests live in folders that mirror `scripts/` (`tests/verify/`, `tests/build/`
 and so on), so the loop finds them recursively, and the shellcheck lines pick up

@@ -160,7 +160,7 @@ for label, mutate, fragment in [
     ("continue-on-error on the job", lambda c: c["jobs"]["mldsa"].update({"continue-on-error": True}), "the job has `continue-on-error:`"),
     ("a renamed check", lambda c: c["jobs"]["mldsa"].update({"name": "ML-DSA verifier"}), "the check is named"),
     ("a path filter on the pull request", lambda c: c[True].update({"pull_request": {"paths": ["scripts/**"]}}), "a path filter on pull_request"),
-    ("a path filter on the push", lambda c: c[True]["push"].update({"paths-ignore": ["docs/**"]}), "a path filter on push"),
+    ("a path filter on the push", lambda c: c[True].update({"push": {"paths-ignore": ["docs/**"]}}), "a path filter on push"),
     ("a concurrency that always cancels", lambda c: c["jobs"]["mldsa"].update({"concurrency": {"group": "g-${{ github.ref }}", "cancel-in-progress": True}}), "does not cancel on a pull request only"),
     ("a concurrency group shared by a pull request and a push", lambda c: c["jobs"]["mldsa"].update({"concurrency": {"group": "g-${{ github.ref }}", "cancel-in-progress": CANCEL}}), "does not tell a pull request from a push"),
     ("a shallow checkout", lambda c: c["jobs"]["mldsa"]["steps"][0]["with"].update({"fetch-depth": 1}), "not a checkout of two commits"),
