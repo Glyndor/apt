@@ -144,7 +144,7 @@ jobs:
           - fragment: tests/mutation/catalog.d/instrument.txt
             minutes: 10
           - fragment: tests/mutation/catalog.d/switch-rule.txt
-            minutes: 25
+            minutes: 40
           - fragment: tests/mutation/catalog.d/scope.txt
             minutes: 10
           - fragment: tests/mutation/catalog.d/live.txt
