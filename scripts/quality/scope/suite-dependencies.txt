@@ -175,3 +175,4 @@ tests/ci/reusable/reusable-shell-ci.test.sh python3-cryptography python3-yaml re
 
 tests/ci/policy/workflow-calls-are-exact.test.sh -
 tests/ci/policy/workflows/pull-request-runs-are-superseded.test.sh python3-yaml
+tests/ci/policy/workflows/matrices-fail-fast.test.sh python3-yaml
