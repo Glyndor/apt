@@ -158,6 +158,7 @@ jobs:
         ./tests/ci/suites/shell-ci-scope.test.sh
         ./tests/ci/suites/lint-job-scope.test.sh
         ./tests/ci/policy/cancel-policy.test.sh
+        ./tests/ci/policy/workflows/pull-request-runs-are-superseded.test.sh
         ./tests/ci/reusable/reusable-empty-diff.test.sh
         ./tests/ci/reusable/reusable-dco.test.sh
         ./tests/quality/hygiene/check-editorconfig.test.sh

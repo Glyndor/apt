@@ -77,6 +77,16 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request supersedes the run on the older commit, the job
+# that decides which watchers apply included: it answers about a commit that no longer
+# exists. The group names the event as well as the ref, so a run on a push or on a
+# schedule is never replaced by a pull request's run and never cancels one. It is on the
+# workflow because the job that writes what a condition reads may only change after an
+# exemption of the switch rule listed in an earlier pull request.
+concurrency:
+  group: freshness-run-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # A pull request reaches this file only through the paths above, and each of
   # them can change the answer of one group of jobs, not of all of them. This job

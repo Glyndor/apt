@@ -20,8 +20,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: roster-releases-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # The group names the event as well as the ref, and the cancellation is
+  # limited to a pull request: a run on another event is never replaced by a
+  # newer one, and a pull request never cancels the run of another one.
+  group: roster-releases-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   roster:
