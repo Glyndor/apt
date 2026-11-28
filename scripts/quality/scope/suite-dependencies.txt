@@ -22,6 +22,7 @@ tests/build/build-keyring.test.sh -
 tests/build/keyring/build-keyring-contents.test.sh -
 tests/build/keyring/build-keyring-generator.test.sh -
 tests/ci/policy/cancel-policy.test.sh -
+tests/ci/cancel/others.test.sh python3-yaml
 tests/ci/policy/gpgconf-kill-is-bounded.test.sh -
 tests/ci/policy/locale-pinned.test.sh -
 tests/ci/policy/network-calls-are-bounded.test.sh -

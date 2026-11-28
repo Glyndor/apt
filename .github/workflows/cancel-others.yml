@@ -1,0 +1,94 @@
+name: Cancel the others
+
+# A pull request runs several workflows. One of them fails, and the others keep
+# burning a runner until they finish while the pull request waits for verdicts
+# nobody reads. This workflow stops the expensive functional work of the pull
+# request it runs for: the suites, the mutation run and the freshness watcher.
+#
+# WHAT IT DOES NOT DO
+#
+#   * It never cancels a security analysis. CodeQL, the dependency audits, the
+#     secret scan and the DCO keep running: a functional failure must not leave
+#     a commit without its analysis. The list of what may be cancelled is in
+#     scripts/ci/cancel/others.sh, and the list of what may never be cancelled
+#     is in the same script, where it wins.
+#   * It never turns a red pull request green. Cancelling a sibling keeps the
+#     verdict that sibling had, and a cancelled check is not a pass: the
+#     aggregator of the pull request still fails for the original failure.
+#   * It never cancels a run of another event, of another branch or of another
+#     commit. The cancellation belongs to one pull request, not to the commit.
+#   * It never cancels anything while the commit is still green. The script
+#     reads the verdicts of the runs of that commit and cancels the rest only
+#     when one of them has failed.
+#
+# THE TRIGGER
+#
+#   `workflow_run` with the list of workflows is the only way GitHub has to say
+#   "when these workflows finish". `pull_request` has no `workflows` filter:
+#   actionlint refuses it, and the docs list it for `workflow_run` alone. The
+#   event fires when one of the three has completed; the script decides what
+#   that completion means, because the failure may have happened in any of them.
+#
+# THE PULL REQUEST CONTROLS NEITHER THE WORKFLOW NOR THE SCRIPT
+#
+#   A workflow triggered by `workflow_run` runs the file this repository holds
+#   on its default branch, and the checkout of the job is that branch too: the
+#   pull request cannot change what runs, and it cannot change the script the
+#   checkout holds. The job runs `scripts/ci/cancel/others.sh` from the
+#   working tree, and that copy is the one of the default branch.
+#
+#   The checkout therefore names no `ref:` and no `repository:`: it takes what
+#   the event gives it, the default branch, and nothing else.
+#
+# THE TOKEN
+#
+#   Cancelling a run needs a token with `actions: write`, and that write is on
+#   this job alone, never at workflow level. A job with a write token runs no
+#   code the pull request controls: the script it runs is the copy of the
+#   default branch, which the pull request cannot change.
+#
+#   Every value the pull request controls enters through `env:` and never
+#   inside the text of `run:`. The `env:` of the step holds three values and
+#   no more: the head commit of the event, the head branch of the event and
+#   the token of the job.
+#
+# The list of workflows this one reacts to is the same list the script may
+# cancel, and tests/ci/cancel/others.test.sh holds the two to be the same.
+
+on:
+  workflow_run:
+    workflows:
+      - "Tests"
+      - "Mutation"
+      - "Freshness"
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  # The three runs of one commit share this group and take turns, so the second
+  # one sees what the first one cancelled. Outside a commit every run is its
+  # own, so a run of another commit never queues behind, or cancels, one.
+  group: cancel-others-${{ github.workflow }}-${{ github.event.workflow_run.head_sha || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  cancel-others:
+    name: cancel the expensive siblings
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write      # only in this job
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Cancel what belongs to this pull request
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/cancel/others.sh

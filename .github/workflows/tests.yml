@@ -162,6 +162,7 @@ jobs:
         ./tests/ci/suites/shell-ci-scope.test.sh
         ./tests/ci/suites/lint-job-scope.test.sh
         ./tests/ci/policy/cancel-policy.test.sh
+        ./tests/ci/cancel/others.test.sh
         ./tests/ci/policy/workflows/pull-request-runs-are-superseded.test.sh
         ./tests/ci/policy/workflows/matrices-fail-fast.test.sh
         ./tests/ci/policy/workflows/push-does-not-repeat-the-suite.test.sh

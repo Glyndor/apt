@@ -7,10 +7,12 @@
 #             organisation, which is a setting no file here records and no pull request
 #             can see change.
 #   levels    a level is read, write or none; `write-all` and `read-all` are not a list.
-#   writes    no workflow and no job holds a write. Nothing in this repository needs one:
-#             the publish job writes to R2 and to Cloudflare with their own credentials, and
-#             to nothing in GitHub. A job that has to is the change that adds a case here
-#             saying which job and why, so a write is never a line a pull request slips in.
+#   writes    no workflow holds a write, and only one job does: the job that cancels the
+#             other runs of a pull request that failed, which needs `actions: write` to end
+#             them. Nothing else in this repository needs one: the publish job writes to R2
+#             and to Cloudflare with their own credentials, and to nothing in GitHub. A job
+#             that has to is the change that adds a case here saying which job and why, so a
+#             write is never a line a pull request slips in.
 #   secrets   a job that names `secrets.*` declares its own `permissions:` and does not
 #             inherit the workflow's. It is the job that holds the signing key, the bucket
 #             credentials and the purge token, and what its token can do should be written
@@ -55,6 +57,20 @@ LEVELS = {"read", "write", "none"}
 # `secrets.NAME` or `secrets['NAME']` as an expression names one; a file called check-secrets.sh does not.
 SECRET = re.compile(r"(?<![\w.-])secrets(?:\.\w|\[)")
 
+# The one job of this repository that holds a write, and the scope of it.
+#
+#   cancel-others   the job that ends the other runs of a pull request whose work has
+#                   failed. Cancelling a run is `actions: write`, and the write is on that
+#                   job alone: no workflow of this repository declares it at the top. The
+#                   job runs no code the pull request controls: a workflow triggered by
+#                   `workflow_run` runs the file of the default branch and its checkout
+#                   is that branch, so the script it runs is the copy of the default
+#                   branch, which
+#                   tests/ci/cancel/others.test.sh holds.
+ALLOWED_WRITES = {
+    ("cancel-others.yml", "cancel-others"): frozenset({"actions"}),
+}
+
 files = sorted(glob.glob(os.path.join(root, "*.yml")) + glob.glob(os.path.join(root, "*.yaml")))
 if not files:
     print("no workflow was found, so nothing was inspected")
@@ -80,10 +96,13 @@ def mapping(name, where, value):
     return value
 
 
-def writes(name, where, value):
+def writes(name, where, value, job=None):
     for scope, level in value.items():
-        if level == "write":
-            print(f"{name}: {where} holds {scope}: write; nothing in this repository writes to GitHub")
+        if level != "write":
+            continue
+        if scope in ALLOWED_WRITES.get((name, job), frozenset()):
+            continue
+        print(f"{name}: {where} holds {scope}: write; nothing in this repository writes to GitHub")
 
 
 for path in files:
@@ -109,7 +128,7 @@ for path in files:
         if "permissions" in cfg:
             own = mapping(name, job, cfg["permissions"])
             if own is not None:
-                writes(name, job, own)
+                writes(name, job, own, job)
         elif names_secrets(cfg):
             print(f"{name}: {job} names a secret and declares no permissions of its own")
 PY
@@ -125,7 +144,7 @@ fixture() {
 	if cmp -s "$BAD/$1" "$HERE/.github/workflows/$1"; then echo "FIXTURE INERT: $1 $2"; fi
 }
 
-check "every workflow declares its permissions, none writes and a job with a secret has its own" "" "$(violations)"
+check "every workflow declares its permissions, only the cancel job writes and a job with a secret has its own" "" "$(violations)"
 
 fixture tests.yml '/^permissions:$/,/^  contents: read$/d'
 check "a workflow with no permissions of its own is named" \
@@ -151,6 +170,18 @@ fixture commit-hygiene.yml 's/^    permissions:$/    permissions: write-all/; /^
 check "a job that grants write-all is named for the job, twice as there are two" \
 	"commit-hygiene.yml: commit-identity grants write-all; name each permission, \`{}\` when it needs none
 commit-hygiene.yml: secret-scan grants write-all; name each permission, \`{}\` when it needs none" "$(violations "$BAD")"
+
+# The one job that holds a write: the scope it needs is accepted, and every
+# other scope, in that job and in any other, is named.
+fixture cancel-others.yml 's/^      actions: write      # only in this job$/      actions: write\n      contents: write/'
+check "a write the cancel job does not need is named for the job" \
+	"cancel-others.yml: cancel-others holds contents: write; nothing in this repository writes to GitHub" "$(violations "$BAD")"
+rm -f "$BAD"/*; cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
+printf 'on: push\npermissions:\n  contents: read\njobs:\n  other:\n    permissions:\n      contents: read\n      actions: write\n    runs-on: ubuntu-26.04\n    steps:\n      - run: true\n' > "$BAD/extra.yaml"
+check "a write in a job that is not the cancel job is named for the job" \
+	"extra.yaml: other holds actions: write; nothing in this repository writes to GitHub" "$(violations "$BAD")"
+fixture cancel-others.yml 's/^      actions: write      # only in this job$//'
+check "the cancel job without its write is accepted" "" "$(violations "$BAD")"
 
 # A workflow named .yaml is a workflow too, and a directory with none is not a pass.
 rm -f "$BAD"/*; cp "$HERE"/.github/workflows/*.y*ml "$BAD/"
