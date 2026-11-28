@@ -463,6 +463,13 @@ tests/ci/policy/jobs-are-bounded.test.sh
 tests/ci/policy/cancel-policy.test.sh
 	.github/workflows/**
 
+# The cancel job and the script it runs: the verdict is what the script
+# cancels and what the job holds, so both files are its inputs.
+
+tests/ci/cancel/others.test.sh
+	scripts/ci/cancel/others.sh
+	.github/workflows/cancel-others.yml
+
 # The freshness watcher guards its own pull-request filter: the verdict is
 # what the filter of freshness.yml says, so that file and the two reusables
 # the filter has to name are the inputs.
