@@ -144,6 +144,8 @@ jobs:
         ./tests/ci/policy/publish-workflow-triggers.test.sh
         ./tests/quality/coverage/check-test-coverage.test.sh
         ./tests/quality/lint/check-action-pins.test.sh
+        ./tests/quality/structure/folder-limit.test.sh
+        ./tests/ci/suites/step-script.test.sh
         ./tests/quality/hygiene/check-commit-identity.test.sh
         ./tests/quality/hygiene/check-secrets.test.sh
         ./tests/quality/scope/ci-job-scope.test.sh
@@ -162,9 +164,9 @@ jobs:
         ./tests/ci/policy/cancel-policy.test.sh
         ./tests/ci/policy/workflows/pull-request-runs-are-superseded.test.sh
         ./tests/ci/policy/workflows/matrices-fail-fast.test.sh
+        ./tests/ci/policy/workflows/push-does-not-repeat-the-suite.test.sh
         ./tests/ci/reusable/reusable-empty-diff.test.sh
         ./tests/ci/reusable/reusable-dco.test.sh
-        ./tests/ci/policy/workflows/push-does-not-repeat-the-suite.test.sh
         ./tests/quality/hygiene/check-editorconfig.test.sh
         ./tests/monitoring/check-reusable-drift.test.sh
         ./tests/ci/policy/jobs-are-bounded.test.sh
@@ -205,6 +207,45 @@ jobs:
       # workflow-lint job does.
       apt-packages: python3-cryptography reprepro shellcheck python3-yaml
 
+  # The other half of the size rule: line-limit.yml counts the lines of every file, and this counts the
+  # files of every folder, twenty at most. The script and its list of exceptions
+  # (.github/folder-limit-exceptions.txt) are read from the base commit, so a pull request cannot raise a
+  # ceiling for itself. It is not in the ruleset; making it required is the owner's decision.
+  folder-limit:
+    name: folder limit
+    # A newer push to the same pull request supersedes the count of the older commit.
+    concurrency:
+      group: folder-limit-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    # ubuntu-latest on purpose: this job only asks git for data and counts, so a new image cannot change its
+    # verdict.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Bound: the count of the tracked files of this repository is under a second.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: No folder holds more files than its ceiling
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          path=scripts/quality/structure/folder-limit.sh
+          gate="$(mktemp "$RUNNER_TEMP/folder-limit.XXXXXX")"
+          base_commit="$(git rev-parse --verify "${BASE}^{commit}")"
+          listed="$(git ls-tree --name-only "$base_commit" -- "$path")"
+          if [ -n "$listed" ]; then
+            git show "$base_commit:$path" > "$gate"
+          else
+            echo "The base commit has no $path; this pull request adds it and runs its own copy once."
+            cp "$path" "$gate"
+          fi
+          bash "$gate"
+
   # The ML-DSA-65 half of the release signature check, verified for real. It
   # needs cryptography 50.0.2 or later and the runner's python3-cryptography has
   # no ML-DSA, so this suite cannot run in the job above: the wheel is installed
@@ -232,7 +273,7 @@ jobs:
   # workflow, no `if:` or `needs:` on the job. It always starts, decides in its
   # first step and reports under its own name, and only the wheel install and
   # the suite are conditional. Its own `concurrency` lets a newer push supersede
-  # the run on a pull request and never cancels a run on main.
+  # the run on a pull request and cancels nothing on any other event.
   mldsa:
     name: ML-DSA-65 verifier
     concurrency:

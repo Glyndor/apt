@@ -177,3 +177,5 @@ tests/ci/policy/workflow-calls-are-exact.test.sh -
 tests/ci/policy/workflows/pull-request-runs-are-superseded.test.sh python3-yaml
 tests/ci/policy/workflows/matrices-fail-fast.test.sh python3-yaml
 tests/ci/policy/workflows/push-does-not-repeat-the-suite.test.sh python3-yaml
+tests/quality/structure/folder-limit.test.sh python3-yaml
+tests/ci/suites/step-script.test.sh -

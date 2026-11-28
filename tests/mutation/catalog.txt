@@ -481,3 +481,14 @@ wired-dependency-defaults	scripts/quality/coverage/check-suites-wired.sh	or othe
 
 # The suite runs on the pull request alone.
 tests-suite-not-on-push	.github/workflows/tests.yml	  pull_request:	  push:	tests/ci/policy/workflows/push-does-not-repeat-the-suite.test.sh
+
+# The files of a folder are counted against the ceiling of the base.
+folder-limit-only-the-flat-workflows-and-testdata-are-left-out	scripts/quality/structure/folder-limit.sh	/.github/workflows/ | */testdata/*) return 0 ;;	*) return 0 ;;	tests/quality/structure/folder-limit.test.sh
+folder-limit-exception-without-tabs-is-refused	scripts/quality/structure/folder-limit.sh	if [[ "$line" != *$'\t'* ]]; then	if false; then	tests/quality/structure/folder-limit.test.sh
+folder-limit-exception-needs-a-reason	scripts/quality/structure/folder-limit.sh	if [[ "$rest" != *$'\t'* || "$reason" == *$'\t'* || ! "$reason" =~ [^[:space:]] ]]; then	if false; then	tests/quality/structure/folder-limit.test.sh
+folder-limit-exception-path-is-canonical	scripts/quality/structure/folder-limit.sh	if [ -z "$dir" ] || { [ "$dir" != . ] && [[ "/$dir/" == *//* || "/$dir/" == */./* || "/$dir/" == */../* ]]; }; then	if false; then	tests/quality/structure/folder-limit.test.sh
+folder-limit-ceiling-is-a-decimal-over-twenty	scripts/quality/structure/folder-limit.sh	if [[ ! "$cap" =~ ^[1-9][0-9]{0,8}$ ]] || [ "$cap" -le 20 ]; then	if false; then	tests/quality/structure/folder-limit.test.sh
+folder-limit-duplicate-exception-is-refused	scripts/quality/structure/folder-limit.sh	if [ -n "${parsed["$dir"]:-}" ]; then	if false; then	tests/quality/structure/folder-limit.test.sh
+folder-limit-a-folder-over-the-base-is-refused	scripts/quality/structure/folder-limit.sh	if [ -n "${BASE:-}" ] && [ "$count" -gt "${parsed["$dir"]:-20}" ]; then	if false; then	tests/quality/structure/folder-limit.test.sh
+folder-limit-the-verdict-reaches-the-caller	scripts/quality/structure/folder-limit.sh	if [ "$failed" -ne 0 ]; then exit 1; fi	:	tests/quality/structure/folder-limit.test.sh
+folder-limit-the-rule-comes-from-the-base	.github/workflows/tests.yml	git show "$base_commit:$path" > "$gate"	cp "$path" "$gate"	tests/quality/structure/folder-limit.test.sh
